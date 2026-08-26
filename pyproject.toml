@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "starquake-extract"
+version = "0.1.0"
+description = "Extract Starquake ZX Spectrum graphics, blocks and rooms from a .z80 snapshot"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pillow>=10.0",
+    "z80>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "skoolkit>=9.0",
+]
+verify = [
+    "skoolkit>=9.0",
+    "z80>=1.0",
+]
+
+[project.scripts]
+starquake-extract = "starquake_extract.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

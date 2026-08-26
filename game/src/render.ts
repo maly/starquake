@@ -1,0 +1,305 @@
+import {
+  BRIGHT,
+  CELL,
+  CLEAR_ATTR,
+  COLS,
+  HEIGHT,
+  MAP_COLS,
+  MAP_ROWS,
+  PLAY_ORIGIN,
+  ROOM_COUNT,
+  ROOM_SKIP,
+  ROWS,
+  SPECTRUM,
+  WIDTH,
+} from "./constants";
+import type { Buffers, GameData, Graphic, Item, Prepared, RenderOpts, Rgb, World } from "./types";
+
+export function paperInk(attr: number): [Rgb, Rgb] {
+  const table = attr & 0x40 ? BRIGHT : SPECTRUM;
+  return [table[(attr >> 3) & 7], table[attr & 7]];
+}
+
+/** $D280: BIT 6 set and the byte is not $64. */
+export function isSolid(attr: number): boolean {
+  return (attr & 0x40) !== 0 && attr !== 0x64;
+}
+
+export function roomCol(id: number): number {
+  return id % MAP_COLS;
+}
+
+export function roomRow(id: number): number {
+  return (id / MAP_COLS) | 0;
+}
+
+export function moveRoom(id: number, dx: number, dy: number): number {
+  const c = roomCol(id) + dx;
+  const r = roomRow(id) + dy;
+  if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) return id;
+  return r * MAP_COLS + c;
+}
+
+export function clampRoom(id: number): number {
+  if (id < 0) return 0;
+  if (id >= ROOM_COUNT) return ROOM_COUNT - 1;
+  return id | 0;
+}
+
+export function prepare(data: GameData): Prepared {
+  const graphics: Graphic[] = [];
+  for (const g of data.graphics.graphics) graphics[g.id] = g;
+  const sprites: Graphic[] = [];
+  for (const g of data.sprites.graphics) sprites[g.id] = g;
+  const actorsBySet = new Map<string, Graphic[]>();
+  if (data.actors) {
+    for (const g of data.actors.graphics) {
+      const name = g.set ?? "";
+      const list = actorsBySet.get(name) ?? [];
+      list.push(g);
+      actorsBySet.set(name, list);
+    }
+    for (const list of actorsBySet.values()) {
+      list.sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0));
+    }
+  }
+  const blocks = data.blocks.blocks.map((b) => b.subblocks);
+  const itemsByRoom: Item[][] = Array.from({ length: ROOM_COUNT }, () => []);
+  for (const it of data.items.items) {
+    if (it.sprite === 0xff) continue;
+    if (!it.placed) continue;
+    if ((it.row & 0x7f) < PLAY_ORIGIN) continue;
+    if (it.room === ROOM_SKIP) continue;
+    if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
+  }
+  return { graphics, sprites, actorsBySet, blocks, rooms: data.rooms.rooms, itemsByRoom };
+}
+
+export function newBuffers(): Buffers {
+  return {
+    data: new Uint8Array(COLS * ROWS * CELL),
+    attr: new Uint8Array(COLS * ROWS),
+  };
+}
+
+export function copyBuffers(src: Buffers, dst: Buffers): void {
+  dst.data.set(src.data);
+  dst.attr.set(src.attr);
+}
+
+export function newRgba(): Uint8ClampedArray {
+  return new Uint8ClampedArray(WIDTH * HEIGHT * 4);
+}
+
+function clearBuffers(buf: Buffers): void {
+  buf.data.fill(0);
+  buf.attr.fill(CLEAR_ATTR);
+}
+
+function blitGraphic(prep: Prepared, buf: Buffers, ident: number, x: number, y: number): void {
+  const graphic = prep.graphics[ident];
+  if (!graphic?.cells?.length) return;
+  for (const cell of graphic.cells) {
+    const cy = y + cell.row;
+    const cx = x + cell.col;
+    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+    const dst = (cy * COLS + cx) * CELL;
+    for (let py = 0; py < CELL; py++) buf.data[dst + py] = cell.data[py]!;
+  }
+}
+
+function blitBlock(prep: Prepared, buf: Buffers, ident: number, x: number, y: number): void {
+  const sub = prep.blocks[ident];
+  if (!sub) return;
+  let rx = x + 4;
+  let ry = y + 3;
+  let k = 0;
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 2; col++) {
+      blitGraphic(prep, buf, sub[k]!, rx, ry);
+      k += 1;
+      rx -= 4;
+    }
+    rx = x + 4;
+    ry -= 3;
+  }
+}
+
+export function composeTiles(prep: Prepared, buf: Buffers, roomId: number): void {
+  clearBuffers(buf);
+  const room = prep.rooms[roomId]!;
+  let x = 0;
+  let y = 0;
+  let n = 0;
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 4; j++) {
+      blitBlock(prep, buf, room.blocks[n]!, x, y);
+      n += 1;
+      x += 8;
+    }
+    x = 0;
+    y += 6;
+  }
+  const attrs = room.attributes;
+  for (let ry = 0; ry < ROWS; ry++) {
+    const row = attrs[ry]!;
+    const base = ry * COLS;
+    for (let cx = 0; cx < COLS; cx++) buf.attr[base + cx] = row[cx]!;
+  }
+}
+
+export function itemCells(item: Item): Array<[number, number]> {
+  const cells: Array<[number, number]> = [];
+  const row0 = (item.row & 0x7f) - PLAY_ORIGIN;
+  const col0 = item.col & 0x1f;
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 2; c++) {
+      const cy = row0 + r;
+      const cx = col0 + c;
+      if (cx >= 0 && cy >= 0 && cx < COLS && cy < ROWS) cells.push([cx, cy]);
+    }
+  }
+  return cells;
+}
+
+export function blitItems(prep: Prepared, buf: Buffers, roomId: number): void {
+  const list = prep.itemsByRoom[roomId];
+  if (!list?.length) return;
+  for (const it of list) {
+    const sprite = prep.sprites[it.sprite];
+    if (!sprite) continue;
+    const attr = (it.attr_bits & 7) | 0x40;
+    const row0 = (it.row & 0x7f) - PLAY_ORIGIN;
+    const col0 = it.col & 0x1f;
+    for (const cell of sprite.cells) {
+      const cy = row0 + cell.row;
+      const cx = col0 + cell.col;
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+      const dst = (cy * COLS + cx) * CELL;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py] ^= cell.data[py]!;
+      buf.attr[cy * COLS + cx] = attr;
+    }
+  }
+}
+
+/**
+ * $DF70 XOR of a GRAFIX frame (3×2, 8 scanlines × 3 interleaved bytes)
+ * at pixel (x, y). $D8B1 then merges ink unless BRIGHT (bit 5) is set.
+ */
+export function blitGrafix(
+  buf: Buffers,
+  frame: Graphic,
+  x: number,
+  y: number,
+  ink: number,
+): void {
+  const occupied = new Set<number>();
+  for (const cell of frame.cells) {
+    for (let py = 0; py < CELL; py++) {
+      const bits = cell.data[py]!;
+      if (!bits) continue;
+      const pyAbs = y + cell.row * CELL + py;
+      for (let px = 0; px < CELL; px++) {
+        if (!(bits & (0x80 >> px))) continue;
+        const pxAbs = x + cell.col * CELL + px;
+        if (pxAbs < 0 || pyAbs < 0 || pxAbs >= WIDTH || pyAbs >= HEIGHT) continue;
+        const cx = pxAbs >> 3;
+        const cy = pyAbs >> 3;
+        buf.data[(cy * COLS + cx) * CELL + (pyAbs & 7)] ^= 0x80 >> (pxAbs & 7);
+        occupied.add(cy * COLS + cx);
+      }
+    }
+  }
+  const inkBits = ink & 7;
+  for (const idx of occupied) {
+    const attr = buf.attr[idx]!;
+    if (attr & 0x20) continue;
+    buf.attr[idx] = (attr & 0xf8) | inkBits;
+  }
+}
+
+export function rasterize(
+  buf: Buffers,
+  rgba: Uint8ClampedArray,
+  overlaySolid: boolean,
+  solidGrid: number[][] | null,
+): Uint8ClampedArray {
+  let p = 0;
+  for (let cy = 0; cy < ROWS; cy++) {
+    for (let py = 0; py < CELL; py++) {
+      for (let cx = 0; cx < COLS; cx++) {
+        const idx = cy * COLS + cx;
+        const [paper, ink] = paperInk(buf.attr[idx]!);
+        const bits = buf.data[idx * CELL + py]!;
+        const mark = overlaySolid && solidGrid && solidGrid[cy]![cx];
+        for (let px = 0; px < CELL; px++) {
+          const on = bits & (0x80 >> px);
+          let r = on ? ink[0] : paper[0];
+          let g = on ? ink[1] : paper[1];
+          let b = on ? ink[2] : paper[2];
+          if (mark) {
+            r = (r + 255) >> 1;
+            g = g >> 1;
+            b = (b + 255) >> 1;
+          }
+          rgba[p] = r;
+          rgba[p + 1] = g;
+          rgba[p + 2] = b;
+          rgba[p + 3] = 255;
+          p += 4;
+        }
+      }
+    }
+  }
+  return rgba;
+}
+
+export function renderRoom(
+  prep: Prepared,
+  buf: Buffers,
+  rgba: Uint8ClampedArray,
+  roomId: number,
+  opts: RenderOpts = {},
+): Uint8ClampedArray {
+  composeTiles(prep, buf, roomId);
+  if (opts.items !== false) blitItems(prep, buf, roomId);
+  if (opts.blob) {
+    const frames = prep.actorsBySet.get(opts.blob.set);
+    const frame = frames?.[opts.blob.frame];
+    if (frame) blitGrafix(buf, frame, opts.blob.x, opts.blob.y, 7);
+  }
+  const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
+  return rasterize(buf, rgba, !!opts.overlay, solid);
+}
+
+/** Draw the live room (export is only the template applied at enterRoom). */
+export function renderWorld(
+  prep: Prepared,
+  world: World,
+  buf: Buffers,
+  rgba: Uint8ClampedArray,
+  roomId: number,
+  opts: RenderOpts = {},
+): Uint8ClampedArray {
+  copyBuffers(world.terrain, buf);
+  if (opts.items !== false) blitItems(prep, buf, roomId);
+  if (opts.blob) {
+    const frames = prep.actorsBySet.get(opts.blob.set);
+    const frame = frames?.[opts.blob.frame];
+    if (frame) blitGrafix(buf, frame, opts.blob.x, opts.blob.y, 7);
+  }
+  const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
+  return rasterize(buf, rgba, !!opts.overlay, solid);
+}
+
+export {
+  COLS,
+  ROWS,
+  WIDTH,
+  HEIGHT,
+  PLAY_ORIGIN,
+  MAP_COLS,
+  MAP_ROWS,
+  ROOM_COUNT,
+  ROOM_SKIP,
+};

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Starquake — mapa</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Starquake</h1>
+      <p class="tag">BLOB · 50 Hz · 256×144</p>
+    </header>
+
+    <div class="layout">
+      <section id="stage" class="stage" aria-label="Hrací plocha">
+        <canvas id="screen" width="256" height="144">Canvas 2D není k dispozici.</canvas>
+      </section>
+
+      <aside class="panel" aria-label="Vývojářský panel">
+        <p id="status" class="status">…</p>
+
+        <dl class="facts">
+          <div>
+            <dt>Místnost</dt>
+            <dd id="room-id">—</dd>
+          </div>
+          <div>
+            <dt>Sloupec</dt>
+            <dd id="room-col">—</dd>
+          </div>
+          <div>
+            <dt>Řádek</dt>
+            <dd id="room-row">—</dd>
+          </div>
+          <div>
+            <dt>Předměty</dt>
+            <dd id="item-count">—</dd>
+          </div>
+          <div>
+            <dt>BLOB px</dt>
+            <dd id="blob-xy">—</dd>
+          </div>
+          <div>
+            <dt>BLOB buňka</dt>
+            <dd id="blob-cell">—</dd>
+          </div>
+          <div>
+            <dt>vy</dt>
+            <dd id="blob-vy">—</dd>
+          </div>
+          <div>
+            <dt>Energie $D2CD</dt>
+            <dd id="stat-energy">—</dd>
+          </div>
+          <div>
+            <dt>Plošinky $D2CE</dt>
+            <dd id="stat-platforms">—</dd>
+          </div>
+          <div>
+            <dt>Palba $D2CF</dt>
+            <dd id="stat-firepower">—</dd>
+          </div>
+        </dl>
+
+        <label class="goto-label" for="goto">Přejít na místnost</label>
+        <div class="goto-row">
+          <input id="goto" type="number" min="0" max="511" step="1" value="0" />
+          <button id="go" type="button">Jít</button>
+        </div>
+
+        <label class="check">
+          <input id="overlay" type="checkbox" />
+          Zvýraznit pevné buňky
+          <span class="hint">bit 6, ne 0x64 · pole <code>solid</code></span>
+        </label>
+
+        <dl class="facts timing">
+          <div>
+            <dt>Snímek</dt>
+            <dd id="time">—</dd>
+          </div>
+          <div>
+            <dt>Průměr</dt>
+            <dd id="avg">—</dd>
+          </div>
+          <div>
+            <dt>Odhad fps</dt>
+            <dd id="fps">—</dd>
+          </div>
+          <div>
+            <dt>Měřítko</dt>
+            <dd id="scale">—</dd>
+          </div>
+        </dl>
+
+        <p class="keys">
+          Šipky nebo WASD pohybují BLOBem, mezerník skáče (dočasný hop),
+          šipka dolů / S staví plošinku ($C79F). PageUp / PageDown mění
+          místnost. <code>#N</code> otevře místnost N.
+        </p>
+      </aside>
+    </div>
+
+    <script src="bundle.js"></script>
+  </body>
+</html>

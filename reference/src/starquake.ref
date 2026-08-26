@@ -1,0 +1,26 @@
+[Game]
+Game=Starquake
+Copyright=(c) 1985 Stephen Crow, 2023 Ritchie Swann (this disassembly)
+
+[PageHeaders]
+GameIndex=<> disassembly (work in progress)
+
+[OtherCode:Loading system]
+Source=starquake_loader.skool
+
+[Config]
+HtmlWriterClass=starquake.StarquakeHtmlWriter
+RefFiles=map.ref
+
+[Page:Rooms]
+SectionPrefix=Rooms
+
+[Page:Screens]
+SectionPrefix=Screens
+
+[Index:Graphics:Graphics]
+Screens
+Rooms
+
+[Screens:Loading screen]
+#HTML( #R$4000<br><img src="images/scr/loading.png"/>)

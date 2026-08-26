@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix game run build",
+    "test": "npm --prefix game run all",
+    "start": "npm --prefix game start"
+  }
+}

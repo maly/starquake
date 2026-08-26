@@ -3,11 +3,13 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  GAME_Y_ORIGIN,
+  KILL_AABB,
   TELEPORT_COUNT,
   TELEPORT_MSG_BAD,
   TELEPORT_TABLE,
 } from "./constants";
-import { evaluateTeleport, firstTeleport, teleportNameForRoom } from "./objects";
+import { evaluateTeleport, firstTeleport, hitKillTerrain, teleportNameForRoom } from "./objects";
 import { applyTeleport, attrAt, blocksBlob, createWorld, playYToGame, spawnBlob } from "./physics";
 import { prepare } from "./render";
 import { REPO_ROOT } from "./server";
@@ -136,5 +138,33 @@ describe("teleport dest hotspots $A4F6", () => {
       const list = prep.teleportsByRoom?.[dest] ?? [];
       assert.ok(list.length >= 1, `${name} room ${dest} missing $0D`);
     }
+  });
+});
+
+describe("kill terrain $06 AABB $CBBB", () => {
+  it("|d| < $0F: dx/dy 14 hits, 15 misses (room 49 $D0,$47)", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const hx = 0xd0;
+    const hy = 0x47;
+    const kills = prep.killsByRoom?.[49] ?? [];
+    assert.ok(
+      kills.some((s) => s.x === hx && s.y === hy),
+      `room 49 missing $06 at $${hx.toString(16)},$${hy.toString(16)}: ${JSON.stringify(kills)}`,
+    );
+    const world = createWorld(prep, 49);
+    const blob = spawnBlob(prep, 49, world);
+    blob.x = hx;
+    blob.y = GAME_Y_ORIGIN - hy;
+    assert.equal(hitKillTerrain(prep, blob), true, "exact hotspot");
+    blob.x = hx + (KILL_AABB - 1);
+    assert.equal(hitKillTerrain(prep, blob), true, "dx=14 inside");
+    blob.x = hx + KILL_AABB;
+    assert.equal(hitKillTerrain(prep, blob), false, "dx=15 outside");
+    blob.x = hx;
+    blob.y = GAME_Y_ORIGIN - (hy - (KILL_AABB - 1));
+    assert.equal(hitKillTerrain(prep, blob), true, "dy=14 inside");
+    blob.y = GAME_Y_ORIGIN - (hy - KILL_AABB);
+    assert.equal(hitKillTerrain(prep, blob), false, "dy=15 outside");
   });
 });

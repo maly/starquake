@@ -98,7 +98,7 @@ Statická stránka v `viewer/`. Čte JSON z `out/`, ne PNG. Vnitřní plátno je
 npm start
 ```
 
-Otevře http://127.0.0.1:8000/viewer/ (TypeScript server v `game/src/server.ts`, port `--port` nebo `PORT`). Šipky / WASD pohybují BLOBem, nahoru sebere předmět (a na stanici vznášedla nastoupí), dolů staví plošinku, P/X střílí (na padu `$CA15`). Left/Right na teleportu otevře zadání 5písmenného kódu. PageUp/PageDown mění místnost. `#168` otevře místnost 168. Panel ukáže `$DD22`, pad a jméno teleportu.
+Otevře http://127.0.0.1:8000/viewer/ (TypeScript server v `game/src/server.ts`, port `--port` nebo `PORT`). Šipky / WASD pohybují BLOBem, nahoru sebere předmět (a na stanici vznášedla nastoupí), dolů staví plošinku, mezerník střílí (na padu `$CA15`). Left/Right na teleportu otevře zadání 5písmenného kódu. PageUp/PageDown mění místnost. `#168` otevře místnost 168. Panel ukáže `$DD22`, pad a jméno teleportu.
 
 Porovnání rastru proti `out/rooms/room_<id>.png` a měření času je v `tests/test_viewer.py` (`node viewer/dump.js`). Na tomto stroji vyšel průměr **0,30 ms** na místnost (řádově 3000 snímků/s), což je pod 20 ms potřebnými pro 50 Hz.
 

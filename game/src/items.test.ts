@@ -132,6 +132,17 @@ describe("extra $A350 / $CC9A", () => {
     assert.equal(world.firepower, 0x20 + 0x3c);
   });
 
+  it("extra $17 adds a life only when lives are 0 ($CCCC)", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const lives = world.lives;
+    applyExtra(world, 0x17);
+    assert.equal(world.lives, lives);
+    world.lives = 0;
+    applyExtra(world, 0x17);
+    assert.equal(world.lives, 1);
+  });
+
   it("picks up an extra on overlap, applies the table, and clears the $A350 bit", () => {
     const prep = grid();
     const world = createWorld(prep, 1);

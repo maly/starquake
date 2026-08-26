@@ -164,7 +164,7 @@ def _emu_trace(machine: Z80Machine, frames: int) -> list[list[tuple[int, int, in
     return rows
 
 
-@pytest.mark.parametrize("room,frames", [(0, 28), (1, 40)])
+@pytest.mark.parametrize("room,frames", [(0, 28), (1, 40), (52, 65), (253, 24)])
 def test_nasty_positions_match_emulator_step_by_step(room: int, frames: int, tmp_path: Path) -> None:
     if not SNAPSHOT.is_file() or not DUMP.is_file() or not (OUT / "rooms.json").is_file():
         pytest.skip("snapshot, dump.js, or out/ missing")
@@ -196,4 +196,6 @@ def test_nasty_positions_match_emulator_step_by_step(room: int, frames: int, tmp
     assert len(engine) == frames
     for f in range(frames):
         got = [(e["x"], e["y"], e["state"]) for e in engine[f]["entities"]]
-        assert got == emu[f], f"room {room} frame {f}: engine {got} emu {emu[f]}"
+        assert got == emu[f], (
+            f"room {room} frame {f}: engine {got} emu {emu[f]}"
+        )

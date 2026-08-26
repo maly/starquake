@@ -38,6 +38,7 @@ python -m starquake_extract render --out out --all
 | vstup | význam |
 |---|---|
 | šipky / WASD | pohyb BLOBa; nahoru sběr / nástup na vznášedlo; Left/Right na teleportu kód |
+| mezerník | palba ($C85A / na padu $CA15); P/X pořád platí |
 | pole + Jít | identifikátor 0–511 |
 | `#N` v URL | totéž |
 | Pevné buňky | magenta překryv podle `rooms.json` → `solid` |

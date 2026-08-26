@@ -53,6 +53,26 @@ export interface Hotspot {
   y: number;
 }
 
+/** $9635 record from $9740 nibble $70: cell col/row (full-screen, PLAY_ORIGIN in row). */
+export interface PulseDef {
+  col: number;
+  row: number;
+}
+
+/** Live $9635 slot: period ($DAC0∧$0C)+8, flag starts 0, $A66C XORs flag. */
+export interface Pulse extends PulseDef {
+  period: number;
+  timer: number;
+  flag: number;
+}
+
+/** $D2DC / $D2C5 snapshot taken at the last room entry. Y is game-Y ($DD1E). */
+export interface RoomEntry {
+  x: number;
+  y: number;
+  dd22: number;
+}
+
 export interface Prepared {
   graphics: Graphic[];
   sprites: Graphic[];
@@ -65,6 +85,12 @@ export interface Prepared {
   stationsByRoom?: Hotspot[][];
   /** Object $0D teleports per room. */
   teleportsByRoom?: Hotspot[][];
+  /** Object $06 poison plants, pixel XY from nibble $60. */
+  killsByRoom?: Hotspot[][];
+  /** $9635 pulses from nibble $70 (cell col/row). */
+  pulsesByRoom?: PulseDef[][];
+  /** $9F05 fixed $B2C8 from nibble $80, pixel XY. */
+  fixedNastiesByRoom?: Hotspot[][];
 }
 
 export interface Buffers {
@@ -191,11 +217,28 @@ export interface World {
   teleportLatch: boolean;
   /** Viewer supplies a blocking 5-char prompt; dump/tests call applyTeleport. */
   readTeleportCode?: (ownName: string) => string | null;
+  /** $C461 / $6730 — further ticks return immediately. */
+  gameOver: boolean;
+  /** $D2C4. Set by $C35E when A ≥ $10; checkpoint restore on respawn. */
+  d2c4: number;
+  /** Last A passed to $C350, for --death-test. */
+  deathA: number;
+  /** $C35E flash / $BEC8 burst / HALT pause. Null when not dying. */
+  deathPhase: "flash" | "fly" | "pause" | null;
+  deathTicks: number;
+  /** $DD21 Blob ink; $C37E XOR $05 while flashing. */
+  blobInk: number;
+  /** Dummy $DF40 after flash — stars replace the sprite. */
+  blobHidden: boolean;
+  /** $D2DC / $D2C5: Blob XY (game-Y) and $DD22 at last room entry. */
+  entry: RoomEntry;
+  /** Live $9635 pulses for the current room. */
+  pulses: Pulse[];
 }
 
 export interface RenderOpts {
   items?: boolean;
   overlay?: boolean;
-  blob?: { x: number; y: number; set: string; frame: number } | null;
+  blob?: { x: number; y: number; set: string; frame: number; ink?: number } | null;
   enemies?: boolean;
 }

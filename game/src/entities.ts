@@ -1,10 +1,14 @@
 import {
+  AI5_CHASE_MAX,
+  AI_FORCED_KIND2,
   ANNOY_DRAIN_BUMP,
   APPEAR_FRAMES,
   APPEAR_GRAPHIC,
   BULLET_HIT,
   COLS,
   DEAD_GRAPHIC,
+  DEATH_A_LETHAL,
+  DEATH_A_LETHAL_C8,
   DIE_FRAMES,
   DIR_TABLE,
   ENTITY_DRAW_MIN,
@@ -13,14 +17,19 @@ import {
   ENEMY_SETS,
   ENERGY_DRAIN_STEP,
   ENERGY_DRAIN_WRAP,
+  FIXED_NASTY_AI,
+  FIXED_NASTY_DIR,
+  FIXED_NASTY_PTR,
   GAME_Y_ORIGIN,
   GRAFIX_BASE,
   GRAFIX_STRIDE,
+  GRAPHIC_LO_C8,
   HIT_DX,
   HIT_DY,
   HOVERPAD_INK,
   HOVERPAD_PTR,
   HOVERPAD_Y_BIAS,
+  KIND_BADALIEN2,
   KILL_GRAPHIC_HI,
   NASTY_COUNT_WITH_PAD,
   NASTY_EDGE_D,
@@ -96,6 +105,16 @@ function modBias(a: number, sub: number, add: number): number {
   return (v + add) & 0xff;
 }
 
+/**
+ * Z80 `SUB n / JR NC` loop then `ADD m`: last SUB underflows, so
+ * (a % n) − n + m. Period `$9E30` SUB $05 ADD $09 → 4…8; AI nibble ADD $05 → 0…4.
+ */
+function z80SubAdd(a: number, sub: number, add: number): number {
+  let v = a & 0xff;
+  while (v >= sub) v -= sub;
+  return (v + add - sub) & 0xff;
+}
+
 function emptyish(attr: number): boolean {
   return (attr & 0x60) === 0x40;
 }
@@ -149,20 +168,20 @@ function makeEntity(ptr: number): Entity {
   };
 }
 
-/** $9DC2 fill of one slot, using $DAC6. */
+/** $9DC2 fill of one slot, using $DAC6. Kind is $DAC1 SUB $0F ADD $11 → 2…16. */
 export function spawnOne(prep: Prepared, room: number, world: World, slot: number): Entity {
   dacStep(world.dac);
-  const kind = modBias(world.dac.dac0 & 0xff, 0x0f, 0x11) & 0x1f;
-  const ptr = GRAFIX_BASE + (kind % ENEMY_SETS.length) * GRAFIX_STRIDE;
+  const kind = z80SubAdd((world.dac.dac0 >> 8) & 0xff, 0x0f, 0x11);
+  const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
   const e = makeEntity(ptr);
   e.ink = (world.dac.dac0 >> 5) & 7;
-  e.period = modBias((world.dac.dac2 >> 4) & 0xff, 5, 9) || 4;
+  e.period = z80SubAdd((world.dac.dac2 >> 4) & 0xff, 5, 9) || 4;
   e.timer = world.dac.dac2 & 0xff;
   e.aiPeriod = modBias(world.dac.dac4 & 0x0f, 5, 5) || 8;
   if (e.aiPeriod === 0) e.aiPeriod = 0x64;
   e.aiCount = 8;
-  e.ai = modBias((world.dac.dac4 >> 8) & 0x0f, 5, 5);
-  if (kind === 2) e.ai = 5;
+  e.ai = z80SubAdd((world.dac.dac4 >> 8) & 0x0f, 5, 5);
+  if (kind === KIND_BADALIEN2) e.ai = AI_FORCED_KIND2;
   e.dir = 0x55;
   e.set = "corepieces1";
   let x = 16;
@@ -188,6 +207,27 @@ export function spawnOne(prep: Prepared, room: number, world: World, slot: numbe
   return e;
 }
 
+/** $9F05: nibble $80 list overwrites slots from count down. basePtr stays. */
+function applyFixedNasties(prep: Prepared, room: number, world: World): void {
+  const list = prep.fixedNastiesByRoom?.[room] ?? [];
+  for (let i = 0; i < list.length; i++) {
+    const slotNum = list.length - i;
+    const e = world.entities[slotNum - 1];
+    const spot = list[i];
+    if (!e || !spot) continue;
+    e.x = spot.x;
+    e.y = spot.y;
+    e.ptr = FIXED_NASTY_PTR;
+    e.set = setForPtr(FIXED_NASTY_PTR);
+    e.dir = FIXED_NASTY_DIR;
+    e.period = (e.period | 8) & 0xff;
+    e.timer = 1;
+    e.state = 1;
+    e.stateTimer = 0;
+    e.ai = FIXED_NASTY_AI;
+  }
+}
+
 export function spawnNasties(prep: Prepared, room: number, world: World): void {
   world.dac = seedDac(room);
   dacStep(world.dac);
@@ -195,6 +235,7 @@ export function spawnNasties(prep: Prepared, room: number, world: World): void {
   for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep, room, world, i + 1));
   world.nastyCount = NASTY_SLOTS;
   world.spawnGuard = SPAWN_GUARD;
+  applyFixedNasties(prep, room, world);
 }
 
 export function enterNasties(prep: Prepared, world: World, room: number): void {
@@ -221,13 +262,14 @@ function hitBlob(e: Entity, blob: BlobState): boolean {
   return dx < HIT_DX && dy < HIT_DY;
 }
 
-function applyContact(e: Entity, blob: BlobState, world: World): void {
-  if (!hitBlob(e, blob)) return;
+/** $A305: lethal → A=$01 / $11, does not touch $D2CD. Annoying → $DD30 += $0A. */
+function applyContact(e: Entity, blob: BlobState, world: World): number | null {
+  if (!hitBlob(e, blob)) return null;
   if (isLethal(e)) {
-    world.energy = 0;
-    return;
+    return (e.ptr & 0xff) === GRAPHIC_LO_C8 ? DEATH_A_LETHAL_C8 : DEATH_A_LETHAL;
   }
   world.energyDrain = (world.energyDrain + ANNOY_DRAIN_BUMP) & 0xff;
+  return null;
 }
 
 /** Slot 4 GRAFIX: ptr $AFC8, ink 7, Y = blob/station Y − 8 ($9F64 / $C94D). */
@@ -303,9 +345,10 @@ function bounceH(e: Entity, world: World): void {
   if ((e.x & 7) !== 0) return;
   const col = e.x >> 3;
   const top = playY >> 3;
+  const rows = ((e.y + 1) & 7) === 0 ? 2 : 3;
   let left = false;
   let right = false;
-  for (let r = 0; r < 2; r++) {
+  for (let r = 0; r < rows; r++) {
     if (cellSolid(world, col - 1, top + r)) left = true;
     if (cellSolid(world, col + 2, top + r)) right = true;
   }
@@ -355,9 +398,38 @@ function skip64(e: Entity, world: World): boolean {
   return false;
 }
 
-function think(e: Entity, blob: BlobState, world: World, slot: number): void {
+function chaseDir(e: Entity, blob: BlobState): number {
+  const bx = blob.x;
+  const by = GAME_Y_ORIGIN - blob.y;
+  return (e.x < bx ? 1 : 2) | (e.y < by ? 8 : 4);
+}
+
+/** $A236: $A2C1 writes an 8-way dir, then maybe 1/2 px speed. */
+function thinkAi3(e: Entity, world: World, slot: number): void {
+  e.speedX = NASTY_SPEED;
+  e.speedY = NASTY_SPEED;
+  e.dir = pickDir(world, slot, 7);
+  let n = 0;
+  let bits = e.dir;
+  for (let i = 0; i < 4; i++) {
+    if (bits & 1) n += 1;
+    bits >>= 1;
+  }
+  if (n === 1) return;
+  let a = rotateDac0(world, slot);
+  const carry = (a & 0x80) !== 0;
+  a = ((a << 1) | (a >> 7)) & 0xff;
+  if (carry) return;
+  a = ((a << 1) | (a >> 7)) & 0xff;
+  const s = (a & 1) + 1;
+  e.speedX = s;
+  e.speedY = (s ^ 3) & 3 || 1;
+}
+
+/** Returns true when AI 6 falls through $A2A5 RET — abort the rest of $A01B. */
+function think(e: Entity, blob: BlobState, world: World, slot: number): boolean {
   e.aiCount -= 1;
-  if (e.aiCount !== 0) return;
+  if (e.aiCount !== 0) return false;
   e.aiCount = e.aiPeriod === 0x64 ? e.aiPeriod : e.aiPeriod;
   if (e.aiPeriod === 0x64) {
     e.aiCount = ((world.dac.dac0 >> 8) & 3) + 1;
@@ -378,62 +450,43 @@ function think(e: Entity, blob: BlobState, world: World, slot: number): void {
       e.speedY = NASTY_SPEED;
       e.dir = pickDir(world, slot, 7);
       break;
-    case 3: {
-      e.speedX = NASTY_SPEED;
-      e.speedY = NASTY_SPEED;
-      const bits = rotateDac0(world, slot);
-      let n = 0;
-      let a = bits;
-      for (let i = 0; i < 4; i++) {
-        if (a & 1) n += 1;
-        a >>= 1;
-      }
-      if (n === 1) break;
-      const hi = (world.dac.dac0 >> 8) & 0xff;
-      if (hi & 0x80) break;
-      const s = (hi & 1) + 1;
-      e.speedX = s;
-      e.speedY = (s ^ 3) & 3 || 1;
+    case 3:
+      thinkAi3(e, world, slot);
       break;
-    }
-    case 4: {
-      const bx = blob.x;
-      const by = GAME_Y_ORIGIN - blob.y;
-      let dir = 0;
-      dir |= e.x < bx ? 1 : 2;
-      dir |= e.y < by ? 8 : 4;
-      e.dir = dir;
+    case 4:
+      e.dir = chaseDir(e, blob);
       break;
-    }
-    case 5:
+    case 5: {
       e.dir = 0;
-      if (rotateDac0(world, slot) & 1) break;
-      if ((world.dac.dac0 & 0xff) < 0x46) {
-        const bx = blob.x;
-        const by = GAME_Y_ORIGIN - blob.y;
-        e.dir = (e.x < bx ? 1 : 2) | (e.y < by ? 8 : 4);
-      } else {
-        e.ai = 3;
-      }
+      let a = rotateDac0(world, slot);
+      const carry = (a & 1) !== 0;
+      a = ((a >> 1) | (carry ? 0x80 : 0)) & 0xff;
+      if (carry) break;
+      if (a < AI5_CHASE_MAX) e.dir = chaseDir(e, blob);
+      else thinkAi3(e, world, slot);
       break;
+    }
     case 6:
-      if ((e.dir & 3) === 0) e.dir = (e.dir & 0xfc) | 1;
-      break;
+      e.dir &= 3;
+      if (e.dir === 0) e.dir = FIXED_NASTY_DIR;
+      return true;
     default:
       break;
   }
+  return false;
 }
 
 function appearOrDie(e: Entity): boolean {
   if (e.state === 2) {
     e.ptr = DEAD_GRAPHIC;
     e.set = "stars";
-    e.stateTimer += 1;
-    if (e.stateTimer >= DIE_FRAMES) {
+    e.stateTimer = (e.stateTimer + 1) & 0xff;
+    if (e.stateTimer === DIE_FRAMES) {
       e.y = 0;
       e.x = 0;
+      return true;
     }
-    return true;
+    return false;
   }
   if (e.state !== 0) return false;
   const was = e.stateTimer;
@@ -463,29 +516,38 @@ function stepMove(e: Entity, world: World): void {
   if (e.dir & 8) e.y = (e.y + e.speedY) & 0xff;
 }
 
-function stepOne(e: Entity, prep: Prepared, blob: BlobState, world: World, slot: number): void {
-  if (e.y === 0) return;
+type StepResult = { kind: "death"; a: number } | { kind: "abort" } | null;
+
+function stepOne(e: Entity, prep: Prepared, blob: BlobState, world: World, slot: number): StepResult {
+  if (e.y === 0) return null;
   hitByBullet(e, world);
-  applyContact(e, blob, world);
+  const death = applyContact(e, blob, world);
+  if (death !== null) return { kind: "death", a: death };
   e.timer = (e.timer - 1) & 0xff;
-  if (e.timer !== 0) return;
+  if (e.timer !== 0) return null;
   e.timer = e.period;
-  if (appearOrDie(e) && e.y === 0) return;
-  if (e.state === 2) return;
-  think(e, blob, world, slot);
+  if (appearOrDie(e) && e.y === 0) return null;
+  const abort = think(e, blob, world, slot);
   stepMove(e, world);
+  if (abort) return { kind: "abort" };
+  return null;
 }
 
-/** $A01B: one $DAC6, then slots $9C43..1, 4 inner steps each. */
-export function tickNasties(prep: Prepared, blob: BlobState, world: World): void {
+/** $A01B: one $DAC6, then slots $9C43..1, 4 inner steps each. AI 6 think RET aborts the rest. */
+export function tickNasties(prep: Prepared, blob: BlobState, world: World): number | null {
   if (world.spawnGuard) world.spawnGuard -= 1;
   dacStep(world.dac);
   const n = Math.min(world.nastyCount, world.entities.length);
   for (let slot = n; slot >= 1; slot--) {
     const e = world.entities[slot - 1];
     if (!e) continue;
-    for (let i = 0; i < NASTY_INNER_STEPS; i++) stepOne(e, prep, blob, world, slot);
+    for (let i = 0; i < NASTY_INNER_STEPS; i++) {
+      const r = stepOne(e, prep, blob, world, slot);
+      if (r?.kind === "death") return r.a;
+      if (r?.kind === "abort") return null;
+    }
   }
+  return null;
 }
 
 export function tickEnergyDrain(world: World): void {

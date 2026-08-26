@@ -33,6 +33,8 @@
   var START_ENERGY = 23;
   var START_PLATFORMS = 48;
   var START_FIREPOWER = 126;
+  var NEW_GAME_X = 136;
+  var NEW_GAME_Y = 63;
   var NASTY_SLOTS = 4;
   var NASTY_INNER_STEPS = 4;
   var ENTITY_PARK_Y = 15;
@@ -45,8 +47,40 @@
   var DEAD_GRAPHIC = 48840;
   var APPEAR_FRAMES = 16;
   var DIE_FRAMES = 8;
+  var KIND_BADALIEN2 = 2;
+  var AI_FORCED_KIND2 = 5;
+  var GRAPHIC_LO_C8 = 200;
   var HIT_DX = 14;
   var HIT_DY = 11;
+  var DEATH_A_TILE = 0;
+  var DEATH_A_LETHAL = 1;
+  var DEATH_A_ENERGY = 2;
+  var DEATH_A_OBJ06 = 16;
+  var DEATH_A_LETHAL_C8 = 17;
+  var DEATH_RESTORE_MIN_A = 16;
+  var DEATH_FLASH_FRAMES = 45;
+  var DEATH_FLY_FRAMES = 80;
+  var DEATH_PAUSE_FRAMES = 50;
+  var DEATH_INK_XOR = 5;
+  var DEATH_STAR_DIRS = [10, 4, 6, 12];
+  var DEATH_STAR_TIMERS = [9, 20, 5, 28];
+  var RESPAWN_ENERGY = 127;
+  var PLAT_OR_ON_DEATH = 8;
+  var GAME_OVER_MSG = "GAME OVER";
+  var KILL_ATTR_HI = 96;
+  var KILL_AABB = 15;
+  var PULSE_ATTR_HI = 112;
+  var PULSE_AABB_DX = 14;
+  var PULSE_AABB_DY = 22;
+  var PULSE_COMP_BASE = 26;
+  var PULSE_COMP_BIAS = 2;
+  var PULSE_PERIOD_MASK = 12;
+  var PULSE_PERIOD_BASE = 8;
+  var ATTR_NASTY_HI = 128;
+  var FIXED_NASTY_PTR = 45768;
+  var FIXED_NASTY_AI = 6;
+  var FIXED_NASTY_DIR = 1;
+  var AI5_CHASE_MAX = 70;
   var ENERGY_DRAIN_WRAP = 120;
   var ENERGY_DRAIN_STEP = 4;
   var START_ENERGY_DRAIN = 81;
@@ -78,7 +112,7 @@
     "aliend",
     "aliene"
   ];
-  var DIR_TABLE = [8, 9, 1, 4, 5, 6, 2, 10];
+  var DIR_TABLE = [8, 9, 1, 5, 4, 6, 2, 10];
   var PLATFORM_COST = 2;
   var PLATFORM_SLOTS = 12;
   var PLATFORM_INPUT = 4;
@@ -130,6 +164,8 @@
     [3, 60],
     [0, 0]
   ];
+  var EXTRA_LIVES_SPRITE = 23;
+  var BLOB_INK = 7;
   var DD22_WALK = 0;
   var DD22_LIFT = 1;
   var DD22_PAD = 2;
@@ -359,12 +395,29 @@
   function emptyHotspots() {
     return Array.from({ length: ROOM_COUNT }, () => []);
   }
+  function emptyPulses() {
+    return Array.from({ length: ROOM_COUNT }, () => []);
+  }
+  function cellHotspot(col, row) {
+    return {
+      x: col << 3 & 255,
+      y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255
+    };
+  }
   function scanHotspots(rooms, blocks, rawBySub) {
     const stationsByRoom = emptyHotspots();
     const teleportsByRoom = emptyHotspots();
-    if (!rooms.length || !blocks.length || !rawBySub.length) {
-      return { stationsByRoom, teleportsByRoom };
-    }
+    const killsByRoom = emptyHotspots();
+    const pulsesByRoom = emptyPulses();
+    const fixedNastiesByRoom = emptyHotspots();
+    const empty = {
+      stationsByRoom,
+      teleportsByRoom,
+      killsByRoom,
+      pulsesByRoom,
+      fixedNastiesByRoom
+    };
+    if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
     for (const room of rooms) {
       const id = room.id;
       if (id < 0 || id >= ROOM_COUNT) continue;
@@ -387,15 +440,13 @@
             for (const [col0, row0, sid] of origins) {
               const raw = rawBySub[sid] ?? 0;
               const hi = raw & 240;
-              if (hi !== HOVERPAD_ATTR_HI && hi !== TELEPORT_ATTR_HI) continue;
               const col = col0 + (raw & 3);
               const row = row0 + ((raw & 12) >> 2);
-              const spot = {
-                x: col << 3 & 255,
-                y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255
-              };
-              if (hi === HOVERPAD_ATTR_HI) stationsByRoom[id].push(spot);
-              else teleportsByRoom[id].push(spot);
+              if (hi === HOVERPAD_ATTR_HI) stationsByRoom[id].push(cellHotspot(col, row));
+              else if (hi === TELEPORT_ATTR_HI) teleportsByRoom[id].push(cellHotspot(col, row));
+              else if (hi === KILL_ATTR_HI) killsByRoom[id].push(cellHotspot(col, row));
+              else if (hi === PULSE_ATTR_HI) pulsesByRoom[id].push({ col, row });
+              else if (hi === ATTR_NASTY_HI) fixedNastiesByRoom[id].push(cellHotspot(col, row));
             }
           }
           c += 8;
@@ -403,7 +454,7 @@
         b += 6;
       }
     }
-    return { stationsByRoom, teleportsByRoom };
+    return empty;
   }
   function hotspotsFromData(data, rooms, blocks) {
     const rawBySub = [];
@@ -437,6 +488,42 @@
   function exactAt(blob, x, y) {
     return blob.x === x && GAME_Y_ORIGIN - blob.y === y;
   }
+  function blobGame(blob) {
+    return { x: blob.x, y: GAME_Y_ORIGIN - blob.y };
+  }
+  function hitKillTerrain(prep, blob) {
+    const { x, y } = blobGame(blob);
+    for (const s of prep.killsByRoom?.[blob.room] ?? []) {
+      if (Math.abs(x - s.x) < KILL_AABB && Math.abs(y - s.y) < KILL_AABB) return true;
+    }
+    return false;
+  }
+  function tickPulses(blob, world) {
+    const { x, y } = blobGame(blob);
+    let hit = false;
+    for (const p of world.pulses) {
+      p.timer = p.timer - 1 & 255;
+      if (p.timer === 0) {
+        p.timer = p.period;
+        p.flag ^= 1;
+      }
+      if (p.flag === 0) continue;
+      const px = p.col << 3 & 255;
+      const comp = (PULSE_COMP_BASE - p.row << 3) - PULSE_COMP_BIAS;
+      if (Math.abs(x - px) < PULSE_AABB_DX && y >= comp - PULSE_AABB_DY && y <= comp) hit = true;
+    }
+    return hit;
+  }
+  function makePulses(defs, dac0) {
+    const period = (dac0 & PULSE_PERIOD_MASK) + PULSE_PERIOD_BASE & 255;
+    return (defs ?? []).map((p) => ({
+      col: p.col,
+      row: p.row,
+      period,
+      timer: period,
+      flag: 0
+    }));
+  }
   function onStationPixel(blob, world) {
     if (world.station.x === 0 && world.station.y === 0) return false;
     return exactAt(blob, world.station.x, world.station.y);
@@ -446,6 +533,7 @@
     world.dd22 = world.lastDir & 8 ? DD22_PAD : 0;
   }
   function walkSpecialObjects(prep, blob, input2, world) {
+    if (hitKillTerrain(prep, blob)) return "$06";
     const stations = prep.stationsByRoom?.[blob.room] ?? [];
     for (const s of stations) {
       if (exactAt(blob, s.x, s.y)) {
@@ -518,6 +606,11 @@
     while (v >= sub) v -= sub;
     return v + add & 255;
   }
+  function z80SubAdd(a, sub, add) {
+    let v = a & 255;
+    while (v >= sub) v -= sub;
+    return v + add - sub & 255;
+  }
   function emptyish(attr) {
     return (attr & 96) === 64;
   }
@@ -568,17 +661,17 @@
   }
   function spawnOne(prep, room, world, slot) {
     dacStep(world.dac);
-    const kind = modBias(world.dac.dac0 & 255, 15, 17) & 31;
-    const ptr = GRAFIX_BASE + kind % ENEMY_SETS.length * GRAFIX_STRIDE;
+    const kind = z80SubAdd(world.dac.dac0 >> 8 & 255, 15, 17);
+    const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
     const e = makeEntity(ptr);
     e.ink = world.dac.dac0 >> 5 & 7;
-    e.period = modBias(world.dac.dac2 >> 4 & 255, 5, 9) || 4;
+    e.period = z80SubAdd(world.dac.dac2 >> 4 & 255, 5, 9) || 4;
     e.timer = world.dac.dac2 & 255;
     e.aiPeriod = modBias(world.dac.dac4 & 15, 5, 5) || 8;
     if (e.aiPeriod === 0) e.aiPeriod = 100;
     e.aiCount = 8;
-    e.ai = modBias(world.dac.dac4 >> 8 & 15, 5, 5);
-    if (kind === 2) e.ai = 5;
+    e.ai = z80SubAdd(world.dac.dac4 >> 8 & 15, 5, 5);
+    if (kind === KIND_BADALIEN2) e.ai = AI_FORCED_KIND2;
     e.dir = 85;
     e.set = "corepieces1";
     let x = 16;
@@ -603,6 +696,25 @@
     e.homeY = 0;
     return e;
   }
+  function applyFixedNasties(prep, room, world) {
+    const list = prep.fixedNastiesByRoom?.[room] ?? [];
+    for (let i = 0; i < list.length; i++) {
+      const slotNum = list.length - i;
+      const e = world.entities[slotNum - 1];
+      const spot = list[i];
+      if (!e || !spot) continue;
+      e.x = spot.x;
+      e.y = spot.y;
+      e.ptr = FIXED_NASTY_PTR;
+      e.set = setForPtr(FIXED_NASTY_PTR);
+      e.dir = FIXED_NASTY_DIR;
+      e.period = (e.period | 8) & 255;
+      e.timer = 1;
+      e.state = 1;
+      e.stateTimer = 0;
+      e.ai = FIXED_NASTY_AI;
+    }
+  }
   function spawnNasties(prep, room, world) {
     world.dac = seedDac(room);
     dacStep(world.dac);
@@ -610,6 +722,7 @@
     for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep, room, world, i + 1));
     world.nastyCount = NASTY_SLOTS;
     world.spawnGuard = SPAWN_GUARD;
+    applyFixedNasties(prep, room, world);
   }
   function enterNasties(prep, world, room) {
     const outgoing = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
@@ -633,12 +746,12 @@
     return dx < HIT_DX && dy < HIT_DY;
   }
   function applyContact(e, blob, world) {
-    if (!hitBlob(e, blob)) return;
+    if (!hitBlob(e, blob)) return null;
     if (isLethal(e)) {
-      world.energy = 0;
-      return;
+      return (e.ptr & 255) === GRAPHIC_LO_C8 ? DEATH_A_LETHAL_C8 : DEATH_A_LETHAL;
     }
     world.energyDrain = world.energyDrain + ANNOY_DRAIN_BUMP & 255;
+    return null;
   }
   function makePad(x, blobGameY) {
     const py = blobGameY - HOVERPAD_Y_BIAS & 255;
@@ -705,9 +818,10 @@
     if ((e.x & 7) !== 0) return;
     const col = e.x >> 3;
     const top = playY >> 3;
+    const rows = (e.y + 1 & 7) === 0 ? 2 : 3;
     let left = false;
     let right = false;
-    for (let r = 0; r < 2; r++) {
+    for (let r = 0; r < rows; r++) {
       if (cellSolid2(world, col - 1, top + r)) left = true;
       if (cellSolid2(world, col + 2, top + r)) right = true;
     }
@@ -754,9 +868,34 @@
     }
     return false;
   }
+  function chaseDir(e, blob) {
+    const bx = blob.x;
+    const by = GAME_Y_ORIGIN - blob.y;
+    return (e.x < bx ? 1 : 2) | (e.y < by ? 8 : 4);
+  }
+  function thinkAi3(e, world, slot) {
+    e.speedX = NASTY_SPEED;
+    e.speedY = NASTY_SPEED;
+    e.dir = pickDir(world, slot, 7);
+    let n = 0;
+    let bits = e.dir;
+    for (let i = 0; i < 4; i++) {
+      if (bits & 1) n += 1;
+      bits >>= 1;
+    }
+    if (n === 1) return;
+    let a = rotateDac0(world, slot);
+    const carry = (a & 128) !== 0;
+    a = (a << 1 | a >> 7) & 255;
+    if (carry) return;
+    a = (a << 1 | a >> 7) & 255;
+    const s = (a & 1) + 1;
+    e.speedX = s;
+    e.speedY = (s ^ 3) & 3 || 1;
+  }
   function think(e, blob, world, slot) {
     e.aiCount -= 1;
-    if (e.aiCount !== 0) return;
+    if (e.aiCount !== 0) return false;
     e.aiCount = e.aiPeriod === 100 ? e.aiPeriod : e.aiPeriod;
     if (e.aiPeriod === 100) {
       e.aiCount = (world.dac.dac0 >> 8 & 3) + 1;
@@ -777,61 +916,42 @@
         e.speedY = NASTY_SPEED;
         e.dir = pickDir(world, slot, 7);
         break;
-      case 3: {
-        e.speedX = NASTY_SPEED;
-        e.speedY = NASTY_SPEED;
-        const bits = rotateDac0(world, slot);
-        let n = 0;
-        let a = bits;
-        for (let i = 0; i < 4; i++) {
-          if (a & 1) n += 1;
-          a >>= 1;
-        }
-        if (n === 1) break;
-        const hi = world.dac.dac0 >> 8 & 255;
-        if (hi & 128) break;
-        const s = (hi & 1) + 1;
-        e.speedX = s;
-        e.speedY = (s ^ 3) & 3 || 1;
+      case 3:
+        thinkAi3(e, world, slot);
         break;
-      }
-      case 4: {
-        const bx = blob.x;
-        const by = GAME_Y_ORIGIN - blob.y;
-        let dir = 0;
-        dir |= e.x < bx ? 1 : 2;
-        dir |= e.y < by ? 8 : 4;
-        e.dir = dir;
+      case 4:
+        e.dir = chaseDir(e, blob);
         break;
-      }
-      case 5:
+      case 5: {
         e.dir = 0;
-        if (rotateDac0(world, slot) & 1) break;
-        if ((world.dac.dac0 & 255) < 70) {
-          const bx = blob.x;
-          const by = GAME_Y_ORIGIN - blob.y;
-          e.dir = (e.x < bx ? 1 : 2) | (e.y < by ? 8 : 4);
-        } else {
-          e.ai = 3;
-        }
+        let a = rotateDac0(world, slot);
+        const carry = (a & 1) !== 0;
+        a = (a >> 1 | (carry ? 128 : 0)) & 255;
+        if (carry) break;
+        if (a < AI5_CHASE_MAX) e.dir = chaseDir(e, blob);
+        else thinkAi3(e, world, slot);
         break;
+      }
       case 6:
-        if ((e.dir & 3) === 0) e.dir = e.dir & 252 | 1;
-        break;
+        e.dir &= 3;
+        if (e.dir === 0) e.dir = FIXED_NASTY_DIR;
+        return true;
       default:
         break;
     }
+    return false;
   }
   function appearOrDie(e) {
     if (e.state === 2) {
       e.ptr = DEAD_GRAPHIC;
       e.set = "stars";
-      e.stateTimer += 1;
-      if (e.stateTimer >= DIE_FRAMES) {
+      e.stateTimer = e.stateTimer + 1 & 255;
+      if (e.stateTimer === DIE_FRAMES) {
         e.y = 0;
         e.x = 0;
+        return true;
       }
-      return true;
+      return false;
     }
     if (e.state !== 0) return false;
     const was = e.stateTimer;
@@ -860,16 +980,18 @@
     if (e.dir & 8) e.y = e.y + e.speedY & 255;
   }
   function stepOne(e, prep, blob, world, slot) {
-    if (e.y === 0) return;
+    if (e.y === 0) return null;
     hitByBullet(e, world);
-    applyContact(e, blob, world);
+    const death = applyContact(e, blob, world);
+    if (death !== null) return { kind: "death", a: death };
     e.timer = e.timer - 1 & 255;
-    if (e.timer !== 0) return;
+    if (e.timer !== 0) return null;
     e.timer = e.period;
-    if (appearOrDie(e) && e.y === 0) return;
-    if (e.state === 2) return;
-    think(e, blob, world, slot);
+    if (appearOrDie(e) && e.y === 0) return null;
+    const abort = think(e, blob, world, slot);
     stepMove(e, world);
+    if (abort) return { kind: "abort" };
+    return null;
   }
   function tickNasties(prep, blob, world) {
     if (world.spawnGuard) world.spawnGuard -= 1;
@@ -878,8 +1000,13 @@
     for (let slot = n; slot >= 1; slot--) {
       const e = world.entities[slot - 1];
       if (!e) continue;
-      for (let i = 0; i < NASTY_INNER_STEPS; i++) stepOne(e, prep, blob, world, slot);
+      for (let i = 0; i < NASTY_INNER_STEPS; i++) {
+        const r = stepOne(e, prep, blob, world, slot);
+        if (r?.kind === "death") return r.a;
+        if (r?.kind === "abort") return null;
+      }
     }
+    return null;
   }
   function tickEnergyDrain(world) {
     world.energyDrain = world.energyDrain + 1 & 255;
@@ -926,11 +1053,14 @@
       world.cheops = true;
       return;
     }
+    if (sprite === EXTRA_LIVES_SPRITE) {
+      if (world.lives === 0) world.lives = 1;
+      return;
+    }
     const row = EXTRA_EFFECTS[sprite - EXTRA_SPRITE_BASE];
     if (!row) return;
     const [off, add] = row;
-    if (off === 0) world.lives = clampStat(world.lives + add);
-    else if (off === 1) world.energy = clampStat(world.energy + add);
+    if (off === 1) world.energy = clampStat(world.energy + add);
     else if (off === 2) world.platforms = clampStat(world.platforms + add);
     else if (off === 3) world.firepower = clampStat(world.firepower + add);
   }
@@ -1071,8 +1201,21 @@
       if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
     }
     const rooms = data.rooms.rooms;
-    const { stationsByRoom, teleportsByRoom } = hotspotsFromData(data, rooms, blocks);
-    return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms, itemsByRoom, stationsByRoom, teleportsByRoom };
+    const { stationsByRoom, teleportsByRoom, killsByRoom, pulsesByRoom, fixedNastiesByRoom } = hotspotsFromData(data, rooms, blocks);
+    return {
+      graphics,
+      sprites,
+      actorsBySet,
+      actorsByPtr,
+      blocks,
+      rooms,
+      itemsByRoom,
+      stationsByRoom,
+      teleportsByRoom,
+      killsByRoom,
+      pulsesByRoom,
+      fixedNastiesByRoom
+    };
   }
   function newBuffers() {
     return {
@@ -1304,7 +1447,7 @@
     if (opts.blob) {
       const frames = prep.actorsBySet.get(opts.blob.set);
       const frame = frames?.[opts.blob.frame];
-      if (frame) stampGrafix(rgba, frame, opts.blob.x, opts.blob.y, 7);
+      if (frame) stampGrafix(rgba, frame, opts.blob.x, opts.blob.y, opts.blob.ink ?? 7);
     }
     return rgba;
   }
@@ -1432,8 +1575,8 @@
   function spawnBlob(prep, room, world) {
     const blob = {
       room,
-      x: 136,
-      y: gameYToPlay(63),
+      x: NEW_GAME_X,
+      y: gameYToPlay(NEW_GAME_Y),
       fallIndex: 0,
       jumpTicks: 0,
       facing: 1,
@@ -1443,7 +1586,117 @@
     };
     nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob)), world);
     blob.onGround = onFloor(prep, blob.room, blob.x, blob.y, world);
+    if (world) saveEntry(world, blob);
     return blob;
+  }
+  function saveEntry(world, blob) {
+    world.entry = { x: blob.x, y: playYToGame(blob.y), dd22: world.dd22 };
+  }
+  function alignDeathXY(blob) {
+    blob.x &= 248;
+    const gy = playYToGame(blob.y);
+    blob.y = gameYToPlay((gy + 1 & 248) - 1);
+  }
+  function parkDeathSlots(world) {
+    for (const e of world.entities) {
+      e.x = 0;
+      e.y = 0;
+      e.ptr = ENTITY_DUMMY_PTR;
+    }
+    world.nastyCount = 0;
+  }
+  function spawnDeathStars(blob, world) {
+    const x = blob.x & 254;
+    const y = (playYToGame(blob.y) | 1) & 255;
+    return DEATH_STAR_DIRS.map((dir, i) => ({
+      x,
+      y,
+      ink: 7,
+      set: "stars",
+      frame: 0,
+      ptr: DEAD_GRAPHIC,
+      basePtr: DEAD_GRAPHIC,
+      dir,
+      speedX: 2,
+      speedY: 2,
+      period: 4,
+      timer: DEATH_STAR_TIMERS[i],
+      state: 2,
+      stateTimer: 20,
+      ai: 0,
+      aiPeriod: 8,
+      aiCount: 8,
+      homeX: x,
+      homeY: y
+    }));
+  }
+  function finishDeath(prep, blob, world) {
+    world.deathPhase = null;
+    world.deathTicks = 0;
+    world.blobHidden = false;
+    world.blobInk = BLOB_INK;
+    if (world.lives === 0) {
+      world.gameOver = true;
+      world.message = GAME_OVER_MSG;
+      return;
+    }
+    world.lives -= 1;
+    world.energy = RESPAWN_ENERGY;
+    world.platforms |= PLAT_OR_ON_DEATH;
+    blob.facing = 1;
+    blob.walkFrame = 0;
+    blob.walkTick = 0;
+    blob.jumpTicks = 0;
+    blob.fallIndex = 0;
+    if (world.d2c4 === 0) alignDeathXY(blob);
+    else {
+      blob.x = world.entry.x;
+      blob.y = gameYToPlay(world.entry.y);
+      world.dd22 = world.entry.dd22;
+    }
+    enterRoom(prep, world, blob.room);
+    syncHoverpad(prep, world, blob.room, blob);
+    blob.onGround = onFloor(prep, blob.room, blob.x, blob.y, world);
+  }
+  function tickDeath(prep, blob, world) {
+    if (world.deathPhase === "flash") {
+      world.blobInk ^= DEATH_INK_XOR;
+      if (world.dd22 === DD22_PAD && world.pad) world.pad.ink ^= DEATH_INK_XOR;
+      world.deathTicks += 1;
+      if (world.deathTicks >= DEATH_FLASH_FRAMES) {
+        world.blobInk = BLOB_INK;
+        world.blobHidden = true;
+        world.pad = null;
+        world.entities = spawnDeathStars(blob, world);
+        world.nastyCount = 4;
+        world.deathPhase = "fly";
+        world.deathTicks = 0;
+      }
+      return;
+    }
+    if (world.deathPhase === "fly") {
+      tickNasties(prep, blob, world);
+      world.deathTicks += 1;
+      if (world.deathTicks >= DEATH_FLY_FRAMES) {
+        parkDeathSlots(world);
+        world.deathPhase = "pause";
+        world.deathTicks = 0;
+      }
+      return;
+    }
+    world.deathTicks += 1;
+    if (world.deathTicks >= DEATH_PAUSE_FRAMES) finishDeath(prep, blob, world);
+  }
+  function applyDeath(prep, blob, world, a) {
+    if (world.deathPhase) return;
+    world.deathA = a & 255;
+    world.d2c4 = (a & 255) >= DEATH_RESTORE_MIN_A ? 1 : 0;
+    world.deathPhase = "flash";
+    world.deathTicks = 0;
+    world.blobHidden = false;
+    world.blobInk = BLOB_INK;
+    parkBullet(world);
+    parkDeathSlots(world);
   }
   function applyRoomExit(prep, blob, movingRight, movingLeft, world) {
     const boarded = world?.dd22 === DD22_PAD;
@@ -1480,6 +1733,7 @@
     blob.y = gameYToPlay((gy + 1 & 248) - 1);
     if (world) {
       enterRoom(prep, world, blob.room);
+      saveEntry(world, blob);
       syncHoverpad(prep, world, blob.room, blob);
     }
     nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob, world)), world);
@@ -1597,16 +1851,22 @@
     }
   }
   function tick(prep, blob, input2, world) {
+    if (world?.gameOver) return;
+    if (world?.deathPhase) {
+      tickDeath(prep, blob, world);
+      return;
+    }
     const pixels = blobInkPixels(poseGraphic(prep, blob, world));
     if (world) {
       const dirs = dirBits(input2);
       if (dirs) world.lastDir = dirs;
     }
-    if (world?.dd22 === DD22_PAD) tickPadFlight(prep, blob, input2, world);
+    const steer = world?.teleportLatch ? { ...input2, left: false, right: false } : input2;
+    if (world?.dd22 === DD22_PAD) tickPadFlight(prep, blob, steer, world);
     else if (world?.dd22 === DD22_LIFT) tickLift(prep, blob, world);
-    else applyWalk(prep, blob, input2, pixels, world);
+    else applyWalk(prep, blob, steer, pixels, world);
     if (!world) {
-      applyRoomExit(prep, blob, input2.right && !input2.left, input2.left && !input2.right, world);
+      applyRoomExit(prep, blob, steer.right && !steer.left, steer.left && !steer.right, world);
       if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
       return;
     }
@@ -1616,19 +1876,35 @@
     tickBridges(world);
     if (world.dd22 === DD22_PAD) tickPadFire(prep, blob, !!input2.fire, world);
     else tickFire(prep, blob, !!input2.fire, world);
-    tickNasties(prep, blob, world);
     tickEnergyDrain(world);
     const pickupInput = stationed ? { ...input2, up: false } : input2;
     tickPickup(prep, blob, pickupInput, world);
     const boardedBefore = world.dd22 === DD22_PAD;
     const code = walkSpecialObjects(prep, blob, input2, world);
     if (world.dd22 === DD22_PAD && !boardedBefore) copyPadFromBlob(world, blob);
+    if (code === "$06") {
+      applyDeath(prep, blob, world, DEATH_A_OBJ06);
+      return;
+    }
     if (code !== null) {
       applyTeleport(prep, blob, world, code);
       if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
       return;
     }
-    applyRoomExit(prep, blob, input2.right && !input2.left, input2.left && !input2.right, world);
+    if (world.energy === 0) {
+      applyDeath(prep, blob, world, DEATH_A_ENERGY);
+      return;
+    }
+    if (tickPulses(blob, world)) {
+      applyDeath(prep, blob, world, DEATH_A_TILE);
+      return;
+    }
+    const nastyDeath = tickNasties(prep, blob, world);
+    if (nastyDeath !== null) {
+      applyDeath(prep, blob, world, nastyDeath);
+      return;
+    }
+    applyRoomExit(prep, blob, steer.right && !steer.left, steer.left && !steer.right, world);
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
   }
   function createWorld(prep, room) {
@@ -1668,7 +1944,16 @@
       seatPose: 2,
       seatTick: 0,
       message: "",
-      teleportLatch: false
+      teleportLatch: false,
+      gameOver: false,
+      d2c4: 0,
+      deathA: 0,
+      deathPhase: null,
+      deathTicks: 0,
+      blobInk: 7,
+      blobHidden: false,
+      entry: { x: NEW_GAME_X, y: NEW_GAME_Y, dd22: DD22_WALK },
+      pulses: []
     };
     enterRoom(prep, world, room);
     return world;
@@ -1682,6 +1967,7 @@
     parkBullet(world);
     spawnExtra(prep, world, room);
     if (opts?.nasties !== false) enterNasties(prep, world, room);
+    world.pulses = makePulses(prep.pulsesByRoom?.[room], world.dac.dac0);
     syncHoverpad(prep, world, room);
   }
   function applyTeleport(prep, blob, world, code) {
@@ -1698,6 +1984,7 @@
         blob.onGround = true;
       }
       syncHoverpad(prep, world, blob.room, blob);
+      saveEntry(world, blob);
       world.message = TELEPORT_MSG_OK;
       return { ...ev, message: world.message, reason: TELEPORT_REASON };
     }
@@ -1705,6 +1992,7 @@
     blob.y = gameYToPlay((playYToGame(blob.y) + 1 & 248) - 1);
     enterRoom(prep, world, blob.room, { nasties: false });
     syncHoverpad(prep, world, blob.room, blob);
+    saveEntry(world, blob);
     world.message = TELEPORT_MSG_BAD;
     return { ...ev, dest: blob.room, message: world.message, reason: TELEPORT_INVALID_REASON };
   }
@@ -1872,9 +2160,17 @@
     });
     const start = parseHash() ?? 0;
     const world = createWorld(prep, start);
-    world.readTeleportCode = (ownName) => window.prompt(`YOU HAVE ENTERED TELEPORT
+    world.readTeleportCode = (ownName) => {
+      const typed = window.prompt(
+        `YOU HAVE ENTERED TELEPORT
 CODE : ${ownName}
-ENTER TELEPORTAL DESTINATION CODE`, "");
+ENTER TELEPORTAL DESTINATION CODE`,
+        ""
+      );
+      keys.left = false;
+      keys.right = false;
+      return typed;
+    };
     let blob = spawnBlob(prep, start, world);
     let overlay = false;
     let lastMs = 0;
@@ -1922,7 +2218,7 @@ ENTER TELEPORTAL DESTINATION CODE`, "");
       renderWorld(prep, world, buf, imageData.data, blob.room, {
         items: true,
         overlay,
-        blob: { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame }
+        blob: world.blobHidden ? null : { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame, ink: world.blobInk }
       });
       ctx.putImageData(imageData, 0, 0);
       const dt = performance.now() - t0;
@@ -1950,6 +2246,7 @@ ENTER TELEPORTAL DESTINATION CODE`, "");
         keys.up = true;
         ev.preventDefault();
       } else if (ev.key === " ") {
+        keys.fire = true;
         ev.preventDefault();
       } else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") {
         keys.down = true;
@@ -1968,7 +2265,7 @@ ENTER TELEPORTAL DESTINATION CODE`, "");
       else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") keys.right = false;
       else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") keys.up = false;
       else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") keys.down = false;
-      else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
+      else if (ev.key === " " || ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
     });
     $("go").addEventListener("click", () => goRoom(parseInt(gotoEl.value, 10) || 0));
     gotoEl.addEventListener("keydown", (ev) => {
@@ -1982,7 +2279,7 @@ ENTER TELEPORTAL DESTINATION CODE`, "");
       const id = parseHash();
       if (id !== null && id !== blob.room) goRoom(id);
     });
-    $("status").textContent = "50 Hz \xB7 \u0161ipky / WASD pohyb \xB7 nahoru sebrat / nastoupit \xB7 dol\u016F plo\u0161inka \xB7 P/X palba \xB7 Left/Right na teleportu k\xF3d";
+    $("status").textContent = "50 Hz \xB7 \u0161ipky / WASD pohyb \xB7 nahoru sebrat / nastoupit \xB7 dol\u016F plo\u0161inka \xB7 mezern\xEDk palba \xB7 Left/Right na teleportu k\xF3d";
     fitScale();
     function frame(now) {
       acc += now - last;

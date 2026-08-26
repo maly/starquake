@@ -28,7 +28,9 @@ Souřadnice v paměti: `$DD1D` = X (pixely zleva), `$DD1E` = Y **odspodu obrazov
 | start X, Y | `$88`, `$3F` | `$6468 LD HL,$3F88` |
 | kreslení | XOR 3 bajty/scanline, inkoust `AND $F8 / OR ink` pokud není bit 5 | `$DF70`, `$D8B1` |
 | pevnost (export / overlay) | bit 6 a ne `$64` | `$D280`, `$C7DF` |
-| start energie / plošinky / palba | `$17`, `$30`, `$7E` | `$D2CD`, `$D2CE`, `$D2CF` |
+| start energie / plošinky / palba (snapshot) | `$17`, `$30`, `$7E` | `g$D2CD` — engine `START_*`, ne nová hra |
+| nová hra energie / plošinky / palba | `$7F`, `$32`, `$7F` | `$6343` + `$D425`; engine nepoužívá |
+| životy | 4 | `$6343` offset `$0E` → `$D2CC` |
 | stavba plošinky | Down samotné (`$DD23 == $04`) | `$C79F CP $04` |
 | zámek opakování | `$DD2C` = 1 do uvolnění Down | `$C7B9` / `$C856` |
 | cena | 2 z `$D2CE` | `$C848 A=1, C=2` → `$D41F` / `$D4E9` |
@@ -220,7 +222,7 @@ Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA=
 | `$14` | 2 | `$32` | plošinky `$D2CE` |
 | `$15` | 3 | `$20` | palba `$D2CF` |
 | `$16` | 3 | `$3C` | palba |
-| `$17` | 0 | `$00` | životy `$D2CC` (`$CCCC` zvláštní; nedořešeno) |
+| `$17` | — | `$CCCC` | lives==0 → +1 (`A=$18`); lives≠0 no-op |
 | `$18` | — | — | mimo tabulku / 0 |
 | `$19` | — | — | Cheops (`$CCF1`); stav `cheops`, bez výměny |
 
@@ -235,22 +237,24 @@ Hodnoty se po `$D425` oříznou na `$7F`.
 | `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář |
 | `$FF` | prázdný záznam | ignorovat |
 
-Typy objektů **mimo** `$94E8`: `$0C` vznášedlo a `$0D` teleport výše. Není: `$06` smrt, `$0B` dlaždice `$B0`, `$0E` stroj na plošinky, `$0F` vodorovný přechod, jádro `$C7`.
+Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport výše a rostlina `$06` (AABB `$CBBB`, `$CE77` A=`$10`). Není: `$0B` dlaždice `$B0`, `$0E` stroj na plošinky, `$0F` vodorovný přechod, jádro `$C7`.
 
 ## Pořadí ticku (engine)
 
-ROM `$C5BD`: chůze/zdviž/pad → palba → východ `$C8F4` → `$CB8A` objekty. Engine:
+ROM `$A523`: `$C5BD` (chůze/zdviž/pad → palba → východ `$C8F4` nebo `$CB58` drain + `$CB8A`) → `$A530` nula → `$9635` → `$A01B`. Engine:
 
 1. chůze **nebo** zdviž **nebo** pad
-2. plošinky `$C79F` jen při chůzi mimo stanici `$D2CA`
+2. plošinky `$C79F` jen při chůzi mimo stanici `$D2CA` + `tickBridges`
 3. palba Blob `$C85A` / pad `$CA15`
-4. vetřelci `$A01B`
-5. úbytek energie `$CB58`
-6. sběr extra / `$94E8`
-7. objekty `$0C` / `$0D`
-8. východ z místnosti (park střely v `enterRoom`)
+4. úbytek energie `$CB58`
+5. sběr extra / `$94E8`
+6. objekty `$0C` / `$0D` **a** `$06` (teleport dál skip zbytku)
+7. `energy==0` → `applyDeath(A=2)`; smrt / game over končí tick
+8. puls `$70` + AABB
+9. vetřelci `$A01B` (kontakt může `applyDeath`)
+10. východ z místnosti (park střely v `enterRoom`)
 
-Platný teleport v kroku 7 hned volá `$A426` a zbytek ticku se přeskočí.
+Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Drain je před vetřelci, takže obtěžující bump `$0A` v tomtéž ticku neprojde wrap `$78`.
 
 ## Dočasné hodnoty
 
@@ -267,12 +271,76 @@ Platný teleport v kroku 7 hned volá `$A426` a zbytek ticku se přeskočí.
 5. **Místnost `$C7` (jádro), bezpečnostní dveře, zvuk `$D7C0`.** Mimo rozsah.
 6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá. Pad vždy `$AFC8` (snímky 1–3 se neindexují).
 7. **Extra spawn `$AAB6` po `$A80A`.** Engine bere buňky attr `$90` a seed `$7530+id×12`, ne celý `$DAC6` při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
-8. **`$CCCC` u extra `$17`** (životy) — skool má překryv dat; engine přičte 0.
+8. **Extra `$17` při lives ≠ 0.** `$CCCC` `A=E+$12` z ROM; in-game E po `$CB8A` není krokované. Engine: lives==0 → +1, jinak no-op.
 9. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah.
 10. **Póza Arrow `$BF88` ve zdviži** — není v extractu; engine nechá poslední walk frame.
 11. **Objekt `$0E`** (stroj na plošinky) — mimo rozsah; není zelené pole `$64`.
-12. **Smrt na padu `$C35E`.** `$DD22` se na nulu neklade; detaily respawnu mimo rozsah.
+12. **Zvuk smrti `$D7C0`.** Flash / `$BEC8` burst / HALT pause jsou v enginu; beeper ne.
 13. **`$A426` vs `$C8DD`.** ROM po teleportu střelu neparkuje; engine parkuje v `enterRoom`.
 14. **Engine `skip64` vs `$A132`** (řada Y+1, skip jen Y, exact `$64`) — ponecháno.
 15. **Opakovaný overlay** při drženém Left/Right po příletu na pad. Viewer má latch do uvolnění, aby `prompt()` nesmyčkoval.
 16. **`$E4` (flash + `$64`).** `$C71C` bere jen přesné `$64`; v exportu 0 výskytů.
+17. **Smrt v `$C7`.** `$A6C1` je vstup do jádra, ne wipe inventáře.
+18. **Plný `$64A0` game-over.** Engine zamkne tick (`world.gameOver`) a napíše `GAME OVER`.
+19. **Perioda `$70` vs live `$DAC0` při `$A80A`.** Engine bere `dac0` po spawn vetřelců, ne řetězec `$DAC6` při kreslení bloků.
+
+## Energie / smrt / terén `$06` / `$70` / smrtící vetřelci
+
+`$C350 JR $C35E`. Engine `applyDeath(A)` spustí animaci: 45 snímků ink XOR `$05` (`$C377 B=$2D`), čtyři `$BEC8` obláčky 80 snímků (`$C43F B=$50`, `$A01B`), 50 HALT (`$C451 B=$32`), teprve pak respawn. Zvuk `$D7C0` se nehraje. Blikání ROM jen u A∧7=2; engine bliká u všech smrtí, ať je to vidět.
+
+| veličina | hodnota | adresa |
+|---|---|---|
+| wrap `$DD30` | `$78` → energie −4, min 0 | `$CB58` / `$D41F A=0 C=$04` |
+| obtěžující bump | `$DD30 += $0A` (ne `$D2CD`) | `$A345` |
+| hitbox Blob–vetřelec | \|dx\| < `$0E`, \|dy\| < `$0B` | `$A316` / `$A321` |
+| smrtící / obtěžující | hi živého ptr `< $B4` / `≥ $B4` | `$A327` |
+| A do `$C350` | 2 nula; 1 vetřelec; `$11` lo=`$C8`; `$10` `$06`; 0 puls `$70` | `$A535` / `$A33B` / `$A33F` / `$CE7D` / `$A568` |
+| `$D2C4` | A ≥ `$10` → 1 | `$C363` |
+| game over | lives==0, bez DEC | `$C3E1` / `$C461` |
+| DEC života | `$D2CC--` | `$C462` |
+| energie po smrti | `$FF` pak strop `$7F` | `$C465` / `$D425` |
+| plošinky po smrti | `∨ $08` | `$C466` |
+| palba / inventář / `$DD30` | beze změny | `$C35E` je nezapisuje |
+| grafika | `blobwr1` `$E074` | `$C46B` |
+| D2C4=0 XY | místo smrti, X `∧ $F8`, Y `(Y+1) ∧ $F8 − 1` | `$A426` / `$A4FF` |
+| D2C4=1 XY / `$DD22` | checkpoint `$D2DC` / `$D2C5` (vstup do místnosti) | `$A501` / `$A50A` |
+| AABB `$06` | \|d\| < `$0F`, bez klávesy | `$CBBB` / `$CE77` |
+| nibble `$60` / `$70` / `$80` | `$9740` → `$06` / `$9635` / `$9F05` | `$A963` / `$A968` / `$A991` |
+| puls AABB | \|dx\| < `$0E`, Y ∈ `[comp−$16, comp]`, `comp=($1A−row)<<3−2` | `$A530` |
+| puls timer | perioda `($DAC0 ∧ $0C)+8`, XOR flag, start 0 | `$A66C` / `$A986` |
+| `$9F05` | ptr `$B2C8`, stav 1, AI 6, dir 1, `period \|= 8` | `$9F27`…`$9F42` |
+| perioda náhodného spawnu | `(nibble % 5)+4` = 4…8 | `$9E30 SUB $05` / `ADD $09` |
+| typ C náhodného spawnu | `$DAC1` `SUB $0F`/`ADD $11` → 2…16 (`$B388`+) | `$9DE6` |
+| AI nibble | 0…4 | `$9E58 SUB $05` / `ADD $05` |
+| AI 5 | dir=0; RRCA carry → stání; A < `$46` chase, jinak think AI 3, `IX+$19` zůstane 5 | `$A285` |
+| AI 6 think | `AND $03`, fall-through `$A2A5 RET` abort `$A01B` | `$A296` |
+| tabulka směrů `$A2B9` | `$08,$09,$01,$05,$04,$06,$02,$0A` | `$A2B9` |
+
+```mermaid
+stateDiagram-v2
+  [*] --> hra
+  hra --> wrap: "$CB58 DD30++ CP $78"
+  wrap --> hra: "energie > 0"
+  wrap --> smrtA2: "energy=0 A=2"
+  hra --> annoy: "hi>=$B4 stav 1"
+  annoy --> hra: "DD30 += $0A"
+  hra --> smrtA1: "hi<$B4 lo≠$C8 A=1"
+  hra --> smrtA11: "lo=$C8 A=$11"
+  hra --> smrtA10: "objekt $06 A=$10"
+  hra --> smrtA0: "$70 flag≠0 A=0"
+  smrtA2 --> zivot: "lives≠0"
+  smrtA1 --> zivot
+  smrtA11 --> zivot
+  smrtA10 --> zivot
+  smrtA0 --> zivot
+  smrtA1 --> gameOver
+  smrtA11 --> gameOver
+  smrtA10 --> gameOver
+  smrtA0 --> gameOver
+  smrtA2 --> gameOver: "lives=0"
+  zivot --> hra: "DEC, energy $7F, plat OR $08"
+```
+
+Checkpoint: `enterRoom` / `spawnBlob` / východ / teleport uloží Blob XY (game) + `$DD22` do `world.entry`. `$06` a `$11` po smrti vrací na vstup do místnosti. Nula energie a běžný vetřelec zarovnají místo smrti a pad (`$DD22`) nechají.
+
+Nedořešené v této sekci: zvuk `$D7C0`; `$C7` při respawnu; pixel `$DB88` pulsu (nekreslí se); statistika AI 5 carry/chase. ROM bliká jen A∧7=2.

@@ -257,6 +257,54 @@ describe("collision", () => {
   });
 });
 
+describe("death $C35E animation", () => {
+  it("blinks then flies stars before respawn ($2D+$50+$32 frames)", () => {
+    const prep = floorWorld();
+    const world = createWorld(prep, 1);
+    world.entities = [];
+    world.nastyCount = 0;
+    world.pulses = [];
+    const blob = spawnBlob(prep, 1, world);
+    world.energy = 0;
+    const lives = world.lives;
+    tick(prep, blob, { left: false, right: false, up: false }, world);
+    assert.equal(world.lives, lives, "lives stay until the sequence ends");
+    assert.equal(world.energy, 0);
+    assert.ok(world.deathPhase, "death sequence started");
+    const none = { left: false, right: false, up: false };
+    let sawStars = false;
+    let sawBlink = world.blobInk !== 7;
+    for (let i = 0; i < 0x2d + 0x50 + 0x32; i++) {
+      tick(prep, blob, none, world);
+      if (world.blobInk !== 7) sawBlink = true;
+      if (world.deathPhase === "fly" && world.entities.some((e) => e.ptr === 0xbec8 && e.y !== 0)) {
+        sawStars = true;
+      }
+    }
+    assert.equal(world.deathPhase, null);
+    assert.equal(world.lives, lives - 1);
+    assert.equal(world.energy, 0x7f);
+    assert.equal(sawBlink, true, "ink XOR $05 during flash");
+    assert.equal(sawStars, true, "four $BEC8 clouds fly before respawn");
+  });
+});
+
+describe("teleport latch $CEC9", () => {
+  it("does not keep walking while teleportLatch is set (held Left after prompt)", () => {
+    const prep = floorWorld();
+    const world = createWorld(prep, 1);
+    world.entities = [];
+    world.nastyCount = 0;
+    const blob = spawnBlob(prep, 1, world);
+    const start = blob.x;
+    world.teleportLatch = true;
+    for (let i = 0; i < 8; i++) tick(prep, blob, { left: true, right: false, up: false }, world);
+    assert.equal(blob.x, start);
+    tick(prep, blob, { left: false, right: false, up: false }, world);
+    assert.equal(world.teleportLatch, false);
+  });
+});
+
 describe("walk animation", () => {
   it("cycles $C0 sets and does not flash stand on the period wrap", () => {
     const prep = floorWorld();

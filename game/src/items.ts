@@ -4,6 +4,7 @@ import {
   EXTRA_CHEOPS,
   EXTRA_DAC_ROLLS,
   EXTRA_EFFECTS,
+  EXTRA_LIVES_SPRITE,
   EXTRA_MIN_DAC,
   EXTRA_SPRITE_BASE,
   GAME_Y_ORIGIN,
@@ -67,11 +68,14 @@ export function applyExtra(world: World, sprite: number): void {
     world.cheops = true;
     return;
   }
+  if (sprite === EXTRA_LIVES_SPRITE) {
+    if (world.lives === 0) world.lives = 1;
+    return;
+  }
   const row = EXTRA_EFFECTS[sprite - EXTRA_SPRITE_BASE];
   if (!row) return;
   const [off, add] = row;
-  if (off === 0) world.lives = clampStat(world.lives + add);
-  else if (off === 1) world.energy = clampStat(world.energy + add);
+  if (off === 1) world.energy = clampStat(world.energy + add);
   else if (off === 2) world.platforms = clampStat(world.platforms + add);
   else if (off === 3) world.firepower = clampStat(world.firepower + add);
 }

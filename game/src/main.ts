@@ -96,8 +96,15 @@ async function boot(): Promise<void> {
 
   const start = parseHash() ?? 0;
   const world = createWorld(prep, start);
-  world.readTeleportCode = (ownName: string) =>
-    window.prompt(`YOU HAVE ENTERED TELEPORT\nCODE : ${ownName}\nENTER TELEPORTAL DESTINATION CODE`, "");
+  world.readTeleportCode = (ownName: string) => {
+    const typed = window.prompt(
+      `YOU HAVE ENTERED TELEPORT\nCODE : ${ownName}\nENTER TELEPORTAL DESTINATION CODE`,
+      "",
+    );
+    keys.left = false;
+    keys.right = false;
+    return typed;
+  };
   let blob = spawnBlob(prep, start, world);
   let overlay = false;
   let lastMs = 0;
@@ -150,7 +157,9 @@ async function boot(): Promise<void> {
     renderWorld(prep, world, buf, imageData.data, blob.room, {
       items: true,
       overlay,
-      blob: { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame },
+      blob: world.blobHidden
+        ? null
+        : { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame, ink: world.blobInk },
     });
     ctx.putImageData(imageData, 0, 0);
     const dt = performance.now() - t0;
@@ -180,6 +189,7 @@ async function boot(): Promise<void> {
       keys.up = true;
       ev.preventDefault();
     } else if (ev.key === " ") {
+      keys.fire = true;
       ev.preventDefault();
     } else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") {
       keys.down = true;
@@ -198,7 +208,7 @@ async function boot(): Promise<void> {
     else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") keys.right = false;
     else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") keys.up = false;
     else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") keys.down = false;
-    else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
+    else if (ev.key === " " || ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
   });
   $("go").addEventListener("click", () => goRoom(parseInt(gotoEl.value, 10) || 0));
   gotoEl.addEventListener("keydown", (ev) => {
@@ -214,7 +224,7 @@ async function boot(): Promise<void> {
   });
 
   $("status").textContent =
-    "50 Hz · šipky / WASD pohyb · nahoru sebrat / nastoupit · dolů plošinka · P/X palba · Left/Right na teleportu kód";
+    "50 Hz · šipky / WASD pohyb · nahoru sebrat / nastoupit · dolů plošinka · mezerník palba · Left/Right na teleportu kód";
   fitScale();
 
   function frame(now: number): void {

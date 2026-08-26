@@ -78,8 +78,22 @@ export function prepare(data: GameData): Prepared {
     if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
   }
   const rooms = data.rooms.rooms;
-  const { stationsByRoom, teleportsByRoom } = hotspotsFromData(data, rooms, blocks);
-  return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms, itemsByRoom, stationsByRoom, teleportsByRoom };
+  const { stationsByRoom, teleportsByRoom, killsByRoom, pulsesByRoom, fixedNastiesByRoom } =
+    hotspotsFromData(data, rooms, blocks);
+  return {
+    graphics,
+    sprites,
+    actorsBySet,
+    actorsByPtr,
+    blocks,
+    rooms,
+    itemsByRoom,
+    stationsByRoom,
+    teleportsByRoom,
+    killsByRoom,
+    pulsesByRoom,
+    fixedNastiesByRoom,
+  };
 }
 
 export function newBuffers(): Buffers {
@@ -422,7 +436,7 @@ export function renderWorld(
   if (opts.blob) {
     const frames = prep.actorsBySet.get(opts.blob.set);
     const frame = frames?.[opts.blob.frame];
-    if (frame) stampGrafix(rgba, frame, opts.blob.x, opts.blob.y, 7);
+    if (frame) stampGrafix(rgba, frame, opts.blob.x, opts.blob.y, opts.blob.ink ?? 7);
   }
   return rgba;
 }

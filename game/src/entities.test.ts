@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { CELL, COLS, GRAFIX_BASE, GRAFIX_STRIDE, ROWS, START_ENERGY } from "./constants";
-import { cloneEntity, entityVisible, tickNasties } from "./entities";
+import {
+  BADALIEN1_PTR,
+  BADALIEN2_PTR,
+  CELL,
+  COLS,
+  DEATH_A_LETHAL,
+  DEATH_A_LETHAL_C8,
+  GRAFIX_BASE,
+  GRAFIX_STRIDE,
+  HIT_DX,
+  HIT_DY,
+  ROWS,
+  START_ENERGY,
+} from "./constants";
+import { cloneEntity, entityVisible, spawnOne, tickNasties } from "./entities";
 import { createWorld, enterRoom, spawnBlob } from "./physics";
 import type { Entity, Prepared, Room } from "./types";
 
@@ -87,7 +100,33 @@ describe("nasties $A01B", () => {
     assert.equal(world.entities[0]!.y, 80);
   });
 
-  it("killing graphic ($B2xx) zeros energy on contact", () => {
+  it("$9DE6 kind from $DAC1 is 2..16 (badalien2), not $B2C8 mixed into annoying", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    world.dac = { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 };
+    const e = spawnOne(prep, 1, world, 1);
+    assert.equal(e.basePtr, BADALIEN2_PTR);
+    assert.notEqual(e.basePtr, BADALIEN1_PTR);
+  });
+
+  it("$D2F0 uses 3 attr rows when (Y+1)∧7≠0 so a wall on the third row bounces", () => {
+    const prep = grid((solid) => {
+      solid[9]![12] = 1;
+    });
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 0;
+    blob.y = 0;
+    world.entities = [liveEntity({ x: 80, y: 80, dir: 1, ai: 0, period: 1, timer: 1 })];
+    world.nastyCount = 1;
+    tickNasties(prep, blob, world);
+    assert.ok(world.entities[0]!.x < 80, `expected bounce left, x=${world.entities[0]!.x}`);
+    assert.equal(world.entities[0]!.dir & 3, 2);
+  });
+
+  it("killing graphic ($B2C8) returns death A=$11 and does not zero energy", () => {
     const prep = grid(() => {
       /* air */
     });
@@ -103,8 +142,9 @@ describe("nasties $A01B", () => {
     world.entities = [e];
     world.nastyCount = 1;
     world.energy = START_ENERGY;
-    tickNasties(prep, blob, world);
-    assert.equal(world.energy, 0);
+    const a = tickNasties(prep, blob, world);
+    assert.equal(world.energy, START_ENERGY);
+    assert.equal(a, DEATH_A_LETHAL_C8);
   });
 
   it("annoying graphic ($B4xx) bumps $DD30 instead of killing", () => {
@@ -128,6 +168,35 @@ describe("nasties $A01B", () => {
     tickNasties(prep, blob, world);
     assert.equal(world.energy, START_ENERGY);
     assert.equal(world.energyDrain, (drain + 0x0a * 4) & 0xff);
+  });
+
+  it("lethal AABB |dx| < $0E, |dy| < $0B: 13/10 hit, 14/11 miss", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    const gy = 143 - blob.y;
+    const freeze = { dir: 0, period: 0xff, timer: 0xff, ai: 6, aiCount: 0x64 };
+    const probe = (dx: number, dy: number): number | null => {
+      world.entities = [
+        liveEntity({
+          x: blob.x + dx,
+          y: gy + dy,
+          ptr: BADALIEN2_PTR,
+          basePtr: BADALIEN2_PTR,
+          set: "badalien2",
+          ...freeze,
+        }),
+      ];
+      world.nastyCount = 1;
+      world.energy = START_ENERGY;
+      return tickNasties(prep, blob, world);
+    };
+    assert.equal(probe(HIT_DX - 1, 0), DEATH_A_LETHAL, "dx=13 inside");
+    assert.equal(probe(HIT_DX, 0), null, "dx=14 outside");
+    assert.equal(probe(0, HIT_DY - 1), DEATH_A_LETHAL, "dy=10 inside");
+    assert.equal(probe(0, HIT_DY), null, "dy=11 outside");
   });
 });
 

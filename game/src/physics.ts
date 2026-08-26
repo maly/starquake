@@ -1,4 +1,5 @@
 import {
+  A350_BYTES,
   ANIM_PERIOD,
   BLOB_H,
   BLOB_W,
@@ -7,6 +8,19 @@ import {
   DD22_LIFT,
   DD22_PAD,
   DD22_WALK,
+  BLOB_INK,
+  DEAD_GRAPHIC,
+  DEATH_A_ENERGY,
+  DEATH_A_OBJ06,
+  DEATH_A_TILE,
+  DEATH_FLASH_FRAMES,
+  DEATH_FLY_FRAMES,
+  DEATH_INK_XOR,
+  DEATH_PAUSE_FRAMES,
+  DEATH_RESTORE_MIN_A,
+  DEATH_STAR_DIRS,
+  DEATH_STAR_TIMERS,
+  ENTITY_DUMMY_PTR,
   ENTER_BOTTOM_Y,
   ENTER_LEFT_X,
   ENTER_RIGHT_X,
@@ -15,6 +29,7 @@ import {
   EXIT_RIGHT,
   EXIT_UP_Y,
   FALL_TABLE,
+  GAME_OVER_MSG,
   GAME_Y_ORIGIN,
   HEIGHT,
   HOVERPAD_FLY_PX,
@@ -24,6 +39,8 @@ import {
   LIFT_X_BIAS,
   LIFT_X_MASK,
   LIFT_Y_MOD,
+  NEW_GAME_X,
+  NEW_GAME_Y,
   PAD_ENTER_UP_Y,
   PAD_EXIT_DOWN_Y,
   PLATFORM_COST,
@@ -33,10 +50,11 @@ import {
   PLATFORM_ROW_BASE,
   PLATFORM_SLOTS,
   PLATFORM_X_BIAS,
+  PLAT_OR_ON_DEATH,
   PLAY_ORIGIN,
+  RESPAWN_ENERGY,
   ROOM_COUNT,
   ROWS,
-  A350_BYTES,
   SEATED_SETS,
   START_ENERGY,
   START_ENERGY_DRAIN,
@@ -58,13 +76,15 @@ import { spawnExtra, tickPickup } from "./items";
 import {
   evaluateTeleport,
   firstTeleport,
+  makePulses,
   onStationPixel,
+  tickPulses,
   walkSpecialObjects,
   type TeleportEval,
 } from "./objects";
 import { parkBullet, parkedBullet, tickFire, tickPadFire } from "./projectiles";
 import { composeTiles, moveRoom, newBuffers } from "./render";
-import type { Graphic, Prepared, World } from "./types";
+import type { Entity, Graphic, Prepared, World } from "./types";
 
 export interface Input {
   left: boolean;
@@ -302,8 +322,8 @@ function nudgeOutOfSolid(prep: Prepared, blob: BlobState, pixels: readonly InkPi
 export function spawnBlob(prep: Prepared, room: number, world?: World): BlobState {
   const blob: BlobState = {
     room,
-    x: 0x88,
-    y: gameYToPlay(0x3f),
+    x: NEW_GAME_X,
+    y: gameYToPlay(NEW_GAME_Y),
     fallIndex: 0,
     jumpTicks: 0,
     facing: 1,
@@ -313,7 +333,128 @@ export function spawnBlob(prep: Prepared, room: number, world?: World): BlobStat
   };
   nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob)), world);
   blob.onGround = onFloor(prep, blob.room, blob.x, blob.y, world);
+  if (world) saveEntry(world, blob);
   return blob;
+}
+
+function saveEntry(world: World, blob: BlobState): void {
+  world.entry = { x: blob.x, y: playYToGame(blob.y), dd22: world.dd22 };
+}
+
+function alignDeathXY(blob: BlobState): void {
+  blob.x &= 0xf8;
+  const gy = playYToGame(blob.y);
+  blob.y = gameYToPlay(((gy + 1) & 0xf8) - 1);
+}
+
+function parkDeathSlots(world: World): void {
+  for (const e of world.entities) {
+    e.x = 0;
+    e.y = 0;
+    e.ptr = ENTITY_DUMMY_PTR;
+  }
+  world.nastyCount = 0;
+}
+
+function spawnDeathStars(blob: BlobState, world: World): Entity[] {
+  const x = blob.x & 0xfe;
+  const y = (playYToGame(blob.y) | 1) & 0xff;
+  return DEATH_STAR_DIRS.map((dir, i) => ({
+    x,
+    y,
+    ink: 7,
+    set: "stars",
+    frame: 0,
+    ptr: DEAD_GRAPHIC,
+    basePtr: DEAD_GRAPHIC,
+    dir,
+    speedX: 2,
+    speedY: 2,
+    period: 4,
+    timer: DEATH_STAR_TIMERS[i]!,
+    state: 2,
+    stateTimer: 0x14,
+    ai: 0,
+    aiPeriod: 8,
+    aiCount: 8,
+    homeX: x,
+    homeY: y,
+  }));
+}
+
+function finishDeath(prep: Prepared, blob: BlobState, world: World): void {
+  world.deathPhase = null;
+  world.deathTicks = 0;
+  world.blobHidden = false;
+  world.blobInk = BLOB_INK;
+  if (world.lives === 0) {
+    world.gameOver = true;
+    world.message = GAME_OVER_MSG;
+    return;
+  }
+  world.lives -= 1;
+  world.energy = RESPAWN_ENERGY;
+  world.platforms |= PLAT_OR_ON_DEATH;
+  blob.facing = 1;
+  blob.walkFrame = 0;
+  blob.walkTick = 0;
+  blob.jumpTicks = 0;
+  blob.fallIndex = 0;
+  if (world.d2c4 === 0) alignDeathXY(blob);
+  else {
+    blob.x = world.entry.x;
+    blob.y = gameYToPlay(world.entry.y);
+    world.dd22 = world.entry.dd22;
+  }
+  enterRoom(prep, world, blob.room);
+  syncHoverpad(prep, world, blob.room, blob);
+  blob.onGround = onFloor(prep, blob.room, blob.x, blob.y, world);
+}
+
+function tickDeath(prep: Prepared, blob: BlobState, world: World): void {
+  if (world.deathPhase === "flash") {
+    world.blobInk ^= DEATH_INK_XOR;
+    if (world.dd22 === DD22_PAD && world.pad) world.pad.ink ^= DEATH_INK_XOR;
+    world.deathTicks += 1;
+    if (world.deathTicks >= DEATH_FLASH_FRAMES) {
+      world.blobInk = BLOB_INK;
+      world.blobHidden = true;
+      world.pad = null;
+      world.entities = spawnDeathStars(blob, world);
+      world.nastyCount = 4;
+      world.deathPhase = "fly";
+      world.deathTicks = 0;
+    }
+    return;
+  }
+  if (world.deathPhase === "fly") {
+    tickNasties(prep, blob, world);
+    world.deathTicks += 1;
+    if (world.deathTicks >= DEATH_FLY_FRAMES) {
+      parkDeathSlots(world);
+      world.deathPhase = "pause";
+      world.deathTicks = 0;
+    }
+    return;
+  }
+  world.deathTicks += 1;
+  if (world.deathTicks >= DEATH_PAUSE_FRAMES) finishDeath(prep, blob, world);
+}
+
+/**
+ * $C350 / $C35E. Starts flash → $BEC8 burst → HALT pause, then respawn.
+ * A ≥ $10 sets $D2C4=1 and restores XY/$DD22 from the last room entry.
+ */
+export function applyDeath(prep: Prepared, blob: BlobState, world: World, a: number): void {
+  if (world.deathPhase) return;
+  world.deathA = a & 0xff;
+  world.d2c4 = (a & 0xff) >= DEATH_RESTORE_MIN_A ? 1 : 0;
+  world.deathPhase = "flash";
+  world.deathTicks = 0;
+  world.blobHidden = false;
+  world.blobInk = BLOB_INK;
+  parkBullet(world);
+  parkDeathSlots(world);
 }
 
 function applyRoomExit(
@@ -357,6 +498,7 @@ function applyRoomExit(
   blob.y = gameYToPlay(((gy + 1) & 0xf8) - 1);
   if (world) {
     enterRoom(prep, world, blob.room);
+    saveEntry(world, blob);
     syncHoverpad(prep, world, blob.room, blob);
   }
   nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob, world)), world);
@@ -497,21 +639,30 @@ function applyWalk(
 }
 
 /**
- * Walk/lift/pad → platforms if walking → fire → nasties → drain → pickup → $0C/$0D → room exit.
+ * Walk/lift/pad → platforms → fire → drain → pickup → $0C/$0D/$06 → energy 0 →
+ * $70 pulse → nasties → room exit. Teleport and death skip the rest of the tick.
  */
 export function tick(prep: Prepared, blob: BlobState, input: Input, world?: World): void {
+  if (world?.gameOver) return;
+  if (world?.deathPhase) {
+    tickDeath(prep, blob, world);
+    return;
+  }
+
   const pixels = blobInkPixels(poseGraphic(prep, blob, world));
   if (world) {
     const dirs = dirBits(input);
     if (dirs) world.lastDir = dirs;
   }
 
-  if (world?.dd22 === DD22_PAD) tickPadFlight(prep, blob, input, world);
+  const steer = world?.teleportLatch ? { ...input, left: false, right: false } : input;
+
+  if (world?.dd22 === DD22_PAD) tickPadFlight(prep, blob, steer, world);
   else if (world?.dd22 === DD22_LIFT) tickLift(prep, blob, world);
-  else applyWalk(prep, blob, input, pixels, world);
+  else applyWalk(prep, blob, steer, pixels, world);
 
   if (!world) {
-    applyRoomExit(prep, blob, input.right && !input.left, input.left && !input.right, world);
+    applyRoomExit(prep, blob, steer.right && !steer.left, steer.left && !steer.right, world);
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
     return;
   }
@@ -524,7 +675,6 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
   if (world.dd22 === DD22_PAD) tickPadFire(prep, blob, !!input.fire, world);
   else tickFire(prep, blob, !!input.fire, world);
 
-  tickNasties(prep, blob, world);
   tickEnergyDrain(world);
 
   const pickupInput = stationed ? { ...input, up: false } : input;
@@ -533,13 +683,33 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
   const boardedBefore = world.dd22 === DD22_PAD;
   const code = walkSpecialObjects(prep, blob, input, world);
   if (world.dd22 === DD22_PAD && !boardedBefore) copyPadFromBlob(world, blob);
+  if (code === "$06") {
+    applyDeath(prep, blob, world, DEATH_A_OBJ06);
+    return;
+  }
   if (code !== null) {
     applyTeleport(prep, blob, world, code);
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
     return;
   }
 
-  applyRoomExit(prep, blob, input.right && !input.left, input.left && !input.right, world);
+  if (world.energy === 0) {
+    applyDeath(prep, blob, world, DEATH_A_ENERGY);
+    return;
+  }
+
+  if (tickPulses(blob, world)) {
+    applyDeath(prep, blob, world, DEATH_A_TILE);
+    return;
+  }
+
+  const nastyDeath = tickNasties(prep, blob, world);
+  if (nastyDeath !== null) {
+    applyDeath(prep, blob, world, nastyDeath);
+    return;
+  }
+
+  applyRoomExit(prep, blob, steer.right && !steer.left, steer.left && !steer.right, world);
   if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
 }
 
@@ -581,6 +751,15 @@ export function createWorld(prep: Prepared, room: number): World {
     seatTick: 0,
     message: "",
     teleportLatch: false,
+    gameOver: false,
+    d2c4: 0,
+    deathA: 0,
+    deathPhase: null,
+    deathTicks: 0,
+    blobInk: 7,
+    blobHidden: false,
+    entry: { x: NEW_GAME_X, y: NEW_GAME_Y, dd22: DD22_WALK },
+    pulses: [],
   };
   enterRoom(prep, world, room);
   return world;
@@ -601,6 +780,7 @@ export function enterRoom(prep: Prepared, world: World, room: number, opts?: Ent
   parkBullet(world);
   spawnExtra(prep, world, room);
   if (opts?.nasties !== false) enterNasties(prep, world, room);
+  world.pulses = makePulses(prep.pulsesByRoom?.[room], world.dac.dac0);
   syncHoverpad(prep, world, room);
 }
 
@@ -627,6 +807,7 @@ export function applyTeleport(prep: Prepared, blob: BlobState, world: World, cod
       blob.onGround = true;
     }
     syncHoverpad(prep, world, blob.room, blob);
+    saveEntry(world, blob);
     world.message = TELEPORT_MSG_OK;
     return { ...ev, message: world.message, reason: TELEPORT_REASON };
   }
@@ -634,6 +815,7 @@ export function applyTeleport(prep: Prepared, blob: BlobState, world: World, cod
   blob.y = gameYToPlay(((playYToGame(blob.y) + 1) & 0xf8) - 1);
   enterRoom(prep, world, blob.room, { nasties: false });
   syncHoverpad(prep, world, blob.room, blob);
+  saveEntry(world, blob);
   world.message = TELEPORT_MSG_BAD;
   return { ...ev, dest: blob.room, message: world.message, reason: TELEPORT_INVALID_REASON };
 }

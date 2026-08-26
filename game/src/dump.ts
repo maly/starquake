@@ -1,12 +1,19 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { GAME_Y_ORIGIN } from "./constants";
+import {
+  ALIEN1_PTR,
+  BADALIEN1_PTR,
+  BADALIEN2_PTR,
+  GAME_Y_ORIGIN,
+  GRAFIX_BASE,
+  GRAFIX_STRIDE,
+} from "./constants";
 import { tickNasties } from "./entities";
 import { itemGamePos } from "./items";
 import { evaluateTeleport, firstTeleport, lastStation, teleportNameForRoom } from "./objects";
-import { applyTeleport, createWorld, enterRoom, playYToGame, spawnBlob, tick } from "./physics";
+import { applyTeleport, createWorld, enterRoom, playYToGame, spawnBlob, tick, type BlobState } from "./physics";
 import { tickFire } from "./projectiles";
-import type { Entity } from "./types";
+import type { Entity, World } from "./types";
 import {
   HEIGHT,
   WIDTH,
@@ -99,6 +106,102 @@ const rgba = newRgba();
 
 function entityPublic(e: Entity) {
   return { x: e.x, y: e.y, state: e.state, dir: e.dir, ptr: e.ptr, timer: e.timer };
+}
+
+function deathSnap(blob: BlobState, world: World) {
+  return {
+    room: blob.room,
+    x: blob.x,
+    y: playYToGame(blob.y),
+    energy: world.energy,
+    lives: world.lives,
+    platforms: world.platforms,
+    firepower: world.firepower,
+    dd22: world.dd22,
+    gameOver: world.gameOver,
+    message: world.message,
+    d2c4: world.d2c4,
+    deathA: world.deathA,
+    inventory: world.inventory,
+    energyDrain: world.energyDrain,
+  };
+}
+
+function parkedEntity(over: Partial<Entity>): Entity {
+  return {
+    x: 80,
+    y: 80,
+    ink: 4,
+    set: "alien1",
+    frame: 0,
+    ptr: GRAFIX_BASE + 3 * GRAFIX_STRIDE,
+    basePtr: GRAFIX_BASE + 3 * GRAFIX_STRIDE,
+    dir: 0,
+    speedX: 2,
+    speedY: 2,
+    period: 0xff,
+    timer: 0xff,
+    state: 1,
+    stateTimer: 0,
+    ai: 6,
+    aiPeriod: 0x64,
+    aiCount: 0x64,
+    homeX: 80,
+    homeY: 80,
+    ...over,
+  };
+}
+
+if (has("--death-test")) {
+  const mode = arg("--mode", "energy");
+  const none = { left: false, right: false, up: false, down: false, fire: false };
+  const room = mode === "terrain" ? 49 : 0;
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  world.entities = [];
+  world.nastyCount = 0;
+  world.pulses = [];
+
+  if (mode === "terrain") {
+    world.entry = { x: 0x88, y: 0x3f, dd22: 0 };
+    blob.x = 0xd0;
+    blob.y = GAME_Y_ORIGIN - 0x47;
+  } else if (mode === "lethal" || mode === "lethal-c8" || mode === "annoy") {
+    const ptr = mode === "lethal" ? BADALIEN2_PTR : mode === "lethal-c8" ? BADALIEN1_PTR : ALIEN1_PTR;
+    world.entities = [
+      parkedEntity({
+        x: blob.x,
+        y: playYToGame(blob.y),
+        ptr,
+        basePtr: ptr,
+        set: mode === "annoy" ? "alien1" : mode === "lethal-c8" ? "badalien1" : "badalien2",
+      }),
+    ];
+    world.nastyCount = 1;
+  } else if (mode === "energy" || mode === "respawn" || mode === "gameover") {
+    blob.x = 0x89;
+    blob.y = GAME_Y_ORIGIN - 0x40;
+    world.energy = 0;
+    if (mode === "respawn") {
+      world.platforms = 7;
+      world.firepower = 0x10;
+      world.inventory = [{ sprite: 0x1a, attr: 3 }];
+    }
+    if (mode === "gameover") world.lives = 0;
+  }
+
+  const before = deathSnap(blob, world);
+  tick(prep, blob, none, world);
+  for (let i = 0; i < 200 && world.deathPhase; i++) tick(prep, blob, none, world);
+  process.stdout.write(
+    JSON.stringify({
+      mode,
+      before,
+      after: deathSnap(blob, world),
+      entities: world.entities.map(entityPublic),
+    }) + "\n",
+  );
+  process.exit(0);
 }
 
 if (has("--enemy-trace")) {

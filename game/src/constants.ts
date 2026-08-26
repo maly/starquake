@@ -72,10 +72,19 @@ export const TEMP_JUMP_PX = 2;
 /**
  * Blob status bytes starting at $D2CD: energy, bridge power, firepower.
  * $D425 prints them; $D4E9 (via $D41F) decrements index A by C.
+ * START_* are the snapshot (`g$D2CD`), not a fresh `$6351` game.
  */
 export const START_ENERGY = 0x17;
 export const START_PLATFORMS = 0x30;
 export const START_FIREPOWER = 0x7e;
+
+/** `$6343` new-game pair; `$D425` then caps energy/firepower at `$7F`. Engine keeps START_*. */
+export const NEW_GAME_ENERGY = 0x7f;
+export const NEW_GAME_PLATFORMS = 0x32;
+export const NEW_GAME_FIREPOWER = 0x7f;
+export const NEW_GAME_ROOM = 8;
+export const NEW_GAME_X = 0x88;
+export const NEW_GAME_Y = 0x3f;
 
 /**
  * GRAFIX entity table at $DD18, 6 × 32 bytes. Slot 0 is Blob; $A01B walks
@@ -97,12 +106,77 @@ export const GRAFIX_STRIDE = 0xc0;
 export const KILL_GRAPHIC_HI = 0xb4;
 export const APPEAR_GRAPHIC = 0xb148;
 export const DEAD_GRAPHIC = 0xbec8;
+export const DEATH_STAR_PTR = 0xbec8;
 export const APPEAR_FRAMES = 0x10;
 export const DIE_FRAMES = 0x08;
+
+/** $9F27 / n=1. lo=$C8 → $C350 A=$11. */
+export const BADALIEN1_PTR = 0xb2c8;
+/** n=2. hi $B3 → $C350 A=$01. */
+export const BADALIEN2_PTR = 0xb388;
+/** First annoying set; hi ≥ $B4. */
+export const ALIEN1_PTR = 0xb448;
+/** $9E67 CP $02 → IX+$19 := $05. */
+export const KIND_BADALIEN2 = 2;
+export const AI_FORCED_KIND2 = 5;
+
+/** $A339 CP $C8 on the live pointer lo byte. */
+export const GRAPHIC_LO_C8 = 0xc8;
 
 /** $A305 AABB on $DD1D/$DD1E: |dx| < $0E, |dy| < $0B. */
 export const HIT_DX = 0x0e;
 export const HIT_DY = 0x0b;
+
+/** $C350 register A ($A535 / $A33B / $CE7D / $A568 / $A33F). */
+export const DEATH_A_TILE = 0x00;
+export const DEATH_A_LETHAL = 0x01;
+export const DEATH_A_ENERGY = 0x02;
+export const DEATH_A_OBJ06 = 0x10;
+export const DEATH_A_LETHAL_C8 = 0x11;
+/** $C363 CP $10 — NC → $D2C4 := 1. */
+export const DEATH_RESTORE_MIN_A = 0x10;
+/** $C377 LD B,$2D — energy-death ink flash (applied to every death for visibility). */
+export const DEATH_FLASH_FRAMES = 0x2d;
+/** $C43F LD B,$50 — $A01B of four $BEC8 clouds. */
+export const DEATH_FLY_FRAMES = 0x50;
+/** $C451 LD B,$32 HALT after parking the clouds. */
+export const DEATH_PAUSE_FRAMES = 0x32;
+/** $C37E XOR $05 on $DD21 (and pad ink when $DD22=2). */
+export const DEATH_INK_XOR = 0x05;
+/** $C498 dirs then leftover timers for the four burst slots. */
+export const DEATH_STAR_DIRS = [0x0a, 0x04, 0x06, 0x0c] as const;
+export const DEATH_STAR_TIMERS = [0x09, 0x14, 0x05, 0x1c] as const;
+/** $C465 $FF then $D425. */
+export const RESPAWN_ENERGY = 0x7f;
+/** $C466 OR $08 into $D2CE, not a max. */
+export const PLAT_OR_ON_DEATH = 0x08;
+/** $C46B Blob graphic after respawn. */
+export const RESPAWN_PTR = 0xe074;
+/** $C461 RET / $6730. */
+export const GAME_OVER_MSG = "GAME OVER";
+
+/** $CE77 type $06 from $9740 high nibble $60. AABB same as items ($CBBB). */
+export const KILL_TYPE = 0x06;
+export const KILL_ATTR_HI = 0x60;
+export const KILL_AABB = 0x0f;
+
+/** $A968 nibble $70 → 8-byte $9635 record, not $96FC. */
+export const PULSE_ATTR_HI = 0x70;
+export const PULSE_AABB_DX = 0x0e;
+export const PULSE_AABB_DY = 0x16;
+export const PULSE_COMP_BASE = 0x1a;
+export const PULSE_COMP_BIAS = 2;
+export const PULSE_PERIOD_MASK = 0x0c;
+export const PULSE_PERIOD_BASE = 8;
+
+/** $A991 nibble $80 → $9620, then $9F05. */
+export const ATTR_NASTY_HI = 0x80;
+export const FIXED_NASTY_PTR = 0xb2c8;
+export const FIXED_NASTY_AI = 6;
+export const FIXED_NASTY_DIR = 1;
+
+/** $A2AE+$A285: after RRCA, A < $46 chases. */
+export const AI5_CHASE_MAX = 0x46;
 
 /** $CB58: $DD30 += 1 per tick, wrap at $78 → $D41F A=0 C=$04 (energy −4). */
 export const ENERGY_DRAIN_WRAP = 0x78;
@@ -146,8 +220,8 @@ export const ENEMY_SETS = [
   "aliene",
 ] as const;
 
-/** $A2B9 direction table (bytes of the following instructions, indexed ×2). */
-export const DIR_TABLE = [0x08, 0x09, 0x01, 0x04, 0x05, 0x06, 0x02, 0x0a] as const;
+/** $A2B9 direction table (bytes of the following instructions). */
+export const DIR_TABLE = [0x08, 0x09, 0x01, 0x05, 0x04, 0x06, 0x02, 0x0a] as const;
 
 /** $C848 LD A,$01 / $C84A LD C,$02 — $D41F decreases $D2CE by 2. */
 export const PLATFORM_STAT_INDEX = 1;
@@ -239,8 +313,8 @@ export const EXTRA_CHEOPS = 0x19;
 export const EXTRA_DAC_ROLLS = 0x14;
 
 /**
- * $CCBC pairs for extra sprites $11–$17: offset from $D2CC, addend.
- * $11–$13 energy, $14 platforms, $15–$16 firepower, $17 lives (add 0).
+ * $CCBC pairs for extra sprites $11–$16: offset from $D2CC, addend.
+ * $17 is $CCCC, not the table `$00,$00`: lives==0 → +1 (`A=$18`), else no-op.
  */
 export const EXTRA_EFFECTS: ReadonlyArray<readonly [number, number]> = [
   [1, 0x20],
@@ -251,6 +325,8 @@ export const EXTRA_EFFECTS: ReadonlyArray<readonly [number, number]> = [
   [3, 0x3c],
   [0, 0x00],
 ];
+/** $CC9A CP $17. */
+export const EXTRA_LIVES_SPRITE = 0x17;
 
 /** $DD21 / $DDA1 default ink for GRAFIX merge ($D8B1). */
 export const BLOB_INK = 7;

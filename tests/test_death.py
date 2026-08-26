@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DUMP = ROOT / "viewer" / "dump.js"
 OUT = ROOT / "out"
 
-START_ENERGY = 0x17
+START_ENERGY = 0x7F
 START_LIVES = 4
 RESPAWN_ENERGY = 0x7F
 PLAT_OR_ON_DEATH = 0x08

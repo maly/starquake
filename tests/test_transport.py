@@ -16,7 +16,7 @@ OUT = ROOT / "out"
 GAME_Y_ORIGIN = 143
 HOVERPAD_PTR = 0xAFC8
 PAD_SHOT_PX = 8
-START_ENERGY = 0x17
+START_ENERGY = 0x7F
 
 # teleports.md §9 / MOVEMENT.md: name → dest room, dest $0D XY.
 TELEPORT_SPAWNS: list[tuple[str, int, int, int]] = [

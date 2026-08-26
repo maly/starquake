@@ -109,7 +109,7 @@ AI (`$9E58`): nibble `$9DC1`, `SUB $05` do carry, `ADD A,$05` → 0…4. Pak **`
 
 Perioda (`$9E27`): nibble `$9DC0`, `SUB $05` **včetně neúspěšného** odečtu, `ADD A,$09` → `(nibble % 5) + 4` = **4…8**. Timer start = celý `$9DBF` (`$9E21`), často desítky až stovky ticků v parku.
 
-Rychlost 2,2 (`$9E90`). Dir rotace `$55` (`$9E73`). Park `$9E83`. Home z `$DAC6` + prázdné 2×2 (`attr ∧ $60 == $40`, `$9EE2`).
+Rychlost 2,2 (`$9E90`). Dir rotace `$55` (`$9E73`). Park `$9E83`. Home z `$DAC6` + prázdné 2×2 (`attr ∧ $60 == $40`, `$9EE2`). Po `RRCA` `$DAC0`: sudé → X `SUB $17 ADD $1B`≪3, Y=`$11` nebo `$8D` (`$DAC1` bit 0); liché → Y `(SUB $09 ADD $0F)`≪3−1, X=`$02`/`$EE` (`$DAC1` RLCA). Mimo play-area se 2×2 nebere jako `$47`.
 
 V 512 místnostech po `$A80A+$9C47` se **náhodný** `basePtr = $B2C8` (kind 1) ani `$B208` (kind 0) neobjevil. Smrtící náhoda je skoro vždy kind 2.
 

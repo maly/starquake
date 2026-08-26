@@ -7,6 +7,8 @@ import {
   COLS,
   DEATH_A_LETHAL,
   DEATH_A_LETHAL_C8,
+  ENERGY_DRAIN_STEP,
+  ENERGY_DRAIN_WRAP,
   GRAFIX_BASE,
   GRAFIX_STRIDE,
   HIT_DX,
@@ -14,7 +16,7 @@ import {
   ROWS,
   START_ENERGY,
 } from "./constants";
-import { cloneEntity, entityVisible, spawnOne, tickNasties } from "./entities";
+import { cloneEntity, entityVisible, spawnOne, tickEnergyDrain, tickNasties } from "./entities";
 import { createWorld, enterRoom, spawnBlob } from "./physics";
 import type { Entity, Prepared, Room } from "./types";
 
@@ -197,6 +199,66 @@ describe("nasties $A01B", () => {
     assert.equal(probe(HIT_DX, 0), null, "dx=14 outside");
     assert.equal(probe(0, HIT_DY - 1), DEATH_A_LETHAL, "dy=10 inside");
     assert.equal(probe(0, HIT_DY), null, "dy=11 outside");
+  });
+});
+
+describe("nasty ink $9E1C", () => {
+  it("does not spawn ink 0 (black on paper 0 is invisible)", () => {
+    for (const room of [0, 1, 8, 15, 16, 52]) {
+      const prep = grid(() => {
+        /* air */
+      });
+      const world = createWorld(prep, room);
+      for (const e of world.entities) {
+        assert.notEqual(e.ink & 7, 0, `room ${room} ink=${e.ink}`);
+      }
+    }
+  });
+});
+
+describe("$CB58 energy drain", () => {
+  it("starts at new-game $7F / $DD30=0 and first -4 is after $78 ticks", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    assert.equal(world.energy, 0x7f);
+    assert.equal(world.energyDrain, 0);
+    for (let i = 0; i < ENERGY_DRAIN_WRAP - 1; i++) tickEnergyDrain(world);
+    assert.equal(world.energy, 0x7f);
+    tickEnergyDrain(world);
+    assert.equal(world.energy, 0x7f - ENERGY_DRAIN_STEP);
+    assert.equal(world.energyDrain, 0);
+  });
+});
+
+describe("nasty spawn home $9EE2", () => {
+  it("does not place home Y above $8D (HUD / ceiling OOB treated as air)", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    for (const e of world.entities) {
+      if (e.homeY === 0 && e.y === 0) continue;
+      assert.ok(e.homeY <= 0x8d, `homeY=$${e.homeY.toString(16)} x=${e.homeX}`);
+    }
+  });
+
+  it("rejects a solid top row for the $8D edge and does not sit in the wall", () => {
+    const prep = grid((solid) => {
+      for (let x = 0; x < COLS; x++) {
+        solid[0]![x] = 1;
+        solid[1]![x] = 1;
+      }
+    });
+    const world = createWorld(prep, 8);
+    for (const e of world.entities) {
+      if (e.homeY === 0) continue;
+      const col = e.homeX >> 3;
+      const row = (143 - e.homeY) >> 3;
+      assert.ok(row >= 0 && row < ROWS, `row=${row} homeY=$${e.homeY.toString(16)}`);
+      assert.notEqual(world.terrain.attr[row * COLS + col]! & 0x40, 0, `solid cell col=${col} row=${row}`);
+    }
   });
 });
 

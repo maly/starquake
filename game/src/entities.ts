@@ -128,7 +128,10 @@ function spawnCellOk(world: World, x: number, y: number): boolean {
     [0, 1],
     [1, 1],
   ] as const) {
-    if (!emptyish(cellAttr(world, col + dc, row + dr))) return false;
+    const c = col + dc;
+    const r = row + dr;
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+    if (!emptyish(cellAttr(world, c, r))) return false;
   }
   return true;
 }
@@ -175,6 +178,7 @@ export function spawnOne(prep: Prepared, room: number, world: World, slot: numbe
   const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
   const e = makeEntity(ptr);
   e.ink = (world.dac.dac0 >> 5) & 7;
+  if (e.ink === 0) e.ink = (z80SubAdd(world.dac.dac0 & 0xff, 5, 7) & 7) || 2;
   e.period = z80SubAdd((world.dac.dac2 >> 4) & 0xff, 5, 9) || 4;
   e.timer = world.dac.dac2 & 0xff;
   e.aiPeriod = modBias(world.dac.dac4 & 0x0f, 5, 5) || 8;
@@ -184,17 +188,20 @@ export function spawnOne(prep: Prepared, room: number, world: World, slot: numbe
   if (kind === KIND_BADALIEN2) e.ai = AI_FORCED_KIND2;
   e.dir = 0x55;
   e.set = "corepieces1";
-  let x = 16;
-  let y = 40;
   for (let attempt = 0; attempt < 0x64; attempt++) {
     dacStep(world.dac);
-    const lo = world.dac.dac0 & 0xff;
-    if (lo & 1) {
-      y = ((modBias(lo, 9, 0x0f) << 3) - 1) & 0xff;
-      x = world.dac.dac2 & 1 ? 0x02 : 0xee;
+    let a = world.dac.dac0 & 0xff;
+    const odd = (a & 1) !== 0;
+    a = ((a >> 1) | (odd ? 0x80 : 0)) & 0xff;
+    const dac1 = (world.dac.dac0 >> 8) & 0xff;
+    let x: number;
+    let y: number;
+    if (odd) {
+      y = ((z80SubAdd(a, 0x09, 0x0f) << 3) - 1) & 0xff;
+      x = dac1 & 0x80 ? 0x02 : 0xee;
     } else {
-      x = (modBias(lo, 0x17, 0x1b) << 3) & 0xff;
-      y = world.dac.dac2 & 1 ? 0x11 : 0x8d;
+      x = (z80SubAdd(a, 0x17, 0x1b) << 3) & 0xff;
+      y = dac1 & 1 ? 0x11 : 0x8d;
     }
     if (spawnCellOk(world, x, y)) {
       e.homeX = x;

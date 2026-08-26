@@ -28,8 +28,10 @@ Souřadnice v paměti: `$DD1D` = X (pixely zleva), `$DD1E` = Y **odspodu obrazov
 | start X, Y | `$88`, `$3F` | `$6468 LD HL,$3F88` |
 | kreslení | XOR 3 bajty/scanline, inkoust `AND $F8 / OR ink` pokud není bit 5 | `$DF70`, `$D8B1` |
 | pevnost (export / overlay) | bit 6 a ne `$64` | `$D280`, `$C7DF` |
-| start energie / plošinky / palba (snapshot) | `$17`, `$30`, `$7E` | `g$D2CD` — engine `START_*`, ne nová hra |
-| nová hra energie / plošinky / palba | `$7F`, `$32`, `$7F` | `$6343` + `$D425`; engine nepoužívá |
+| start energie | `$7F` | `$6343` + `$D425`; snapshot `g$D2CD` byl `$17` (do nuly ~13 s) |
+| start plošinky / palba (snapshot) | `$30`, `$7E` | `g$D2CE` / `g$D2CF` |
+| nová hra plošinky / palba | `$32`, `$7F` | `$6343` + `$D425` |
+| `$DD30` start | 0 | `$6452`; snapshot `$51` |
 | životy | 4 | `$6343` offset `$0E` → `$D2CC` |
 | stavba plošinky | Down samotné (`$DD23 == $04`) | `$C79F CP $04` |
 | zámek opakování | `$DD2C` = 1 do uvolnění Down | `$C7B9` / `$C856` |
@@ -94,7 +96,7 @@ Při odchodu z místnosti `$C8F4` vrací `A=$00`, `$A523` skočí na `$A426`: `$
 
 Pohyb je `$A01B` (komentář „Move the nasties“). Jednou `$DAC6`, pak sloty `$9C43`..1, každý **4 podkroky** (`$A01A`). Slot 0 je Blob; vetřelci začínají na `$DD38`. Y=0 = neaktivní (`$A03D`).
 
-Spawn `$9C47` po vstupu do místnosti (`$A520`). Čtyři sloty, grafika `$B208+n×$C0`. Stav 0: čeká na časovač, pak 16 kroků `corepieces1` (`$B148`) na `home` (`IX+$0A/$0B`), potom stav 1 a živá sada. Typ AI `IX+$19` (0 bounce, 1–2 náhodný směr, 3 náhodná rychlost, 4 chase, 5 mix, 6 bez svislé sondy). Terén: totéž `$D2F0`/`$D2F4` (`attr < $40`) — **neprocházejí zdí**.
+Spawn `$9C47` po vstupu do místnosti (`$A520`). Čtyři sloty, grafika `$B208+n×$C0`. Home `$9EE2`: po `RRCA` `$DAC0` buď vodorovná hrana Y=`$11`/`$8D` (`$DAC1` bit 0) a X=`SUB $17 ADD $1B`, nebo svislá hrana X=`$02`/`$EE` (`$DAC1` RLCA) a Y=`SUB $09 ADD $0F`. Prázdné 2×2 (`attr ∧ $60 == $40`); mimo 32×18 **není** vzduch. Stav 0: čeká na časovač, pak 16 kroků `corepieces1` (`$B148`) na `home` (`IX+$0A/$0B`), potom stav 1 a živá sada. Typ AI `IX+$19` (0 bounce, 1–2 náhodný směr, 3 náhodná rychlost, 4 chase, 5 mix, 6 bez svislé sondy). Terén: totéž `$D2F0`/`$D2F4` (`attr < $40`) — **neprocházejí zdí**.
 
 Kontakt `$A305` jen ve stavu 1. Smrtící sady `badalien*` mají high bajt `< $B4` → `$C350` (okamžitá smrt, ne −N energie). `alien*` `≥ $B4` přičtou `$0A` k `$DD30`; `$CB58` každý tick `$DD30++` a při `$78` bere 4 energie (`$D41F`). Doba nezranitelnosti **není**.
 

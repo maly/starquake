@@ -72,13 +72,13 @@ export const TEMP_JUMP_PX = 2;
 /**
  * Blob status bytes starting at $D2CD: energy, bridge power, firepower.
  * $D425 prints them; $D4E9 (via $D41F) decrements index A by C.
- * START_* are the snapshot (`g$D2CD`), not a fresh `$6351` game.
+ * Energy uses new-game `$6343`/`$D425` (`$7F`). Platforms/firepower stay snapshot.
  */
-export const START_ENERGY = 0x17;
+export const START_ENERGY = 0x7f;
 export const START_PLATFORMS = 0x30;
 export const START_FIREPOWER = 0x7e;
 
-/** `$6343` new-game pair; `$D425` then caps energy/firepower at `$7F`. Engine keeps START_*. */
+/** `$6343` new-game pair; `$D425` then caps energy/firepower at `$7F`. */
 export const NEW_GAME_ENERGY = 0x7f;
 export const NEW_GAME_PLATFORMS = 0x32;
 export const NEW_GAME_FIREPOWER = 0x7f;
@@ -209,7 +209,8 @@ export const AI5_CHASE_MAX = 0x46;
 /** $CB58: $DD30 += 1 per tick, wrap at $78 → $D41F A=0 C=$04 (energy −4). */
 export const ENERGY_DRAIN_WRAP = 0x78;
 export const ENERGY_DRAIN_STEP = 4;
-export const START_ENERGY_DRAIN = 0x51;
+/** `$6452` zeros `$DD30` on new game. Snapshot `g$DD30` is `$51`. */
+export const START_ENERGY_DRAIN = 0;
 export const ANNOY_DRAIN_BUMP = 0x0a;
 
 /** $9C40 set to $B4 on spawn; $A4B1 / $9C47 swap 21 bytes × 4 into $959C. */

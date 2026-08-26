@@ -47,7 +47,7 @@ def test_collect_persists_across_rooms() -> None:
         assert payload["afterPick"]["collected"] == 1, payload
         assert payload["afterPick"]["inventory"], payload
         # $D09F / $94E8 fills inventory; extra $CC9A is a different path.
-        assert payload["afterPick"]["energy"] == 0x17, payload
+        assert payload["afterPick"]["energy"] == 0x7F, payload
         assert payload["afterPick"]["platforms"] == 0x30, payload
         assert payload["afterPick"]["firepower"] == 0x7E, payload
         assert payload["afterPick"]["lives"] == 4, payload

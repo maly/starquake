@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `eb8daa9` (extra `$CC9A`/`$90` spawn, puls `$DB88`, `$A66C` 1 ze 4 slotů). Working tree čistý až na `tmp_*_probe.py`.
+Poslední commit: `554c635` (spawn home `$9EE2`, energie `$7F`/`$DD30=0`, ink≠0). Working tree: jen `tmp_*_probe.py`.
 
 ## Tvrdé meze
 
@@ -37,13 +37,13 @@ http://127.0.0.1:8000/viewer/
 | soubor | role |
 |---|---|
 | `game/src/constants.ts` | ROM + `TEMP_JUMP_*` unbound + `TELEPORT_TABLE` + `DD22_*` + lift/pad + smrt A / `$06`/`$70`/`$80` |
-| `game/src/types.ts` | `World`: `dd22`, `lastDir`, `station`, `pad`, `padShot*`, `collected`, `a350`, `extra`, `inventory`, `cheops`, `teleportLatch`, `message`, `readTeleportCode`, `lives`, `gameOver`, `d2c4`, `deathA`, `entry`, `pulses` |
+| `game/src/types.ts` | `World`: `dd22`, `lastDir`, `station`, `pad`, `padShot*`, `collected`, `a350`, `extra`, `inventory`, `cheops`, `teleportLatch`, `message`, `readTeleportCode`, `lives`, `gameOver`, `d2c4`, `deathA`, `entry`, `pulses`, `pulseIndex` |
 | `game/src/objects.ts` | `scanHotspots` (`$A90F`/`$AA02` z rooms+blocks+`block_attrs` raw: `$C0/$D0/$60/$70/$80/$90`), `evaluateTeleport`, `walkSpecialObjects` |
 | `game/src/physics.ts` | tick (viz pořadí), `applyDeath` `$C350` |
 | `game/src/projectiles.ts` | `tickFire` `$C85A`, `tickPadFire` `$CA15` |
-| `game/src/entities.ts` | nasties + pad spawn/kopie, `hitByBullet`, kontakt `$A305`, `$9F05`, AI 5/6 |
+| `game/src/entities.ts` | nasties + pad spawn/kopie, home `$9EE2`, ink `$9E1C`, `hitByBullet`, kontakt `$A305`, `$9F05`, AI 5/6 |
 | `game/src/items.ts` | `$94E8` inventář; extra `$CC9A` / `$CCCC`; teleport/pad/rostlina sem nepatří |
-| `game/src/render.ts` | `prepare()` hotspots, stamp pad, kreslí `nastyCount` slotů |
+| `game/src/render.ts` | `prepare()` hotspots, stamp pad, `blitPulses` `$DB88`, kreslí `nastyCount` slotů |
 | `game/src/dump.ts` | `--fire-trace`, `--collect-test`, `--lift-test`, `--pad-test`, `--teleport-test`, `--teleport-eval`, `--death-test`, `--enemy-trace`, `--timing` |
 
 Souřadnice: `$DD1D` X zleva, `$DD1E` Y odspodu; playY = `143 − gameY`. Start Blob: X=`$88` Y=`$3F`. Entity Y je game-Y.
@@ -69,14 +69,14 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 
 - Extract: grafika, bloky, 512 místností, attrs `$EAD3`, solid bit 6 / `$64`, items `$94E8`, actors, `$AA30`.
 - BLOB: ±2 px, pád `$C751`, inkoust + `attr < $40`, 4 směry `$C8F4`. Hop `TEMP_JUMP_*` unbound.
-- Plošinky `$C79F`. Nepřátelé 4 sloty, stampGrafix, park se nekreslí. S padem `nastyCount=3`.
+- Plošinky `$C79F`. Nepřátelé 4 sloty, stampGrafix, park se nekreslí. Home `$9EE2` (Z80 `SUB`/`ADD`, `$DAC1` hrana, OOB ≠ vzduch). Ink 0 → `$9E16` 2…6. S padem `nastyCount=3`.
 - Střelba `$C85A`, předměty `$94E8` (inventář, **ne** refill) + extra `$A350` / `$CC9A` (`$11`–`$16` tabulka, `$17` `$CCCC`, `$18` lives+1 bez stropu `$7F`, `$19` Cheops flag).
 - Vznášedlo `$0C` / `$C967` / `$CA15`. Teleport `$0D` / `$D036` (prompt, ne Spectrum overlay).
 - Zdviž `$64` / `$DD22=1`. `$D2F0` 2 řady když `(Y+1)∧7=0`, jinak 3 — otvor `$44` v `#249` neposkakuje.
-- Energie `$CB58` −4 při wrap `$78`; obtěžující `$DD30 += $0A` (až 4×/tick, bez i-frames). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
+- Energie `$CB58` −4 při wrap `$78` (`$DD30` start 0, energie `$7F` jako nová hra); obtěžující `$DD30 += $0A` (až 4×/tick, bez i-frames). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
 - `$9F05` nibble `$80` → živý `$B2C8` AI 6. Perioda spawnu 4…8. AI 5 dir=0 / RRCA, AI 3 zapisuje 8-směr. `$A2B9` = `$08,$09,$01,$05,$04,$06,$02,$0A`.
 
-Ověřeno (working tree): `npm test` 91 pass; pytest viewer+enemies+fire+items+transport+death 22 pass (enemies rooms 0, 1, 52, 253); live ~0,24 ms/snímek (limit 20).
+Ověřeno (working tree): `npm test` 95 pass; pytest viewer+enemies+fire+items+transport+death 22 pass (enemies rooms 0, 1, 52, 253); live ~0,24 ms/snímek (limit 20).
 
 ## Otevřené
 
@@ -146,6 +146,14 @@ Spawn hledal nakreslený attr `$90` (0 buněk v exportu). ROM `$A90F` bere raw n
 
 Sloupy (terén) byly, AABB zabíjela, jiskra se nekreslila. `$A66C` při flag≠0 XOR `$DC55` L=`$05` a anim L=`$06`/`$07` (`$A6BD`), attr `$44`+(`$DAC0`∧3). Engine kreslí na snímek, ne persist XOR. Panel `Puls $70`. Příklad `#13`.
 
+### 2026-08-26 — energie `$7F` a ink 0
+
+Snapshot `$17`/`$DD30=$51` došel za ~13 s. Engine bere novou hru `$6343`/`$D425` energie `$7F`, `$DD30=0` (první −4 po `$78` ticích ≈ 2,4 s, do nuly ≈ 77 s). Plošinky/palba dál snapshot. Ink `$9E1C` 0 na paper 0 je neviditelný; při 0 se bere `$9E16` `SUB $05 ADD $07` (2…6).
+
+### 2026-08-26 — spawn vetřelců ve stropě
+
+Home `$9EE2` bral `modBias` (bez underflow) a `$DAC2` bit 0. Y vycházelo `$9F`–`$B7` nad play-area; `spawnCellOk` bralo OOB jako `$47`. ROM: po `RRCA` `$DAC0` `SUB $09 ADD $0F` / `SUB $17 ADD $1B`, hrana z `$DAC1`. Mimo 32×18 teď není vzduch.
+
 ### 2026-08-26 — tempo výbojů `$A66C`
 
-Engine toggloval **všechny** pulsy každý 50 Hz tick (perioda 8…20 → 0,16–0,4 s). ROM `$A66C` INC `$9634`, wrap `$04`, DEC jen jeden záznam; prázdný řádek RET. Jeden puls se aktualizuje každé 4 snímky: perioda 8 → 9 návštěv × 4 = 36 ticků ≈ 0,72 s fáze; 12 → 1,0 s; 20 → 1,7 s. Wrap je DEC na `$FF` (ne nula). AABB pořád kontroluje všechny flagy (`$A530`). Úbytek energie `$CB58` / `$78` se **neměnil** (jiná smyčka, 50 Hz, snapshot `$17`/`$DD30=$51`).
+Engine toggloval **všechny** pulsy každý 50 Hz tick (perioda 8…20 → 0,16–0,4 s). ROM `$A66C` INC `$9634`, wrap `$04`, DEC jen jeden záznam; prázdný řádek RET. Jeden puls se aktualizuje každé 4 snímky: perioda 8 → 9 návštěv × 4 = 36 ticků ≈ 0,72 s fáze; 12 → 1,0 s; 20 → 1,7 s. Wrap je DEC na `$FF` (ne nula). AABB pořád kontroluje všechny flagy (`$A530`). Úbytek `$CB58`/`$78` beze změny tempa; později start energie `$7F`/`$DD30=0` (viz sezení výše).

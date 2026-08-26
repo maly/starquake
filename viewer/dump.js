@@ -56,7 +56,7 @@ var ENTER_TOP_Y = 143;
 var EXIT_UP_Y = 144;
 var ENTER_BOTTOM_Y = 15;
 var TEMP_JUMP_PX = 2;
-var START_ENERGY = 23;
+var START_ENERGY = 127;
 var START_PLATFORMS = 48;
 var START_FIREPOWER = 126;
 var NEW_GAME_X = 136;
@@ -131,7 +131,7 @@ var FIXED_NASTY_DIR = 1;
 var AI5_CHASE_MAX = 70;
 var ENERGY_DRAIN_WRAP = 120;
 var ENERGY_DRAIN_STEP = 4;
-var START_ENERGY_DRAIN = 81;
+var START_ENERGY_DRAIN = 0;
 var ANNOY_DRAIN_BUMP = 10;
 var SPAWN_GUARD = 180;
 var NASTY_SPEED = 2;
@@ -684,7 +684,10 @@ function spawnCellOk(world, x, y) {
     [0, 1],
     [1, 1]
   ]) {
-    if (!emptyish(cellAttr(world, col + dc, row + dr))) return false;
+    const c = col + dc;
+    const r = row + dr;
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+    if (!emptyish(cellAttr(world, c, r))) return false;
   }
   return true;
 }
@@ -726,6 +729,7 @@ function spawnOne(prep2, room2, world, slot) {
   const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
   const e = makeEntity(ptr);
   e.ink = world.dac.dac0 >> 5 & 7;
+  if (e.ink === 0) e.ink = z80SubAdd(world.dac.dac0 & 255, 5, 7) & 7 || 2;
   e.period = z80SubAdd(world.dac.dac2 >> 4 & 255, 5, 9) || 4;
   e.timer = world.dac.dac2 & 255;
   e.aiPeriod = modBias(world.dac.dac4 & 15, 5, 5) || 8;
@@ -735,17 +739,20 @@ function spawnOne(prep2, room2, world, slot) {
   if (kind === KIND_BADALIEN2) e.ai = AI_FORCED_KIND2;
   e.dir = 85;
   e.set = "corepieces1";
-  let x = 16;
-  let y = 40;
   for (let attempt = 0; attempt < 100; attempt++) {
     dacStep(world.dac);
-    const lo = world.dac.dac0 & 255;
-    if (lo & 1) {
-      y = (modBias(lo, 9, 15) << 3) - 1 & 255;
-      x = world.dac.dac2 & 1 ? 2 : 238;
+    let a = world.dac.dac0 & 255;
+    const odd = (a & 1) !== 0;
+    a = (a >> 1 | (odd ? 128 : 0)) & 255;
+    const dac1 = world.dac.dac0 >> 8 & 255;
+    let x;
+    let y;
+    if (odd) {
+      y = (z80SubAdd(a, 9, 15) << 3) - 1 & 255;
+      x = dac1 & 128 ? 2 : 238;
     } else {
-      x = modBias(lo, 23, 27) << 3 & 255;
-      y = world.dac.dac2 & 1 ? 17 : 141;
+      x = z80SubAdd(a, 23, 27) << 3 & 255;
+      y = dac1 & 1 ? 17 : 141;
     }
     if (spawnCellOk(world, x, y)) {
       e.homeX = x;

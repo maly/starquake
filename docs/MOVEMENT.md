@@ -39,6 +39,23 @@ Souřadnice v paměti: `$DD1D` = X (pixely zleva), `$DD1E` = Y **odspodu obrazov
 | životnost | `($DAC0 ∧ 3) + 5` návštěv `$DBEC` | `$C833` |
 | zánik | `$DBEC` sloupne XOR, `SET 6` | `$DC3C A=$40` |
 | odchod z místnosti | sloty na nulu, terén z exportu | `$A4B1` po `$A426` / `$A7FC` |
+| tabulka entit | 6 × 32 B od `$DD18` (0 = Blob) | `$DF70` kreslí 6, `$A01B` 1..`$9C43` |
+| vetřelci na místnost | 4 sloty `$DD38`–`$DD98` | `$9FEF` B=4..1, `RRCA×3` |
+| grafika GRAFIX | `$B208` + n×`$C0` | `$9DF9` |
+| smrtící / obtěžující | hi bajt grafiky `< $B4` / `≥ $B4` | `$A327 CP $B4` |
+| smrtící následek | `JP $C350` (smrt) | `$A305` |
+| obtěžující následek | `$DD30 += $0A` | `$A345` |
+| periodický úbytek energie | `$DD30` wrap `$78` → energie −4 | `$CB58` / `$D41F A=0 C=$04` |
+| hitbox | \|dx\| < `$0E`, \|dy\| < `$0B` | `$A305` |
+| rychlost | 2 px (typ 3 umí 1) | `$A2A5` / `$9E90` |
+| podkroky | 4× za tick | `$A043 LD A,$04` |
+| hrany | X `<3`/`≥$EE`, Y `<$12`/`≥$8D` | `$A0E4`–`$A15D` |
+| terén vetřelce | `$D2F0` / `$D2F4`, attr `< $40` | `$A0FD` / `$A16F` |
+| kreslení | XOR `$DF70`, ink `$D8B1` (ne bit 6) | `$D9CB` / `$D9CE` |
+| engine kreslení | per-pixel overlay, bez clash `$D8B1` | `stampGrafix` |
+| parkování před objevením | X=0 Y=`$0F` grafika `$DF40`; nekreslit když X∨Y `< $10` | `$9E83`, `$D8B1 CP $10` |
+| pointer sady | `$B208+n×$C0`; `alien5` ve skoolu až `$B750` | `$9DF9` vs `#GRAFIX` |
+| cache mezi místnostmi | 21 B × 4 ve `$959C` (jen předchozí) | `$9C78` |
 
 ## Kolizní sondy
 
@@ -68,6 +85,18 @@ Odstranění je **časovač**, ne klávesa. `$DBEC` (každý tick jedna z 12) sn
 
 Při odchodu z místnosti `$C8F4` vrací `A=$00`, `$A523` skočí na `$A426`: `$A7FC` znovu vykreslí místnost z dat a `$A4B1` vynuluje `$DBBB` (`LD B,$31`). Postavené plošinky **nejsou** perzistentní — platí jen pro aktuální místnost, dokud nevyprší nebo dokud Blob neodejde. Návrat obnoví export.
 
+## Nepřátelé
+
+`$D9C8` volá `$DF70` (XOR 6 GRAFIX slotů od `$DD18`) a `$D8B1` (inkoust `AND $F8 / OR ink`, buňka s bit 5 se přeskočí). **Bit 6 se nemění** — vetřelec neupravuje pevnost terénu. Kolize postavy dál čte živou atributovou mřížku bez kresby entit.
+
+Pohyb je `$A01B` (komentář „Move the nasties“). Jednou `$DAC6`, pak sloty `$9C43`..1, každý **4 podkroky** (`$A01A`). Slot 0 je Blob; vetřelci začínají na `$DD38`. Y=0 = neaktivní (`$A03D`).
+
+Spawn `$9C47` po vstupu do místnosti (`$A520`). Čtyři sloty, grafika `$B208+n×$C0`. Stav 0: čeká na časovač, pak 16 kroků `corepieces1` (`$B148`) na `home` (`IX+$0A/$0B`), potom stav 1 a živá sada. Typ AI `IX+$19` (0 bounce, 1–2 náhodný směr, 3 náhodná rychlost, 4 chase, 5 mix, 6 bez svislé sondy). Terén: totéž `$D2F0`/`$D2F4` (`attr < $40`) — **neprocházejí zdí**.
+
+Kontakt `$A305` jen ve stavu 1. Smrtící sady `badalien*` mají high bajt `< $B4` → `$C350` (okamžitá smrt, ne −N energie). `alien*` `≥ $B4` přičtou `$0A` k `$DD30`; `$CB58` každý tick `$DD30++` a při `$78` bere 4 energie (`$D41F`). Doba nezranitelnosti **není**.
+
+Mezi místnostmi: `$9C78` prohodí 21 bajtů × 4 se `$959C`. Návrat do **ihned předchozí** místnosti obnoví cache; třetí místnost ji zahodí a spawne znovu. Stav se **nehromadí** (vždy ≤ 4). Nejsou vázaní na 512 místností napevno.
+
 ## Dočasné hodnoty
 
 | veličina | dočasně | důvod |
@@ -79,3 +108,6 @@ Při odchodu z místnosti `$C8F4` vrací `A=$00`, `$A523` skočí na `$A426`: `$
 1. **Skok při chůzi.** Impulz v `$C5BD` chybí. Down staví plošinku (`$C79F`); jetpack je `$C76D`. Hop v engine zůstává `TEMP_JUMP_*`.
 2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne.
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
+4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
+5. **Místnost `$C7` (jádro)** a **jetpack ve slotu 4** (`$9C43=3`, `$AFC8`) — mimo rozsah.
+6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá.

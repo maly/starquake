@@ -3,6 +3,7 @@ import {
   CELL,
   CLEAR_ATTR,
   COLS,
+  GAME_Y_ORIGIN,
   HEIGHT,
   MAP_COLS,
   MAP_ROWS,
@@ -13,6 +14,7 @@ import {
   SPECTRUM,
   WIDTH,
 } from "./constants";
+import { entityVisible } from "./entities";
 import type { Buffers, GameData, Graphic, Item, Prepared, RenderOpts, Rgb, World } from "./types";
 
 export function paperInk(attr: number): [Rgb, Rgb] {
@@ -52,12 +54,14 @@ export function prepare(data: GameData): Prepared {
   const sprites: Graphic[] = [];
   for (const g of data.sprites.graphics) sprites[g.id] = g;
   const actorsBySet = new Map<string, Graphic[]>();
+  const actorsByPtr = new Map<number, Graphic>();
   if (data.actors) {
     for (const g of data.actors.graphics) {
       const name = g.set ?? "";
       const list = actorsBySet.get(name) ?? [];
       list.push(g);
       actorsBySet.set(name, list);
+      actorsByPtr.set(g.ptr, g);
     }
     for (const list of actorsBySet.values()) {
       list.sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0));
@@ -72,7 +76,7 @@ export function prepare(data: GameData): Prepared {
     if (it.room === ROOM_SKIP) continue;
     if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
   }
-  return { graphics, sprites, actorsBySet, blocks, rooms: data.rooms.rooms, itemsByRoom };
+  return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms: data.rooms.rooms, itemsByRoom };
 }
 
 export function newBuffers(): Buffers {
@@ -186,12 +190,69 @@ export function blitItems(prep: Prepared, buf: Buffers, roomId: number): void {
  * $DF70 XOR of a GRAFIX frame (3×2, 8 scanlines × 3 interleaved bytes)
  * at pixel (x, y). $D8B1 then merges ink unless BRIGHT (bit 5) is set.
  */
+export function packGrafix(frame: Graphic): Uint8Array {
+  const out = new Uint8Array(48);
+  for (const cell of frame.cells) {
+    if (cell.row < 0 || cell.row > 1 || cell.col < 0 || cell.col > 2) continue;
+    for (let py = 0; py < CELL; py++) out[cell.row * 24 + py * 3 + cell.col] = cell.data[py]!;
+  }
+  return out;
+}
+
+export function unpackGrafix(ptr: number, packed: Uint8Array): Graphic {
+  const cells: Graphic["cells"] = [];
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 3; col++) {
+      const data = [];
+      for (let py = 0; py < CELL; py++) data.push(packed[row * 24 + py * 3 + col]!);
+      cells.push({ row, col, data, attr: null });
+    }
+  }
+  return { id: -1, ptr, cols: 3, rows: 2, cells };
+}
+
+const grafixPtrCache = new Map<string, Graphic>();
+
+/** Frame at a $C0-indexed pointer; labeled #GRAFIX may start a few bytes later (alien5). */
+export function graphicForPtr(prep: Prepared, ptr: number): Graphic | undefined {
+  const exact = prep.actorsByPtr?.get(ptr);
+  if (exact) return exact;
+  const pool: Graphic[] = prep.actorsByPtr ? [...prep.actorsByPtr.values()] : [];
+  if (!pool.length) {
+    for (const list of prep.actorsBySet.values()) pool.push(...list);
+  }
+  let best: Graphic | undefined;
+  let bestDist = 48;
+  for (const g of pool) {
+    const d = Math.abs(g.ptr - ptr);
+    if (d !== 0 && d < bestDist) {
+      bestDist = d;
+      best = g;
+    }
+  }
+  if (!best) return undefined;
+  const key = `${ptr}:${best.ptr}`;
+  const hit = grafixPtrCache.get(key);
+  if (hit) return hit;
+  const packed = packGrafix(best);
+  const shifted = new Uint8Array(48);
+  const delta = ptr - best.ptr;
+  for (let i = 0; i < 48; i++) {
+    const src = i + delta;
+    shifted[i] = src >= 0 && src < 48 ? packed[src]! : 0;
+  }
+  const graphic = unpackGrafix(ptr, shifted);
+  grafixPtrCache.set(key, graphic);
+  return graphic;
+}
+
 export function blitGrafix(
   buf: Buffers,
   frame: Graphic,
   x: number,
   y: number,
   ink: number,
+  opts?: { mergeInk?: boolean },
 ): void {
   const occupied = new Set<number>();
   for (const cell of frame.cells) {
@@ -210,11 +271,41 @@ export function blitGrafix(
       }
     }
   }
+  if (opts?.mergeInk === false) return;
   const inkBits = ink & 7;
   for (const idx of occupied) {
     const attr = buf.attr[idx]!;
     if (attr & 0x20) continue;
     buf.attr[idx] = (attr & 0xf8) | inkBits;
+  }
+}
+
+/** Per-pixel overlay: no cell-ink rewrite ($D8B1), so no attribute clash. */
+export function stampGrafix(
+  rgba: Uint8ClampedArray,
+  frame: Graphic,
+  x: number,
+  y: number,
+  ink: number,
+): void {
+  const rgb = SPECTRUM[ink & 7]!;
+  for (const cell of frame.cells) {
+    for (let py = 0; py < CELL; py++) {
+      const bits = cell.data[py]!;
+      if (!bits) continue;
+      const pyAbs = y + cell.row * CELL + py;
+      if (pyAbs < 0 || pyAbs >= HEIGHT) continue;
+      for (let px = 0; px < CELL; px++) {
+        if (!(bits & (0x80 >> px))) continue;
+        const pxAbs = x + cell.col * CELL + px;
+        if (pxAbs < 0 || pxAbs >= WIDTH) continue;
+        const p = (pyAbs * WIDTH + pxAbs) * 4;
+        rgba[p] = rgb[0];
+        rgba[p + 1] = rgb[1];
+        rgba[p + 2] = rgb[2];
+        rgba[p + 3] = 255;
+      }
+    }
   }
 }
 
@@ -283,13 +374,21 @@ export function renderWorld(
 ): Uint8ClampedArray {
   copyBuffers(world.terrain, buf);
   if (opts.items !== false) blitItems(prep, buf, roomId);
+  const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
+  rasterize(buf, rgba, !!opts.overlay, solid);
+  if (opts.enemies !== false) {
+    for (const e of world.entities) {
+      if (!entityVisible(e)) continue;
+      const frame = graphicForPtr(prep, e.ptr) ?? prep.actorsBySet.get(e.set)?.[e.frame];
+      if (frame) stampGrafix(rgba, frame, e.x, GAME_Y_ORIGIN - e.y, e.ink);
+    }
+  }
   if (opts.blob) {
     const frames = prep.actorsBySet.get(opts.blob.set);
     const frame = frames?.[opts.blob.frame];
-    if (frame) blitGrafix(buf, frame, opts.blob.x, opts.blob.y, 7);
+    if (frame) stampGrafix(rgba, frame, opts.blob.x, opts.blob.y, 7);
   }
-  const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
-  return rasterize(buf, rgba, !!opts.overlay, solid);
+  return rgba;
 }
 
 export {

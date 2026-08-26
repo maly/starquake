@@ -25,6 +25,7 @@ import {
   ROOM_COUNT,
   ROWS,
   START_ENERGY,
+  START_ENERGY_DRAIN,
   START_FIREPOWER,
   START_PLATFORMS,
   TEMP_JUMP_PX,
@@ -34,6 +35,7 @@ import {
   WALK_RIGHT_SETS,
   WIDTH,
 } from "./constants";
+import { enterNasties, tickEnergyDrain, tickNasties } from "./entities";
 import { composeTiles, moveRoom, newBuffers } from "./render";
 import type { Graphic, Prepared, World } from "./types";
 
@@ -357,6 +359,8 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
   if (world) {
     tryBuildPlatform(prep, blob, input, world);
     tickBridges(world);
+    tickNasties(prep, blob, world);
+    tickEnergyDrain(world);
   }
 
   applyRoomExit(prep, blob, input.right && !input.left, input.left && !input.right, world);
@@ -373,6 +377,13 @@ export function createWorld(prep: Prepared, room: number): World {
     slotIndex: 0,
     buildLatch: false,
     dac0: 0,
+    dac: { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 },
+    entities: [],
+    entityCache: null,
+    cacheRoom: -1,
+    nastyCount: 0,
+    spawnGuard: 0,
+    energyDrain: START_ENERGY_DRAIN,
   };
   enterRoom(prep, world, room);
   return world;
@@ -384,6 +395,7 @@ export function enterRoom(prep: Prepared, world: World, room: number): void {
   for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
   world.slotIndex = 0;
   world.buildLatch = false;
+  enterNasties(prep, world, room);
 }
 
 export function platformCol(x: number): number {

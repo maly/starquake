@@ -1,6 +1,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { tickNasties } from "./entities";
 import { createWorld, spawnBlob, tick } from "./physics";
+import type { Entity } from "./types";
 import {
   HEIGHT,
   WIDTH,
@@ -89,6 +91,42 @@ const prep = loadData(dataDir);
 const buf = newBuffers();
 const rgba = newRgba();
 
+function entityPublic(e: Entity) {
+  return { x: e.x, y: e.y, state: e.state, dir: e.dir, ptr: e.ptr, timer: e.timer };
+}
+
+if (has("--enemy-trace")) {
+  const room = parseInt(arg("--room", "0"), 10);
+  const frames = parseInt(arg("--frames", "40"), 10);
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  const initPath = arg("--enemy-init", "");
+  if (initPath) {
+    const init = JSON.parse(fs.readFileSync(initPath, "utf8")) as {
+      dac?: typeof world.dac;
+      blob?: { x: number; y: number };
+      entities: Entity[];
+    };
+    if (init.dac) world.dac = init.dac;
+    if (init.blob) {
+      blob.x = init.blob.x;
+      blob.y = init.blob.y;
+    }
+    world.entities = init.entities;
+    world.nastyCount = init.entities.length;
+  }
+  const out = [];
+  const none = { left: false, right: false, up: false, down: false };
+  const onlyNasties = Boolean(initPath);
+  for (let i = 0; i < frames; i++) {
+    out.push({ frame: i, entities: world.entities.map(entityPublic) });
+    if (onlyNasties) tickNasties(prep, blob, world);
+    else tick(prep, blob, none, world);
+  }
+  process.stdout.write(JSON.stringify(out) + "\n");
+  process.exit(0);
+}
+
 if (has("--timing")) {
   const repeat = parseInt(arg("--repeat", "80"), 10);
   const rooms = parseRooms(arg("--rooms", "0,16,168,255,511"), prep);
@@ -114,6 +152,7 @@ if (has("--timing")) {
     renderWorld(prep, world, buf, rgba, blob.room, {
       items: true,
       overlay: false,
+      enemies: true,
       blob: { x: blob.x, y: blob.y, set: "blobwr1", frame: 0 },
     });
   }

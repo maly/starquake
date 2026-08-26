@@ -34,6 +34,52 @@
   var START_ENERGY = 23;
   var START_PLATFORMS = 48;
   var START_FIREPOWER = 126;
+  var NASTY_SLOTS = 4;
+  var NASTY_INNER_STEPS = 4;
+  var ENTITY_PARK_Y = 15;
+  var ENTITY_DUMMY_PTR = 57152;
+  var ENTITY_DRAW_MIN = 16;
+  var GRAFIX_BASE = 45576;
+  var GRAFIX_STRIDE = 192;
+  var KILL_GRAPHIC_HI = 180;
+  var APPEAR_GRAPHIC = 45384;
+  var DEAD_GRAPHIC = 48840;
+  var APPEAR_FRAMES = 16;
+  var DIE_FRAMES = 8;
+  var HIT_DX = 14;
+  var HIT_DY = 11;
+  var ENERGY_DRAIN_WRAP = 120;
+  var ENERGY_DRAIN_STEP = 4;
+  var START_ENERGY_DRAIN = 81;
+  var ANNOY_DRAIN_BUMP = 10;
+  var SPAWN_GUARD = 180;
+  var NASTY_SPEED = 2;
+  var NASTY_EDGE_L = 3;
+  var NASTY_EDGE_R = 238;
+  var NASTY_EDGE_D = 18;
+  var NASTY_EDGE_U = 141;
+  var ROOM_DATA_BASE = 3e4;
+  var ROOM_DATA_STRIDE = 12;
+  var ENEMY_SETS = [
+    "corepieces2",
+    "badalien1",
+    "badalien2",
+    "alien1",
+    "alien2",
+    "alien3",
+    "alien4",
+    "alien5",
+    "alien6",
+    "alien7",
+    "alien8",
+    "alien9",
+    "aliena",
+    "alienb",
+    "alienc",
+    "aliend",
+    "aliene"
+  ];
+  var DIR_TABLE = [8, 9, 1, 4, 5, 6, 2, 10];
   var PLATFORM_COST = 2;
   var PLATFORM_SLOTS = 12;
   var PLATFORM_INPUT = 4;
@@ -80,6 +126,371 @@
     [255, 255, 255]
   ];
 
+  // src/entities.ts
+  function cellAttr(world, col, row) {
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return 71;
+    return world.terrain.attr[row * COLS + col];
+  }
+  function cellSolid(world, col, row) {
+    return (cellAttr(world, col, row) & 64) === 0;
+  }
+  function cloneEntity(e) {
+    return { ...e };
+  }
+  function entityVisible(e) {
+    if (e.y === 0) return false;
+    if (e.ptr === ENTITY_DUMMY_PTR) return false;
+    return (e.x | e.y) >= ENTITY_DRAW_MIN;
+  }
+  function setForPtr(ptr) {
+    const n = Math.max(0, Math.round((ptr - GRAFIX_BASE) / GRAFIX_STRIDE));
+    return ENEMY_SETS[n] ?? "alien1";
+  }
+  function dacStep(d) {
+    let hl = d.dac0 & 65535;
+    const bc = hl;
+    hl = (hl << 8 | hl >> 8) & 65535;
+    hl = hl + bc + 41 + (d.dac2 & 65535) & 65535;
+    d.dac0 = hl;
+    d.db19 = d.db19 - 1 & 255;
+    if (d.db19 !== 0) return;
+    d.db19 = 5;
+    let dac2 = d.dac2 & 65535;
+    hl = dac2 * 16 + dac2 + 197 + (d.dac4 & 65535) & 65535;
+    d.dac2 = hl;
+    d.db1a = d.db1a - 1 & 255;
+    if (d.db1a !== 0) return;
+    d.db1a = 11;
+    hl = d.dac4 & 65535;
+    hl = (hl + hl + (d.dac0 & 65535) & 65535) + (hl + hl + (d.dac0 & 65535)) + 19387 & 65535;
+    d.dac4 = hl;
+  }
+  function seedDac(room) {
+    const addr = ROOM_DATA_BASE + room * ROOM_DATA_STRIDE;
+    return { dac0: addr, dac2: 0, dac4: addr, db19: 3, db1a: 3 };
+  }
+  function modBias(a, sub, add) {
+    let v = a & 255;
+    while (v >= sub) v -= sub;
+    return v + add & 255;
+  }
+  function emptyish(attr) {
+    return (attr & 96) === 64;
+  }
+  function spawnCellOk(world, x, y) {
+    const col = x >> 3;
+    const row = GAME_Y_ORIGIN - y >> 3;
+    for (const [dc, dr] of [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [1, 1]
+    ]) {
+      if (!emptyish(cellAttr(world, col + dc, row + dr))) return false;
+    }
+    return true;
+  }
+  function rotateDac0(world, times) {
+    let a = world.dac.dac0 & 255;
+    for (let i = 0; i < times; i++) a = (a << 1 | a >> 7) & 255;
+    return a;
+  }
+  function pickDir(world, slot, mask) {
+    const v = rotateDac0(world, slot) & mask;
+    return DIR_TABLE[v & 7];
+  }
+  function makeEntity(ptr) {
+    return {
+      x: 0,
+      y: ENTITY_PARK_Y,
+      ink: 4,
+      set: "corepieces1",
+      frame: 0,
+      ptr: ENTITY_DUMMY_PTR,
+      basePtr: ptr,
+      dir: 85,
+      speedX: NASTY_SPEED,
+      speedY: NASTY_SPEED,
+      period: 4,
+      timer: 8,
+      state: 0,
+      stateTimer: 0,
+      ai: 0,
+      aiPeriod: 8,
+      aiCount: 8,
+      homeX: 0,
+      homeY: 15
+    };
+  }
+  function spawnOne(prep, room, world, slot) {
+    dacStep(world.dac);
+    const kind = modBias(world.dac.dac0 & 255, 15, 17) & 31;
+    const ptr = GRAFIX_BASE + kind % ENEMY_SETS.length * GRAFIX_STRIDE;
+    const e = makeEntity(ptr);
+    e.ink = world.dac.dac0 >> 5 & 7;
+    e.period = modBias(world.dac.dac2 >> 4 & 255, 5, 9) || 4;
+    e.timer = world.dac.dac2 & 255;
+    e.aiPeriod = modBias(world.dac.dac4 & 15, 5, 5) || 8;
+    if (e.aiPeriod === 0) e.aiPeriod = 100;
+    e.aiCount = 8;
+    e.ai = modBias(world.dac.dac4 >> 8 & 15, 5, 5);
+    if (kind === 2) e.ai = 5;
+    e.dir = 85;
+    e.set = "corepieces1";
+    let x = 16;
+    let y = 40;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      dacStep(world.dac);
+      const lo = world.dac.dac0 & 255;
+      if (lo & 1) {
+        y = (modBias(lo, 9, 15) << 3) - 1 & 255;
+        x = world.dac.dac2 & 1 ? 2 : 238;
+      } else {
+        x = modBias(lo, 23, 27) << 3 & 255;
+        y = world.dac.dac2 & 1 ? 17 : 141;
+      }
+      if (spawnCellOk(world, x, y)) {
+        e.homeX = x;
+        e.homeY = y;
+        return e;
+      }
+    }
+    e.y = 0;
+    e.homeY = 0;
+    return e;
+  }
+  function spawnNasties(prep, room, world) {
+    world.dac = seedDac(room);
+    dacStep(world.dac);
+    world.entities = [];
+    for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep, room, world, i + 1));
+    world.nastyCount = NASTY_SLOTS;
+    world.spawnGuard = SPAWN_GUARD;
+  }
+  function enterNasties(prep, world, room) {
+    const outgoing = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
+    const incoming = world.entityCache;
+    world.entityCache = outgoing;
+    if (incoming && incoming.room === room && world.spawnGuard !== 0) {
+      world.entities = incoming.entities.map(cloneEntity);
+      world.nastyCount = NASTY_SLOTS;
+    } else {
+      spawnNasties(prep, room, world);
+    }
+    world.cacheRoom = room;
+  }
+  function isLethal(e) {
+    return e.ptr >> 8 < KILL_GRAPHIC_HI;
+  }
+  function hitBlob(e, blob) {
+    if (e.y === 0 || e.state !== 1) return false;
+    const dx = Math.abs(e.x - blob.x);
+    const dy = Math.abs(e.y - (GAME_Y_ORIGIN - blob.y));
+    return dx < HIT_DX && dy < HIT_DY;
+  }
+  function applyContact(e, blob, world) {
+    if (!hitBlob(e, blob)) return;
+    if (isLethal(e)) {
+      world.energy = 0;
+      return;
+    }
+    world.energyDrain = world.energyDrain + ANNOY_DRAIN_BUMP & 255;
+  }
+  function bounceH(e, world) {
+    if (e.x < NASTY_EDGE_L) {
+      e.dir = e.dir & 252 | 1;
+      return;
+    }
+    if (e.x >= NASTY_EDGE_R) {
+      e.dir = e.dir & 252 | 2;
+      return;
+    }
+    const playY = GAME_Y_ORIGIN - e.y;
+    if ((e.x & 7) !== 0) return;
+    const col = e.x >> 3;
+    const top = playY >> 3;
+    let left = false;
+    let right = false;
+    for (let r = 0; r < 2; r++) {
+      if (cellSolid(world, col - 1, top + r)) left = true;
+      if (cellSolid(world, col + 2, top + r)) right = true;
+    }
+    const bits = (right ? 1 : 0) | (left ? 2 : 0);
+    if (!bits) return;
+    e.dir = e.dir & 252 | bits ^ 3;
+  }
+  function bounceV(e, world) {
+    if (e.ai === 6) return;
+    if (e.y < NASTY_EDGE_D) {
+      e.dir = e.dir & 243 | 8;
+      return;
+    }
+    if (e.y >= NASTY_EDGE_U) {
+      e.dir = e.dir & 243 | 4;
+      return;
+    }
+    const playY = GAME_Y_ORIGIN - e.y;
+    if ((e.y + 1 & 7) !== 0) return;
+    const cols = (e.x & 7) === 0 ? [e.x >> 3, (e.x >> 3) + 1] : [e.x >> 3, (e.x >> 3) + 1, (e.x >> 3) + 2];
+    const floor = playY + 16 >> 3;
+    const ceil = (playY >> 3) - 1;
+    let down = false;
+    let up = false;
+    for (const c of cols) {
+      if (cellSolid(world, c, floor)) down = true;
+      if (cellSolid(world, c, ceil)) up = true;
+    }
+    const bits = (down ? 4 : 0) | (up ? 8 : 0);
+    if (!bits) return;
+    e.dir = e.dir & 243 | bits ^ 12;
+  }
+  function skip64(e, world) {
+    if ((e.x & 7) !== 0 || (e.y + 1 & 7) !== 0) return false;
+    const col = e.x >> 3;
+    const row = GAME_Y_ORIGIN - e.y >> 3;
+    for (const [dc, dr] of [
+      [0, 0],
+      [1, 0],
+      [0, 1],
+      [1, 1]
+    ]) {
+      if ((cellAttr(world, col + dc, row + dr) & 127) === 100) return true;
+    }
+    return false;
+  }
+  function think(e, blob, world, slot) {
+    e.aiCount -= 1;
+    if (e.aiCount !== 0) return;
+    e.aiCount = e.aiPeriod === 100 ? e.aiPeriod : e.aiPeriod;
+    if (e.aiPeriod === 100) {
+      e.aiCount = (world.dac.dac0 >> 8 & 3) + 1;
+      e.aiCount <<= 1;
+    }
+    switch (e.ai) {
+      case 0:
+        if ((e.dir & 11) === 0) e.dir |= 2;
+        if ((e.dir & 12) === 0) e.dir |= 8;
+        break;
+      case 1:
+        e.speedX = NASTY_SPEED;
+        e.speedY = NASTY_SPEED;
+        e.dir = DIR_TABLE[(rotateDac0(world, slot) & 3) << 1];
+        break;
+      case 2:
+        e.speedX = NASTY_SPEED;
+        e.speedY = NASTY_SPEED;
+        e.dir = pickDir(world, slot, 7);
+        break;
+      case 3: {
+        e.speedX = NASTY_SPEED;
+        e.speedY = NASTY_SPEED;
+        const bits = rotateDac0(world, slot);
+        let n = 0;
+        let a = bits;
+        for (let i = 0; i < 4; i++) {
+          if (a & 1) n += 1;
+          a >>= 1;
+        }
+        if (n === 1) break;
+        const hi = world.dac.dac0 >> 8 & 255;
+        if (hi & 128) break;
+        const s = (hi & 1) + 1;
+        e.speedX = s;
+        e.speedY = (s ^ 3) & 3 || 1;
+        break;
+      }
+      case 4: {
+        const bx = blob.x;
+        const by = GAME_Y_ORIGIN - blob.y;
+        let dir = 0;
+        dir |= e.x < bx ? 1 : 2;
+        dir |= e.y < by ? 8 : 4;
+        e.dir = dir;
+        break;
+      }
+      case 5:
+        e.dir = 0;
+        if (rotateDac0(world, slot) & 1) break;
+        if ((world.dac.dac0 & 255) < 70) {
+          const bx = blob.x;
+          const by = GAME_Y_ORIGIN - blob.y;
+          e.dir = (e.x < bx ? 1 : 2) | (e.y < by ? 8 : 4);
+        } else {
+          e.ai = 3;
+        }
+        break;
+      case 6:
+        if ((e.dir & 3) === 0) e.dir = e.dir & 252 | 1;
+        break;
+      default:
+        break;
+    }
+  }
+  function appearOrDie(e) {
+    if (e.state === 2) {
+      e.ptr = DEAD_GRAPHIC;
+      e.set = "stars";
+      e.stateTimer += 1;
+      if (e.stateTimer >= DIE_FRAMES) {
+        e.y = 0;
+        e.x = 0;
+      }
+      return true;
+    }
+    if (e.state !== 0) return false;
+    const was = e.stateTimer;
+    e.stateTimer += 1;
+    if (was === 0) {
+      e.x = e.homeX;
+      e.y = e.homeY;
+      e.ptr = APPEAR_GRAPHIC;
+      e.set = "corepieces1";
+    }
+    if (was === APPEAR_FRAMES) {
+      e.state = 1;
+      e.stateTimer = 0;
+      e.ptr = e.basePtr;
+      e.set = setForPtr(e.basePtr);
+    }
+    return false;
+  }
+  function stepMove(e, world) {
+    bounceH(e, world);
+    if (skip64(e, world)) return;
+    if (e.dir & 1) e.x = e.x + e.speedX & 255;
+    if (e.dir & 2) e.x = e.x - e.speedX & 255;
+    bounceV(e, world);
+    if (e.dir & 4) e.y = e.y - e.speedY & 255;
+    if (e.dir & 8) e.y = e.y + e.speedY & 255;
+  }
+  function stepOne(e, prep, blob, world, slot) {
+    if (e.y === 0) return;
+    applyContact(e, blob, world);
+    e.timer = e.timer - 1 & 255;
+    if (e.timer !== 0) return;
+    e.timer = e.period;
+    if (appearOrDie(e) && e.y === 0) return;
+    if (e.state === 2) return;
+    think(e, blob, world, slot);
+    stepMove(e, world);
+  }
+  function tickNasties(prep, blob, world) {
+    if (world.spawnGuard) world.spawnGuard -= 1;
+    dacStep(world.dac);
+    const n = Math.min(world.nastyCount, world.entities.length);
+    for (let slot = n; slot >= 1; slot--) {
+      const e = world.entities[slot - 1];
+      if (!e) continue;
+      for (let i = 0; i < NASTY_INNER_STEPS; i++) stepOne(e, prep, blob, world, slot);
+    }
+  }
+  function tickEnergyDrain(world) {
+    world.energyDrain = world.energyDrain + 1 & 255;
+    if (world.energyDrain < ENERGY_DRAIN_WRAP) return;
+    world.energyDrain = 0;
+    world.energy = Math.max(0, world.energy - ENERGY_DRAIN_STEP);
+  }
+
   // src/render.ts
   function paperInk(attr) {
     const table = attr & 64 ? BRIGHT : SPECTRUM;
@@ -108,12 +519,14 @@
     const sprites = [];
     for (const g of data.sprites.graphics) sprites[g.id] = g;
     const actorsBySet = /* @__PURE__ */ new Map();
+    const actorsByPtr = /* @__PURE__ */ new Map();
     if (data.actors) {
       for (const g of data.actors.graphics) {
         const name = g.set ?? "";
         const list = actorsBySet.get(name) ?? [];
         list.push(g);
         actorsBySet.set(name, list);
+        actorsByPtr.set(g.ptr, g);
       }
       for (const list of actorsBySet.values()) {
         list.sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0));
@@ -128,7 +541,7 @@
       if (it.room === ROOM_SKIP) continue;
       if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
     }
-    return { graphics, sprites, actorsBySet, blocks, rooms: data.rooms.rooms, itemsByRoom };
+    return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms: data.rooms.rooms, itemsByRoom };
   }
   function newBuffers() {
     return {
@@ -212,29 +625,76 @@
       }
     }
   }
-  function blitGrafix(buf, frame, x, y, ink) {
-    const occupied = /* @__PURE__ */ new Set();
+  function packGrafix(frame) {
+    const out = new Uint8Array(48);
+    for (const cell of frame.cells) {
+      if (cell.row < 0 || cell.row > 1 || cell.col < 0 || cell.col > 2) continue;
+      for (let py = 0; py < CELL; py++) out[cell.row * 24 + py * 3 + cell.col] = cell.data[py];
+    }
+    return out;
+  }
+  function unpackGrafix(ptr, packed) {
+    const cells = [];
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 3; col++) {
+        const data = [];
+        for (let py = 0; py < CELL; py++) data.push(packed[row * 24 + py * 3 + col]);
+        cells.push({ row, col, data, attr: null });
+      }
+    }
+    return { id: -1, ptr, cols: 3, rows: 2, cells };
+  }
+  var grafixPtrCache = /* @__PURE__ */ new Map();
+  function graphicForPtr(prep, ptr) {
+    const exact = prep.actorsByPtr?.get(ptr);
+    if (exact) return exact;
+    const pool = prep.actorsByPtr ? [...prep.actorsByPtr.values()] : [];
+    if (!pool.length) {
+      for (const list of prep.actorsBySet.values()) pool.push(...list);
+    }
+    let best;
+    let bestDist = 48;
+    for (const g of pool) {
+      const d = Math.abs(g.ptr - ptr);
+      if (d !== 0 && d < bestDist) {
+        bestDist = d;
+        best = g;
+      }
+    }
+    if (!best) return void 0;
+    const key = `${ptr}:${best.ptr}`;
+    const hit = grafixPtrCache.get(key);
+    if (hit) return hit;
+    const packed = packGrafix(best);
+    const shifted = new Uint8Array(48);
+    const delta = ptr - best.ptr;
+    for (let i = 0; i < 48; i++) {
+      const src = i + delta;
+      shifted[i] = src >= 0 && src < 48 ? packed[src] : 0;
+    }
+    const graphic = unpackGrafix(ptr, shifted);
+    grafixPtrCache.set(key, graphic);
+    return graphic;
+  }
+  function stampGrafix(rgba, frame, x, y, ink) {
+    const rgb = SPECTRUM[ink & 7];
     for (const cell of frame.cells) {
       for (let py = 0; py < CELL; py++) {
         const bits = cell.data[py];
         if (!bits) continue;
         const pyAbs = y + cell.row * CELL + py;
+        if (pyAbs < 0 || pyAbs >= HEIGHT) continue;
         for (let px = 0; px < CELL; px++) {
           if (!(bits & 128 >> px)) continue;
           const pxAbs = x + cell.col * CELL + px;
-          if (pxAbs < 0 || pyAbs < 0 || pxAbs >= WIDTH || pyAbs >= HEIGHT) continue;
-          const cx = pxAbs >> 3;
-          const cy = pyAbs >> 3;
-          buf.data[(cy * COLS + cx) * CELL + (pyAbs & 7)] ^= 128 >> (pxAbs & 7);
-          occupied.add(cy * COLS + cx);
+          if (pxAbs < 0 || pxAbs >= WIDTH) continue;
+          const p = (pyAbs * WIDTH + pxAbs) * 4;
+          rgba[p] = rgb[0];
+          rgba[p + 1] = rgb[1];
+          rgba[p + 2] = rgb[2];
+          rgba[p + 3] = 255;
         }
       }
-    }
-    const inkBits = ink & 7;
-    for (const idx of occupied) {
-      const attr = buf.attr[idx];
-      if (attr & 32) continue;
-      buf.attr[idx] = attr & 248 | inkBits;
     }
   }
   function rasterize(buf, rgba, overlaySolid, solidGrid) {
@@ -270,13 +730,21 @@
   function renderWorld(prep, world, buf, rgba, roomId, opts = {}) {
     copyBuffers(world.terrain, buf);
     if (opts.items !== false) blitItems(prep, buf, roomId);
+    const solid = opts.overlay ? prep.rooms[roomId].solid : null;
+    rasterize(buf, rgba, !!opts.overlay, solid);
+    if (opts.enemies !== false) {
+      for (const e of world.entities) {
+        if (!entityVisible(e)) continue;
+        const frame = graphicForPtr(prep, e.ptr) ?? prep.actorsBySet.get(e.set)?.[e.frame];
+        if (frame) stampGrafix(rgba, frame, e.x, GAME_Y_ORIGIN - e.y, e.ink);
+      }
+    }
     if (opts.blob) {
       const frames = prep.actorsBySet.get(opts.blob.set);
       const frame = frames?.[opts.blob.frame];
-      if (frame) blitGrafix(buf, frame, opts.blob.x, opts.blob.y, 7);
+      if (frame) stampGrafix(rgba, frame, opts.blob.x, opts.blob.y, 7);
     }
-    const solid = opts.overlay ? prep.rooms[roomId].solid : null;
-    return rasterize(buf, rgba, !!opts.overlay, solid);
+    return rgba;
   }
 
   // src/physics.ts
@@ -478,6 +946,8 @@
     if (world) {
       tryBuildPlatform(prep, blob, input2, world);
       tickBridges(world);
+      tickNasties(prep, blob, world);
+      tickEnergyDrain(world);
     }
     applyRoomExit(prep, blob, input2.right && !input2.left, input2.left && !input2.right, world);
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
@@ -491,7 +961,14 @@
       slots: Array.from({ length: PLATFORM_SLOTS }, () => null),
       slotIndex: 0,
       buildLatch: false,
-      dac0: 0
+      dac0: 0,
+      dac: { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 },
+      entities: [],
+      entityCache: null,
+      cacheRoom: -1,
+      nastyCount: 0,
+      spawnGuard: 0,
+      energyDrain: START_ENERGY_DRAIN
     };
     enterRoom(prep, world, room);
     return world;
@@ -501,6 +978,7 @@
     for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
     world.slotIndex = 0;
     world.buildLatch = false;
+    enterNasties(prep, world, room);
   }
   function platformCol(x) {
     return (x + PLATFORM_X_BIAS & 248) >> 3;

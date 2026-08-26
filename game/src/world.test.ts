@@ -31,6 +31,7 @@ function grid(draw: (solid: number[][], attr: number[][]) => void): Prepared {
     graphics: [],
     sprites: [],
     actorsBySet: new Map(),
+    actorsByPtr: new Map(),
     blocks: [],
     rooms,
     itemsByRoom: Array.from({ length: 512 }, () => []),

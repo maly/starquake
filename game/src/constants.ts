@@ -78,6 +78,78 @@ export const START_ENERGY = 0x17;
 export const START_PLATFORMS = 0x30;
 export const START_FIREPOWER = 0x7e;
 
+/**
+ * GRAFIX entity table at $DD18, 6 × 32 bytes. Slot 0 is Blob; $A01B walks
+ * slots 1..$9C43 (usually 4) via `RRCA×3` offsets. $DF70 XOR-draws all 6.
+ */
+export const ENTITY_SLOT_BYTES = 32;
+export const ENTITY_SLOTS = 6;
+export const NASTY_SLOTS = 4;
+export const NASTY_INNER_STEPS = 4;
+export const ENTITY_TABLE = 0xdd18;
+/** $9E86 parks a new slot at Y=$0F, X=0, graphic $DF40. $D8B1 CP $10 skips the draw. */
+export const ENTITY_PARK_Y = 0x0f;
+export const ENTITY_DUMMY_PTR = 0xdf40;
+export const ENTITY_DRAW_MIN = 0x10;
+
+/** $B208 + n×$C0 — GRAFIX sets used by $9DF9. High byte < $B4 is lethal ($A327). */
+export const GRAFIX_BASE = 0xb208;
+export const GRAFIX_STRIDE = 0xc0;
+export const KILL_GRAPHIC_HI = 0xb4;
+export const APPEAR_GRAPHIC = 0xb148;
+export const DEAD_GRAPHIC = 0xbec8;
+export const APPEAR_FRAMES = 0x10;
+export const DIE_FRAMES = 0x08;
+
+/** $A305 AABB on $DD1D/$DD1E: |dx| < $0E, |dy| < $0B. */
+export const HIT_DX = 0x0e;
+export const HIT_DY = 0x0b;
+
+/** $CB58: $DD30 += 1 per tick, wrap at $78 → $D41F A=0 C=$04 (energy −4). */
+export const ENERGY_DRAIN_WRAP = 0x78;
+export const ENERGY_DRAIN_STEP = 4;
+export const START_ENERGY_DRAIN = 0x51;
+export const ANNOY_DRAIN_BUMP = 0x0a;
+
+/** $9C40 set to $B4 on spawn; $A4B1 / $9C47 swap 21 bytes × 4 into $959C. */
+export const SPAWN_GUARD = 0xb4;
+export const NASTY_CACHE = 0x959c;
+
+/** $9E90 / $A2A5 default pixel step. */
+export const NASTY_SPEED = 2;
+
+/** $A0E4 / $A0F2 / $A14F / $A15D edge bounce. */
+export const NASTY_EDGE_L = 3;
+export const NASTY_EDGE_R = 0xee;
+export const NASTY_EDGE_D = 0x12;
+export const NASTY_EDGE_U = 0x8d;
+
+export const ROOM_DATA_BASE = 0x7530;
+export const ROOM_DATA_STRIDE = 12;
+
+export const ENEMY_SETS = [
+  "corepieces2",
+  "badalien1",
+  "badalien2",
+  "alien1",
+  "alien2",
+  "alien3",
+  "alien4",
+  "alien5",
+  "alien6",
+  "alien7",
+  "alien8",
+  "alien9",
+  "aliena",
+  "alienb",
+  "alienc",
+  "aliend",
+  "aliene",
+] as const;
+
+/** $A2B9 direction table (bytes of the following instructions, indexed ×2). */
+export const DIR_TABLE = [0x08, 0x09, 0x01, 0x04, 0x05, 0x06, 0x02, 0x0a] as const;
+
 /** $C848 LD A,$01 / $C84A LD C,$02 — $D41F decreases $D2CE by 2. */
 export const PLATFORM_STAT_INDEX = 1;
 export const PLATFORM_COST = 2;

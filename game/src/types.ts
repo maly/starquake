@@ -49,6 +49,7 @@ export interface Prepared {
   graphics: Graphic[];
   sprites: Graphic[];
   actorsBySet: Map<string, Graphic[]>;
+  actorsByPtr: Map<number, Graphic>;
   blocks: number[][];
   rooms: Room[];
   itemsByRoom: Item[][];
@@ -71,6 +72,42 @@ export interface PlatformSlot {
  * Mutable play-area for the current room. Export rooms[] is the template
  * copied in at $A426 / $A7FC; $A4B1 then zeros the 12 platform slots.
  */
+export interface DacState {
+  dac0: number;
+  dac2: number;
+  dac4: number;
+  db19: number;
+  db1a: number;
+}
+
+/** One GRAFIX slot from $DD38 (X/Y are $DD1D/$DD1E: X left, Y from the bottom). */
+export interface Entity {
+  x: number;
+  y: number;
+  ink: number;
+  set: string;
+  frame: number;
+  ptr: number;
+  basePtr: number;
+  dir: number;
+  speedX: number;
+  speedY: number;
+  period: number;
+  timer: number;
+  state: number;
+  stateTimer: number;
+  ai: number;
+  aiPeriod: number;
+  aiCount: number;
+  homeX: number;
+  homeY: number;
+}
+
+export interface EntityCache {
+  room: number;
+  entities: Entity[];
+}
+
 export interface World {
   terrain: Buffers;
   energy: number;
@@ -80,10 +117,18 @@ export interface World {
   slotIndex: number;
   buildLatch: boolean;
   dac0: number;
+  dac: DacState;
+  entities: Entity[];
+  entityCache: EntityCache | null;
+  cacheRoom: number;
+  nastyCount: number;
+  spawnGuard: number;
+  energyDrain: number;
 }
 
 export interface RenderOpts {
   items?: boolean;
   overlay?: boolean;
   blob?: { x: number; y: number; set: string; frame: number } | null;
+  enemies?: boolean;
 }

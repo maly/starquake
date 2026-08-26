@@ -61,6 +61,12 @@ import {
   START_FIREPOWER,
   START_LIVES,
   START_PLATFORMS,
+  CORE_ROOM,
+  DOOR_MSG_BAD,
+  DOOR_MSG_OK,
+  DOOR_REASON,
+  DOOR_SHIFT_X,
+  SCORE_FIRST_VISIT,
   TELEPORT_INVALID_REASON,
   TELEPORT_MSG_BAD,
   TELEPORT_MSG_OK,
@@ -71,6 +77,7 @@ import {
   WALK_RIGHT_SETS,
   WIDTH,
 } from "./constants";
+import { deliverCoreParts, initCoreState, initSocketFlags, tickCoreCeremony } from "./core";
 import { copyPadFromBlob, enterNasties, syncHoverpad, tickEnergyDrain, tickNasties } from "./entities";
 import { spawnExtra, tickPickup } from "./items";
 import {
@@ -84,6 +91,14 @@ import {
 } from "./objects";
 import { parkBullet, parkedBullet, tickFire, tickPadFire } from "./projectiles";
 import { composeTiles, moveRoom, newBuffers } from "./render";
+import {
+  a390Unvisited,
+  addScore,
+  clearA390Bit,
+  composeEndResult,
+  freshA390,
+  zeroScore,
+} from "./score";
 import type { Entity, Graphic, Prepared, World } from "./types";
 
 export interface Input {
@@ -388,7 +403,7 @@ function finishDeath(prep: Prepared, blob: BlobState, world: World): void {
   world.blobHidden = false;
   world.blobInk = BLOB_INK;
   if (world.lives === 0) {
-    world.gameOver = true;
+    composeEndResult(world, false);
     world.message = GAME_OVER_MSG;
     return;
   }
@@ -406,7 +421,7 @@ function finishDeath(prep: Prepared, blob: BlobState, world: World): void {
     blob.y = gameYToPlay(world.entry.y);
     world.dd22 = world.entry.dd22;
   }
-  enterRoom(prep, world, blob.room);
+  enterRoom(prep, world, blob.room, { blob });
   syncHoverpad(prep, world, blob.room, blob);
   blob.onGround = onFloor(prep, blob.room, blob.x, blob.y, world);
 }
@@ -497,7 +512,7 @@ function applyRoomExit(
   const gy = playYToGame(blob.y);
   blob.y = gameYToPlay(((gy + 1) & 0xf8) - 1);
   if (world) {
-    enterRoom(prep, world, blob.room);
+    enterRoom(prep, world, blob.room, { blob });
     saveEntry(world, blob);
     syncHoverpad(prep, world, blob.room, blob);
   }
@@ -648,6 +663,18 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
     tickDeath(prep, blob, world);
     return;
   }
+  if (world?.corePhase === "ceremony") {
+    tickCoreCeremony(
+      prep,
+      blob,
+      world,
+      tickNasties,
+      (next) => enterRoom(prep, world, next, { blob }),
+    );
+    return;
+  }
+
+  if (world) world.frames = (world.frames + 1) >>> 0;
 
   const pixels = blobInkPixels(poseGraphic(prep, blob, world));
   if (world) {
@@ -687,6 +714,10 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
     applyDeath(prep, blob, world, DEATH_A_OBJ06);
     return;
   }
+  if (code === "$00:ok" || code === "$00:bad") {
+    applySecurityDoor(prep, blob, world, code === "$00:ok", input);
+    return;
+  }
   if (code !== null) {
     applyTeleport(prep, blob, world, code);
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
@@ -714,6 +745,7 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
 }
 
 export function createWorld(prep: Prepared, room: number): World {
+  const core = initCoreState();
   const world: World = {
     terrain: newBuffers(),
     energy: START_ENERGY,
@@ -753,6 +785,18 @@ export function createWorld(prep: Prepared, room: number): World {
     message: "",
     teleportLatch: false,
     gameOver: false,
+    victory: false,
+    endResult: null,
+    scoreDigits: zeroScore(),
+    a390: freshA390(),
+    visitedCount: 0,
+    frames: 0,
+    d2de: core.d2de,
+    coresLeft: core.coresLeft,
+    corePairs: core.corePairs,
+    corePhase: null,
+    coreTicks: 0,
+    socketFlags: initSocketFlags(),
     d2c4: 0,
     deathA: 0,
     deathPhase: null,
@@ -767,8 +811,10 @@ export function createWorld(prep: Prepared, room: number): World {
 }
 
 export interface EnterRoomOpts {
-  /** $A519 CP $03: invalid teleport skips $9C47. */
+  /** $A519 CP $03: invalid teleport / door skips $9C47. */
   nasties?: boolean;
+  /** Needed for `$A6C1` core delivery when room is `$C7`. */
+  blob?: BlobState;
 }
 
 /** $A426 draws the packed room then $A4B1 zeros $DBBB for $31 bytes. */
@@ -780,10 +826,21 @@ export function enterRoom(prep: Prepared, world: World, room: number, opts?: Ent
   world.buildLatch = false;
   world.pickupLatch = false;
   parkBullet(world);
+  /** `$A47E` first visit +250 / clear `$A390` bit. */
+  if (a390Unvisited(world.a390, room)) {
+    addScore(world, SCORE_FIRST_VISIT);
+    clearA390Bit(world.a390, room);
+    world.visitedCount += 1;
+  }
   spawnExtra(prep, world, room);
   if (opts?.nasties !== false) enterNasties(prep, world, room);
   world.pulses = makePulses(prep.pulsesByRoom?.[room], world.dac.dac0);
-  syncHoverpad(prep, world, room);
+  syncHoverpad(prep, world, room, opts?.blob);
+  if (opts?.blob && room === CORE_ROOM && opts.blob.room === CORE_ROOM) {
+    deliverCoreParts(prep, opts.blob, world, (next) => {
+      enterRoom(prep, world, next, { blob: opts.blob });
+    });
+  }
 }
 
 export interface TeleportResult extends TeleportEval {
@@ -800,7 +857,7 @@ export function applyTeleport(prep: Prepared, blob: BlobState, world: World, cod
   world.teleportLatch = true;
   if (ev.ok) {
     blob.room = ev.dest;
-    enterRoom(prep, world, ev.dest);
+    enterRoom(prep, world, ev.dest, { blob });
     const pad = firstTeleport(prep, ev.dest);
     if (pad) {
       blob.x = pad.x;
@@ -815,11 +872,53 @@ export function applyTeleport(prep: Prepared, blob: BlobState, world: World, cod
   }
   blob.x &= 0xf8;
   blob.y = gameYToPlay(((playYToGame(blob.y) + 1) & 0xf8) - 1);
-  enterRoom(prep, world, blob.room, { nasties: false });
+  enterRoom(prep, world, blob.room, { nasties: false, blob });
   syncHoverpad(prep, world, blob.room, blob);
   saveEntry(world, blob);
   world.message = TELEPORT_MSG_BAD;
   return { ...ev, dest: blob.room, message: world.message, reason: TELEPORT_INVALID_REASON };
+}
+
+export interface DoorResult {
+  ok: boolean;
+  x: number;
+  y: number;
+  reason: number;
+  message: string;
+}
+
+/**
+ * `$CBDC` / `$CC4B`: success shifts X ±`$30` by Left/Right bit0; fail keeps X.
+ * Y snap; `$D2C4=$03`; reload same room without enemy respawn (`$A51C`).
+ */
+export function applySecurityDoor(
+  prep: Prepared,
+  blob: BlobState,
+  world: World,
+  ok: boolean,
+  input: { left: boolean; right: boolean },
+): DoorResult {
+  world.teleportLatch = true;
+  if (ok) {
+    const bit0 = input.right ? 1 : 0;
+    if (bit0) blob.x = (blob.x + DOOR_SHIFT_X) & 0xff;
+    else blob.x = (blob.x - DOOR_SHIFT_X) & 0xff;
+    world.message = DOOR_MSG_OK;
+  } else {
+    world.message = DOOR_MSG_BAD;
+  }
+  blob.y = gameYToPlay(((playYToGame(blob.y) + 1) & 0xf8) - 1);
+  world.d2c4 = DOOR_REASON;
+  enterRoom(prep, world, blob.room, { nasties: false, blob });
+  syncHoverpad(prep, world, blob.room, blob);
+  saveEntry(world, blob);
+  return {
+    ok,
+    x: blob.x,
+    y: playYToGame(blob.y),
+    reason: DOOR_REASON,
+    message: world.message,
+  };
 }
 
 export function platformCol(x: number): number {

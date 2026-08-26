@@ -439,6 +439,87 @@ export const TELEPORT_TABLE: ReadonlyArray<readonly [string, number]> = [
   ["AMAHA", 506],
 ];
 
+/** $96FC type $00 from raw $9740 $01–$0F (subs $25/$26). Not nibble $80. */
+export const DOOR_TYPE = 0x00;
+export const DOOR_RAW_MIN = 0x01;
+export const DOOR_RAW_MAX = 0x0f;
+export const DOOR_INPUT_MASK = 0x03;
+export const DOOR_SHIFT_X = 0x30;
+/** $D2C4 after door minigame — skip $9C47 ($A51C). */
+export const DOOR_REASON = 0x03;
+/** Snapshot `$D2C6` = $7B78 (FRAMES freeze at game start). */
+export const DOOR_D2C6 = 0x7b78;
+export const DOOR_CODE_BC = 0x110b;
+export const DOOR_KEY_SPRITE = 0x0f;
+/** `$D6AB` one-digit wildcard (optional fidelity). */
+export const DOOR_SINGLE_WILDCARD = 0x0e;
+export const DOOR_DIGIT_MIN = 0x09;
+export const DOOR_DIGIT_MAX = 0x0d;
+export const DOOR_MSG_TITLE = "SECURITY DOOR";
+export const DOOR_MSG_OK = "ACCESS AUTHORISED";
+export const DOOR_MSG_BAD = "ACCESS CODE INVALID";
+
+/** Room $C7 core / neighbour $C6. */
+export const CORE_ROOM = 0xc7;
+export const CORE_NEIGHBOR = 0xc6;
+export const CORE_EJECT_X = 0xf0;
+export const CORE_EJECT_Y = 0x27;
+export const CORE_SLOTS = 9;
+export const CORE_VICTORY_PAIRS = 5;
+/** `$A78D` BC=`$0C0D` → full-screen attr (row,col); play row = `$0C`−`PLAY_ORIGIN`. */
+export const CORE_PANEL_ATTR_ROW = 0x0c;
+export const CORE_PANEL_ATTR_COL = 0x0d;
+export const CORE_PANEL_STEP = 2;
+/** `$C4B9` / `$C4BF`: delivered ink `$07`, pending start `$02`; `$C506` blinks pending. */
+export const CORE_PANEL_INK_DONE = 0x07;
+export const CORE_PANEL_INK_PENDING = 0x02;
+/** Snapshot `$D2DE` after `$6399` (bit7 = undelivered). */
+export const CORE_D2DE_INIT = [0x80, 0x8b, 0x89, 0x8a, 0x84, 0x85, 0xa1, 0x8c, 0x88] as const;
+export const CORE_LEFT_INIT = 9;
+export const CORE_PAIRS_INIT = 0;
+export const CORE_TOOL_SPRITE = 0x10;
+export const CORE_SOCKET_ATTR_HI = 0xb0;
+export const CORE_SOCKET_TYPE = 0x0b;
+/** `$95F0` eight (room_lo, flags) — bit7 of flags = room≥256. */
+export const CORE_SOCKET_TABLE: ReadonlyArray<readonly [number, number]> = [
+  [0xbe, 0x01],
+  [0xfc, 0x01],
+  [0xc4, 0x81],
+  [0xe2, 0x81],
+  [0xe6, 0x81],
+  [0x86, 0x01],
+  [0x09, 0x53],
+  [0x55, 0x43],
+];
+/** `$9F78` live guardians: up to 4 of `$B208` at these XY when `$D2E8`>0. */
+export const CORE_GUARD_XY: ReadonlyArray<readonly [number, number]> = [
+  [80, 111],
+  [168, 47],
+  [80, 47],
+  [168, 111],
+];
+export const CORE_GUARD_PTR = 0xb208;
+/** `$9FC0` template after XY: ink `$06`, dir `$05`, speeds 2, period/timer 4, AI 0, aiPeriod `$0A`. */
+export const CORE_GUARD_INK = 0x06;
+export const CORE_GUARD_DIR = 0x05;
+export const CORE_GUARD_PERIOD = 0x04;
+export const CORE_GUARD_AI_PERIOD = 0x0a;
+/** `$A757 LD B,$C8` — frames of `$A01B` + panel blink before eject to `$C6`. */
+export const CORE_CEREMONY_FRAMES = 0xc8;
+export const CORE_DELIVERED_Y = 0x0a;
+export const CORES_COMPLETE_MSG = "THE CORES COMPLETE";
+
+/** Score `$D413` / work `$D419` / `$D422`→`$D521`. */
+export const SCORE_DIGITS = 6;
+export const SCORE_FIRST_VISIT = 250;
+export const SCORE_CORE_DELIVER = 10000;
+export const SCORE_END_BONUS = 1000;
+/** Kill: `(hi−$AE)×2` tens → points = that × 10. */
+export const SCORE_KILL_HI_BASE = 0xae;
+/** `$A390` visited bitmap (64 B / 512 rooms). Bit set = not yet scored. */
+export const A390_BYTES = 0x40;
+export const FRAME_HZ = 50;
+
 export const TICK_MS = 20;
 
 export const SPECTRUM: ReadonlyArray<readonly [number, number, number]> = [

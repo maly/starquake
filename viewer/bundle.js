@@ -233,6 +233,64 @@
     ["AMIGA", 499],
     ["AMAHA", 506]
   ];
+  var DOOR_RAW_MIN = 1;
+  var DOOR_RAW_MAX = 15;
+  var DOOR_INPUT_MASK = 3;
+  var DOOR_SHIFT_X = 48;
+  var DOOR_REASON = 3;
+  var DOOR_D2C6 = 31608;
+  var DOOR_CODE_BC = 4363;
+  var DOOR_KEY_SPRITE = 15;
+  var DOOR_SINGLE_WILDCARD = 14;
+  var DOOR_DIGIT_MIN = 9;
+  var DOOR_MSG_OK = "ACCESS AUTHORISED";
+  var DOOR_MSG_BAD = "ACCESS CODE INVALID";
+  var CORE_ROOM = 199;
+  var CORE_NEIGHBOR = 198;
+  var CORE_EJECT_X = 240;
+  var CORE_EJECT_Y = 39;
+  var CORE_SLOTS = 9;
+  var CORE_VICTORY_PAIRS = 5;
+  var CORE_PANEL_ATTR_ROW = 12;
+  var CORE_PANEL_ATTR_COL = 13;
+  var CORE_PANEL_STEP = 2;
+  var CORE_PANEL_INK_DONE = 7;
+  var CORE_PANEL_INK_PENDING = 2;
+  var CORE_D2DE_INIT = [128, 139, 137, 138, 132, 133, 161, 140, 136];
+  var CORE_LEFT_INIT = 9;
+  var CORE_PAIRS_INIT = 0;
+  var CORE_TOOL_SPRITE = 16;
+  var CORE_SOCKET_ATTR_HI = 176;
+  var CORE_SOCKET_TABLE = [
+    [190, 1],
+    [252, 1],
+    [196, 129],
+    [226, 129],
+    [230, 129],
+    [134, 1],
+    [9, 83],
+    [85, 67]
+  ];
+  var CORE_GUARD_XY = [
+    [80, 111],
+    [168, 47],
+    [80, 47],
+    [168, 111]
+  ];
+  var CORE_GUARD_PTR = 45576;
+  var CORE_GUARD_INK = 6;
+  var CORE_GUARD_DIR = 5;
+  var CORE_GUARD_PERIOD = 4;
+  var CORE_GUARD_AI_PERIOD = 10;
+  var CORE_CEREMONY_FRAMES = 200;
+  var CORES_COMPLETE_MSG = "THE CORES COMPLETE";
+  var SCORE_DIGITS = 6;
+  var SCORE_FIRST_VISIT = 250;
+  var SCORE_CORE_DELIVER = 1e4;
+  var SCORE_END_BONUS = 1e3;
+  var SCORE_KILL_HI_BASE = 174;
+  var A390_BYTES = 64;
+  var FRAME_HZ = 50;
   var TICK_MS = 20;
   var SPECTRUM = [
     [0, 0, 0],
@@ -425,12 +483,26 @@
       y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255
     };
   }
+  function socketRoomId(slot) {
+    const row = CORE_SOCKET_TABLE[slot];
+    if (!row) return -1;
+    const [lo, flags] = row;
+    return lo | (flags & 128) << 1;
+  }
+  function socketSlotForRoom(room) {
+    for (let i = 0; i < CORE_SOCKET_TABLE.length; i++) {
+      if (socketRoomId(i) === room) return i;
+    }
+    return -1;
+  }
   function scanHotspots(rooms, blocks, rawBySub) {
     const stationsByRoom = emptyHotspots();
     const teleportsByRoom = emptyHotspots();
     const killsByRoom = emptyHotspots();
     const pulsesByRoom = emptyPulses();
     const fixedNastiesByRoom = emptyHotspots();
+    const doorsByRoom = emptyHotspots();
+    const socketsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
     const extraMarksByRoom = Array.from(
       { length: ROOM_COUNT },
       () => []
@@ -441,7 +513,9 @@
       killsByRoom,
       pulsesByRoom,
       fixedNastiesByRoom,
-      extraMarksByRoom
+      extraMarksByRoom,
+      doorsByRoom,
+      socketsByRoom
     };
     if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
     for (const room of rooms) {
@@ -449,6 +523,7 @@
       if (id < 0 || id >= ROOM_COUNT) continue;
       const data = room.blocks;
       if (!data?.length) continue;
+      const sockSlot = socketSlotForRoom(id);
       let b = PLAY_ORIGIN;
       let n = 0;
       for (let br = 0; br < 3; br++) {
@@ -474,6 +549,12 @@
               else if (hi === PULSE_ATTR_HI) pulsesByRoom[id].push({ col, row });
               else if (hi === ATTR_NASTY_HI) fixedNastiesByRoom[id].push(cellHotspot(col, row));
               else if (hi === EXTRA_ATTR_HI) extraMarksByRoom[id].push({ col, row });
+              else if (hi === CORE_SOCKET_ATTR_HI && sockSlot >= 0) {
+                const hs = cellHotspot(col, row);
+                socketsByRoom[id].push({ x: hs.x, y: hs.y, slot: sockSlot });
+              } else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
+                doorsByRoom[id].push(cellHotspot(col, row));
+              }
             }
           }
           c += 8;
@@ -565,8 +646,69 @@
     parkBullet(world);
     world.dd22 = world.lastDir & 8 ? DD22_PAD : 0;
   }
+  function reduceDoorDigit(raw) {
+    return (raw & 63) % 5 + DOOR_DIGIT_MIN;
+  }
+  function expectedDoorCode(room, d2c6 = DOOR_D2C6, bc = DOOR_CODE_BC) {
+    const h = d2c6 >> 8 & 255;
+    const l = d2c6 & 255;
+    const e = room & 255;
+    const b = bc >> 8 & 255;
+    const c = bc & 255;
+    let a = (b ^ h ^ e) & 255;
+    const d5f7 = a;
+    a = (a ^ l ^ c) & 255;
+    const d5f9 = a;
+    a = (a ^ h ^ b) & 255;
+    return [reduceDoorDigit(d5f7), reduceDoorDigit(d5f9), reduceDoorDigit(a)];
+  }
+  function inventoryHasSprite(world, sprite) {
+    return world.inventory.some((it) => (it.sprite & 255) === (sprite & 255));
+  }
+  function doorKeysAccepted(world, room) {
+    if (inventoryHasSprite(world, DOOR_KEY_SPRITE)) return true;
+    const need = expectedDoorCode(room);
+    const used = new Array(world.inventory.length).fill(false);
+    let wildcards = 0;
+    for (const it of world.inventory) {
+      if ((it.sprite & 255) === DOOR_SINGLE_WILDCARD) wildcards += 1;
+    }
+    for (const digit of need) {
+      let found = -1;
+      for (let i = 0; i < world.inventory.length; i++) {
+        if (used[i]) continue;
+        if ((world.inventory[i].sprite & 255) === (digit & 255)) {
+          found = i;
+          break;
+        }
+      }
+      if (found >= 0) {
+        used[found] = true;
+        continue;
+      }
+      if (wildcards > 0) {
+        wildcards -= 1;
+        continue;
+      }
+      return false;
+    }
+    return true;
+  }
+  function tryClearSocket(prep, blob, world) {
+    if (!inventoryHasSprite(world, CORE_TOOL_SPRITE)) return false;
+    const { x, y } = blobGame(blob);
+    for (const s of prep.socketsByRoom?.[blob.room] ?? []) {
+      if (Math.abs(x - s.x) >= ITEM_NEAR || Math.abs(y - s.y) >= ITEM_NEAR) continue;
+      const flag = world.socketFlags[s.slot] ?? 0;
+      if ((flag & 127) === 0) return false;
+      world.socketFlags[s.slot] = flag & 128;
+      return true;
+    }
+    return false;
+  }
   function walkSpecialObjects(prep, blob, input2, world) {
     if (hitKillTerrain(prep, blob)) return "$06";
+    tryClearSocket(prep, blob, world);
     const stations = prep.stationsByRoom?.[blob.room] ?? [];
     for (const s of stations) {
       if (exactAt(blob, s.x, s.y)) {
@@ -575,11 +717,16 @@
       }
     }
     const horiz = (input2.left ? 2 : 0) | (input2.right ? 1 : 0);
-    if (!(horiz & TELEPORT_INPUT_MASK)) {
+    if (!(horiz & (TELEPORT_INPUT_MASK | DOOR_INPUT_MASK))) {
       world.teleportLatch = false;
       return null;
     }
     if (world.teleportLatch) return null;
+    const doors = prep.doorsByRoom?.[blob.room] ?? [];
+    for (const d of doors) {
+      if (!exactAt(blob, d.x, d.y)) continue;
+      return doorKeysAccepted(world, blob.room) ? "$00:ok" : "$00:bad";
+    }
     const pads = prep.teleportsByRoom?.[blob.room] ?? [];
     for (const t of pads) {
       if (!exactAt(blob, t.x, t.y)) continue;
@@ -589,6 +736,78 @@
       return typed ?? "";
     }
     return null;
+  }
+
+  // src/score.ts
+  function freshA390() {
+    return new Uint8Array(A390_BYTES).fill(255);
+  }
+  function zeroScore() {
+    return Array.from({ length: SCORE_DIGITS }, () => 0);
+  }
+  function addScore(world, amount) {
+    let n = Math.max(0, amount | 0);
+    for (let i = SCORE_DIGITS - 1; i >= 0; i--) {
+      const sum = (world.scoreDigits[i] ?? 0) + n % 10;
+      world.scoreDigits[i] = sum % 10;
+      n = Math.floor(n / 10) + Math.floor(sum / 10);
+    }
+  }
+  function killScorePoints(ptr) {
+    const hi = ptr >> 8 & 255;
+    const tens = (hi - SCORE_KILL_HI_BASE) * 2 & 255;
+    return tens * 10;
+  }
+  function a390Unvisited(a390, room) {
+    const high = room >> 8 & 1;
+    const low = room & 255;
+    const offset = (high >> 3 | (low & 248) >> 3) & 255;
+    let value = a390[offset] ?? 0;
+    for (let i = 0; i < (low & 7) + 1; i++) value = (value << 1 | value >> 7) & 255;
+    return (value & 1) !== 0;
+  }
+  function clearA390Bit(a390, room) {
+    const high = room >> 8 & 1;
+    const low = room & 255;
+    const offset = (high >> 3 | (low & 248) >> 3) & 255;
+    const rot = (low & 7) + 1;
+    let value = a390[offset] ?? 0;
+    for (let i = 0; i < rot; i++) value = (value << 1 | value >> 7) & 255;
+    value = value & 254 & 255;
+    for (let i = 0; i < rot; i++) value = (value >> 1 | (value & 1) << 7) & 255;
+    a390[offset] = value;
+  }
+  function adventureScore(visitedCount) {
+    return visitedCount * 50 >> 8 & 255;
+  }
+  function framesToTime(frames) {
+    const totalSec = Math.floor(Math.max(0, frames) / FRAME_HZ);
+    return { minutes: Math.floor(totalSec / 60), seconds: totalSec % 60 };
+  }
+  function composeEndResult(world, victory, banner) {
+    addScore(world, SCORE_END_BONUS);
+    const time = framesToTime(world.frames);
+    const result = {
+      scoreDigits: world.scoreDigits.slice(),
+      adventure: adventureScore(world.visitedCount),
+      timeMinutes: time.minutes,
+      timeSeconds: time.seconds,
+      coresReplaced: CORE_LEFT_INIT - (world.coresLeft & 255),
+      victory,
+      banner
+    };
+    world.endResult = result;
+    world.victory = victory;
+    world.gameOver = true;
+    return result;
+  }
+  function formatScore(digits) {
+    return digits.map((d) => String(d & 15)).join("");
+  }
+  function formatTime(minutes, seconds) {
+    const mm = String(minutes).padStart(2, "0");
+    const ss = String(seconds).padStart(2, "0");
+    return `${mm}.${ss}`;
   }
 
   // src/entities.ts
@@ -764,7 +983,65 @@
     world.spawnGuard = SPAWN_GUARD;
     applyFixedNasties(prep, room, world);
   }
+  function parkCoreSlot() {
+    return {
+      x: 0,
+      y: 0,
+      ink: 7,
+      set: "corepieces2",
+      frame: 0,
+      ptr: ENTITY_DUMMY_PTR,
+      basePtr: CORE_GUARD_PTR,
+      dir: CORE_GUARD_DIR,
+      speedX: NASTY_SPEED,
+      speedY: NASTY_SPEED,
+      period: CORE_GUARD_PERIOD,
+      timer: CORE_GUARD_PERIOD,
+      state: 0,
+      stateTimer: 0,
+      ai: 0,
+      aiPeriod: CORE_GUARD_AI_PERIOD,
+      aiCount: CORE_GUARD_AI_PERIOD,
+      homeX: 0,
+      homeY: 0
+    };
+  }
+  function spawnCoreGuardians(world) {
+    const n = Math.min(world.corePairs & 255, CORE_GUARD_XY.length);
+    world.entities = [];
+    for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(parkCoreSlot());
+    for (let i = 0; i < n; i++) {
+      const [x, y] = CORE_GUARD_XY[i];
+      const e = world.entities[i];
+      e.x = x;
+      e.y = y;
+      e.homeX = x;
+      e.homeY = y;
+      e.ptr = CORE_GUARD_PTR;
+      e.basePtr = CORE_GUARD_PTR;
+      e.set = setForPtr(CORE_GUARD_PTR);
+      e.ink = CORE_GUARD_INK;
+      e.state = 1;
+      e.stateTimer = 0;
+      e.period = CORE_GUARD_PERIOD;
+      e.timer = CORE_GUARD_PERIOD;
+      e.dir = CORE_GUARD_DIR;
+      e.speedX = NASTY_SPEED;
+      e.speedY = NASTY_SPEED;
+      e.ai = 0;
+      e.aiPeriod = CORE_GUARD_AI_PERIOD;
+      e.aiCount = CORE_GUARD_AI_PERIOD;
+    }
+    world.nastyCount = NASTY_SLOTS;
+    world.spawnGuard = 0;
+    world.cacheRoom = CORE_ROOM;
+  }
   function enterNasties(prep, world, room) {
+    if (room === CORE_ROOM) {
+      spawnCoreGuardians(world);
+      return;
+    }
+    if (room === CORE_NEIGHBOR) world.entityCache = null;
     const outgoing = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
     const incoming = world.entityCache;
     world.entityCache = outgoing;
@@ -838,6 +1115,7 @@
     const dx = Math.abs(e.x - world.bullet.x);
     const dy = Math.abs(e.y - world.bullet.y);
     if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
+    addScore(world, killScorePoints(e.basePtr || e.ptr));
     e.ptr = DEAD_GRAPHIC;
     e.set = "stars";
     e.ink = 7;
@@ -1055,6 +1333,90 @@
     world.energy = Math.max(0, world.energy - ENERGY_DRAIN_STEP);
   }
 
+  // src/core.ts
+  function initSocketFlags() {
+    return CORE_SOCKET_TABLE.map(([, flags]) => flags & 255);
+  }
+  function initCoreState() {
+    return {
+      d2de: CORE_D2DE_INIT.map((v) => v & 255),
+      coresLeft: CORE_LEFT_INIT,
+      corePairs: CORE_PAIRS_INIT
+    };
+  }
+  function matchCoreDeliveries(world) {
+    let delivered = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let inv = 0; inv < world.inventory.length; ) {
+        const sprite = world.inventory[inv].sprite & 255;
+        let matched = -1;
+        for (let i = 0; i < CORE_SLOTS; i++) {
+          const need = world.d2de[i] ?? 0;
+          if (!(need & 128)) continue;
+          if ((need & 127) === sprite) {
+            matched = i;
+            break;
+          }
+        }
+        if (matched < 0) {
+          inv += 1;
+          continue;
+        }
+        world.d2de[matched] = matched & 255;
+        world.inventory.splice(inv, 1);
+        addScore(world, SCORE_CORE_DELIVER);
+        world.coresLeft = world.coresLeft - 1 & 255;
+        if ((world.coresLeft & 1) === 0) {
+          world.corePairs = world.corePairs + 1 & 255;
+        }
+        delivered += 1;
+      }
+    }
+    return delivered;
+  }
+  function beginCoreCeremony(world) {
+    world.blobHidden = true;
+    world.pad = null;
+    world.dd22 = 0;
+    spawnCoreGuardians(world);
+    world.corePhase = "ceremony";
+    world.coreTicks = 0;
+  }
+  function ejectToCoreNeighbor(blob, world, enter) {
+    world.corePhase = null;
+    world.coreTicks = 0;
+    world.blobHidden = false;
+    blob.room = CORE_NEIGHBOR;
+    blob.x = CORE_EJECT_X;
+    blob.y = GAME_Y_ORIGIN - CORE_EJECT_Y;
+    blob.fallIndex = 0;
+    blob.onGround = false;
+    enter(CORE_NEIGHBOR);
+  }
+  function deliverCoreParts(_prep, blob, world, enter) {
+    if (blob.room !== CORE_ROOM) return "none";
+    if (world.corePhase === "ceremony") return "ceremony";
+    matchCoreDeliveries(world);
+    if (world.corePairs >= CORE_VICTORY_PAIRS) {
+      world.blobHidden = false;
+      world.corePhase = null;
+      composeEndResult(world, true, CORES_COMPLETE_MSG);
+      world.message = CORES_COMPLETE_MSG;
+      return "victory";
+    }
+    beginCoreCeremony(world);
+    return "ceremony";
+  }
+  function tickCoreCeremony(prep, blob, world, tickNasties2, enter) {
+    if (world.corePhase !== "ceremony") return;
+    world.frames = world.frames + 1 >>> 0;
+    tickNasties2(prep, blob, world);
+    world.coreTicks += 1;
+    if (world.coreTicks >= CORE_CEREMONY_FRAMES) {
+      ejectToCoreNeighbor(blob, world, enter);
+    }
+  }
+
   // src/items.ts
   function itemGamePos(item) {
     const col = item.col & 31;
@@ -1249,7 +1611,9 @@
       killsByRoom,
       pulsesByRoom,
       fixedNastiesByRoom,
-      extraMarksByRoom
+      extraMarksByRoom,
+      doorsByRoom,
+      socketsByRoom
     } = hotspotsFromData(data, rooms, blocks);
     return {
       graphics,
@@ -1264,7 +1628,9 @@
       killsByRoom,
       pulsesByRoom,
       fixedNastiesByRoom,
-      extraMarksByRoom
+      extraMarksByRoom,
+      doorsByRoom,
+      socketsByRoom
     };
   }
   function newBuffers() {
@@ -1366,6 +1732,25 @@
     if (!extra) return;
     const playRow = extra.row - PLAY_ORIGIN;
     blitSprite(prep, buf, extra.sprite, extra.col, playRow, extra.ink & 7 | 64);
+  }
+  function blitCorePanel(prep, buf, world, roomId) {
+    if (roomId !== CORE_ROOM) return;
+    const col0 = CORE_PANEL_ATTR_COL;
+    const row0 = CORE_PANEL_ATTR_ROW - PLAY_ORIGIN;
+    const blinkOn = (world.frames & 8) !== 0;
+    for (let i = 0; i < CORE_SLOTS; i++) {
+      const r = i / 3 | 0;
+      const c = i % 3;
+      const need = CORE_D2DE_INIT[i];
+      const live = world.d2de[i] ?? need;
+      const pending = (live & 128) !== 0;
+      const sprite = need & 127;
+      let ink = CORE_PANEL_INK_DONE;
+      if (pending) {
+        ink = blinkOn ? CORE_PANEL_INK_PENDING : (world.frames + i & 3) + 2;
+      }
+      blitSprite(prep, buf, sprite, col0 + c * CORE_PANEL_STEP, row0 + r * CORE_PANEL_STEP, ink & 7 | 64);
+    }
   }
   function xorPulseLayer(buf, col, playRow, layer, attr) {
     const cells = PULSE_LAYERS[layer];
@@ -1497,6 +1882,7 @@
       blitItems(prep, buf, roomId, world.collected);
       blitExtra(prep, buf, world.extra);
     }
+    blitCorePanel(prep, buf, world, roomId);
     blitPulses(buf, world.pulses, world.dac.dac0);
     const solid = opts.overlay ? prep.rooms[roomId].solid : null;
     rasterize(buf, rgba, !!opts.overlay, solid);
@@ -1709,7 +2095,7 @@
     world.blobHidden = false;
     world.blobInk = BLOB_INK;
     if (world.lives === 0) {
-      world.gameOver = true;
+      composeEndResult(world, false);
       world.message = GAME_OVER_MSG;
       return;
     }
@@ -1727,7 +2113,7 @@
       blob.y = gameYToPlay(world.entry.y);
       world.dd22 = world.entry.dd22;
     }
-    enterRoom(prep, world, blob.room);
+    enterRoom(prep, world, blob.room, { blob });
     syncHoverpad(prep, world, blob.room, blob);
     blob.onGround = onFloor(prep, blob.room, blob.x, blob.y, world);
   }
@@ -1805,7 +2191,7 @@
     const gy = playYToGame(blob.y);
     blob.y = gameYToPlay((gy + 1 & 248) - 1);
     if (world) {
-      enterRoom(prep, world, blob.room);
+      enterRoom(prep, world, blob.room, { blob });
       saveEntry(world, blob);
       syncHoverpad(prep, world, blob.room, blob);
     }
@@ -1929,6 +2315,17 @@
       tickDeath(prep, blob, world);
       return;
     }
+    if (world?.corePhase === "ceremony") {
+      tickCoreCeremony(
+        prep,
+        blob,
+        world,
+        tickNasties,
+        (next) => enterRoom(prep, world, next, { blob })
+      );
+      return;
+    }
+    if (world) world.frames = world.frames + 1 >>> 0;
     const pixels = blobInkPixels(poseGraphic(prep, blob, world));
     if (world) {
       const dirs = dirBits(input2);
@@ -1959,6 +2356,10 @@
       applyDeath(prep, blob, world, DEATH_A_OBJ06);
       return;
     }
+    if (code === "$00:ok" || code === "$00:bad") {
+      applySecurityDoor(prep, blob, world, code === "$00:ok", input2);
+      return;
+    }
     if (code !== null) {
       applyTeleport(prep, blob, world, code);
       if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
@@ -1981,6 +2382,7 @@
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
   }
   function createWorld(prep, room) {
+    const core = initCoreState();
     const world = {
       terrain: newBuffers(),
       energy: START_ENERGY,
@@ -2020,6 +2422,18 @@
       message: "",
       teleportLatch: false,
       gameOver: false,
+      victory: false,
+      endResult: null,
+      scoreDigits: zeroScore(),
+      a390: freshA390(),
+      visitedCount: 0,
+      frames: 0,
+      d2de: core.d2de,
+      coresLeft: core.coresLeft,
+      corePairs: core.corePairs,
+      corePhase: null,
+      coreTicks: 0,
+      socketFlags: initSocketFlags(),
       d2c4: 0,
       deathA: 0,
       deathPhase: null,
@@ -2040,17 +2454,27 @@
     world.buildLatch = false;
     world.pickupLatch = false;
     parkBullet(world);
+    if (a390Unvisited(world.a390, room)) {
+      addScore(world, SCORE_FIRST_VISIT);
+      clearA390Bit(world.a390, room);
+      world.visitedCount += 1;
+    }
     spawnExtra(prep, world, room);
     if (opts?.nasties !== false) enterNasties(prep, world, room);
     world.pulses = makePulses(prep.pulsesByRoom?.[room], world.dac.dac0);
-    syncHoverpad(prep, world, room);
+    syncHoverpad(prep, world, room, opts?.blob);
+    if (opts?.blob && room === CORE_ROOM && opts.blob.room === CORE_ROOM) {
+      deliverCoreParts(prep, opts.blob, world, (next) => {
+        enterRoom(prep, world, next, { blob: opts.blob });
+      });
+    }
   }
   function applyTeleport(prep, blob, world, code) {
     const ev = evaluateTeleport(code, blob.room);
     world.teleportLatch = true;
     if (ev.ok) {
       blob.room = ev.dest;
-      enterRoom(prep, world, ev.dest);
+      enterRoom(prep, world, ev.dest, { blob });
       const pad = firstTeleport(prep, ev.dest);
       if (pad) {
         blob.x = pad.x;
@@ -2065,11 +2489,34 @@
     }
     blob.x &= 248;
     blob.y = gameYToPlay((playYToGame(blob.y) + 1 & 248) - 1);
-    enterRoom(prep, world, blob.room, { nasties: false });
+    enterRoom(prep, world, blob.room, { nasties: false, blob });
     syncHoverpad(prep, world, blob.room, blob);
     saveEntry(world, blob);
     world.message = TELEPORT_MSG_BAD;
     return { ...ev, dest: blob.room, message: world.message, reason: TELEPORT_INVALID_REASON };
+  }
+  function applySecurityDoor(prep, blob, world, ok, input2) {
+    world.teleportLatch = true;
+    if (ok) {
+      const bit0 = input2.right ? 1 : 0;
+      if (bit0) blob.x = blob.x + DOOR_SHIFT_X & 255;
+      else blob.x = blob.x - DOOR_SHIFT_X & 255;
+      world.message = DOOR_MSG_OK;
+    } else {
+      world.message = DOOR_MSG_BAD;
+    }
+    blob.y = gameYToPlay((playYToGame(blob.y) + 1 & 248) - 1);
+    world.d2c4 = DOOR_REASON;
+    enterRoom(prep, world, blob.room, { nasties: false, blob });
+    syncHoverpad(prep, world, blob.room, blob);
+    saveEntry(world, blob);
+    return {
+      ok,
+      x: blob.x,
+      y: playYToGame(blob.y),
+      reason: DOOR_REASON,
+      message: world.message
+    };
   }
   function platformCol(x) {
     return (x + PLATFORM_X_BIAS & 248) >> 3;
@@ -2250,12 +2697,31 @@ ENTER TELEPORTAL DESTINATION CODE`,
       return typed;
     };
     let blob = spawnBlob(prep, start, world);
+    if (blob.room === start) enterRoom(prep, world, start, { blob });
     let overlay = false;
+    let endShown = false;
     let lastMs = 0;
     let avgMs = 0;
     let frames = 0;
     let acc = 0;
     let last = performance.now();
+    function showEndOverlay() {
+      if (endShown || !world.endResult) return;
+      endShown = true;
+      const er = world.endResult;
+      const panel = document.createElement("div");
+      panel.id = "end-overlay";
+      panel.className = "end-overlay";
+      const title = er.victory ? er.banner || "THE CORES COMPLETE" : "GAME OVER";
+      panel.innerHTML = `<div class="end-card"><h2>${title}</h2>
+      <dl>
+        <div><dt>SCORE</dt><dd>${formatScore(er.scoreDigits)}</dd></div>
+        <div><dt>ADVENTURE</dt><dd>${er.adventure}</dd></div>
+        <div><dt>TIME</dt><dd>${formatTime(er.timeMinutes, er.timeSeconds)}</dd></div>
+        <div><dt>CORES REPLACED</dt><dd>${er.coresReplaced}</dd></div>
+      </dl></div>`;
+      document.body.appendChild(panel);
+    }
     function fitScale() {
       const scale = Math.max(1, Math.floor(Math.min(stage.clientWidth / WIDTH, stage.clientHeight / HEIGHT)));
       canvas.style.width = WIDTH * scale + "px";
@@ -2275,6 +2741,8 @@ ENTER TELEPORTAL DESTINATION CODE`,
       $("stat-platforms").textContent = fmtStat(world.platforms);
       $("stat-firepower").textContent = fmtStat(world.firepower);
       $("stat-lives").textContent = fmtStat(world.lives);
+      $("stat-score").textContent = formatScore(world.scoreDigits);
+      $("stat-cores").textContent = `${9 - world.coresLeft}/9 (pairs ${world.corePairs})`;
       $("stat-inv").textContent = world.inventory.length ? world.inventory.map((it) => "$" + it.sprite.toString(16)).join(" ") : "\u2014";
       $("stat-extra").textContent = world.extra ? "$" + world.extra.sprite.toString(16) + " @ " + world.extra.col + "," + world.extra.row : "\u2014";
       const on = world.pulses.filter((p) => p.flag !== 0);
@@ -2285,12 +2753,23 @@ ENTER TELEPORTAL DESTINATION CODE`,
       padEl.textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "\u2014";
       const tpEl = $("stat-teleport");
       tpEl.textContent = teleportNameForRoom(blob.room) || "\u2014";
+      const doorEl = $("stat-door");
+      const doors = prep.doorsByRoom?.[blob.room] ?? [];
+      if (doors.length) {
+        const need = expectedDoorCode(blob.room);
+        const keys2 = need.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
+        const hasUni = world.inventory.some((it) => it.sprite === 15);
+        doorEl.textContent = hasUni ? `${keys2} (m\xE1\u0161 $0F)` : keys2;
+      } else {
+        doorEl.textContent = "\u2014";
+      }
       const msgEl = $("stat-message");
       msgEl.textContent = world.message || "\u2014";
       gotoEl.value = String(blob.room);
       $("time").textContent = lastMs.toFixed(2) + " ms";
       $("avg").textContent = avgMs.toFixed(2) + " ms";
       $("fps").textContent = avgMs > 0 ? (1e3 / avgMs).toFixed(0) : "\u2014";
+      if (world.gameOver) showEndOverlay();
     }
     function draw() {
       const t0 = performance.now();
@@ -2309,8 +2788,8 @@ ENTER TELEPORTAL DESTINATION CODE`,
     }
     function goRoom(id) {
       const room = clampRoom(id);
-      enterRoom(prep, world, room);
       blob = spawnBlob(prep, room, world);
+      enterRoom(prep, world, room, { blob });
       const hash = "#" + blob.room;
       if (location.hash !== hash) history.replaceState(null, "", hash);
     }
@@ -2359,7 +2838,7 @@ ENTER TELEPORTAL DESTINATION CODE`,
       const id = parseHash();
       if (id !== null && id !== blob.room) goRoom(id);
     });
-    $("status").textContent = "50 Hz \xB7 \u0161ipky / WASD pohyb \xB7 nahoru sebrat / nastoupit \xB7 dol\u016F plo\u0161inka \xB7 mezern\xEDk palba \xB7 Left/Right na teleportu k\xF3d";
+    $("status").textContent = "50 Hz \xB7 \u0161ipky / WASD \xB7 Up sb\u011Br/pad \xB7 Down plo\u0161inka \xB7 mezern\xEDk palba \xB7 Left/Right teleport/dve\u0159e \xB7 j\xE1dro #199";
     fitScale();
     function frame(now) {
       acc += now - last;

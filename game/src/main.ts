@@ -1,5 +1,5 @@
 import { TICK_MS } from "./constants";
-import { teleportNameForRoom } from "./objects";
+import { expectedDoorCode, teleportNameForRoom } from "./objects";
 import {
   cellPos,
   fallSpeed,
@@ -21,6 +21,7 @@ import {
   roomCol,
   roomRow,
 } from "./render";
+import { formatScore, formatTime } from "./score";
 import type { GameData, Prepared } from "./types";
 
 const DATA_BASE = "../out";
@@ -110,12 +111,32 @@ async function boot(): Promise<void> {
     return typed;
   };
   let blob = spawnBlob(prep, start, world);
+  if (blob.room === start) enterRoom(prep, world, start, { blob });
   let overlay = false;
+  let endShown = false;
   let lastMs = 0;
   let avgMs = 0;
   let frames = 0;
   let acc = 0;
   let last = performance.now();
+
+  function showEndOverlay(): void {
+    if (endShown || !world.endResult) return;
+    endShown = true;
+    const er = world.endResult;
+    const panel = document.createElement("div");
+    panel.id = "end-overlay";
+    panel.className = "end-overlay";
+    const title = er.victory ? er.banner || "THE CORES COMPLETE" : "GAME OVER";
+    panel.innerHTML = `<div class="end-card"><h2>${title}</h2>
+      <dl>
+        <div><dt>SCORE</dt><dd>${formatScore(er.scoreDigits)}</dd></div>
+        <div><dt>ADVENTURE</dt><dd>${er.adventure}</dd></div>
+        <div><dt>TIME</dt><dd>${formatTime(er.timeMinutes, er.timeSeconds)}</dd></div>
+        <div><dt>CORES REPLACED</dt><dd>${er.coresReplaced}</dd></div>
+      </dl></div>`;
+    document.body.appendChild(panel);
+  }
 
   function fitScale(): void {
     const scale = Math.max(1, Math.floor(Math.min(stage.clientWidth / WIDTH, stage.clientHeight / HEIGHT)));
@@ -137,6 +158,8 @@ async function boot(): Promise<void> {
     $("stat-platforms").textContent = fmtStat(world.platforms);
     $("stat-firepower").textContent = fmtStat(world.firepower);
     $("stat-lives").textContent = fmtStat(world.lives);
+    $("stat-score").textContent = formatScore(world.scoreDigits);
+    $("stat-cores").textContent = `${9 - world.coresLeft}/9 (pairs ${world.corePairs})`;
     $("stat-inv").textContent = world.inventory.length
       ? world.inventory.map((it) => "$" + it.sprite.toString(16)).join(" ")
       : "—";
@@ -155,12 +178,23 @@ async function boot(): Promise<void> {
     padEl.textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "—";
     const tpEl = $("stat-teleport");
     tpEl.textContent = teleportNameForRoom(blob.room) || "—";
+    const doorEl = $("stat-door");
+    const doors = prep.doorsByRoom?.[blob.room] ?? [];
+    if (doors.length) {
+      const need = expectedDoorCode(blob.room);
+      const keys = need.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
+      const hasUni = world.inventory.some((it) => it.sprite === 0x0f);
+      doorEl.textContent = hasUni ? `${keys} (máš $0F)` : keys;
+    } else {
+      doorEl.textContent = "—";
+    }
     const msgEl = $("stat-message");
     msgEl.textContent = world.message || "—";
     gotoEl.value = String(blob.room);
     $("time").textContent = lastMs.toFixed(2) + " ms";
     $("avg").textContent = avgMs.toFixed(2) + " ms";
     $("fps").textContent = avgMs > 0 ? (1000 / avgMs).toFixed(0) : "—";
+    if (world.gameOver) showEndOverlay();
   }
 
   function draw(): void {
@@ -183,8 +217,8 @@ async function boot(): Promise<void> {
 
   function goRoom(id: number): void {
     const room = clampRoom(id);
-    enterRoom(prep, world, room);
     blob = spawnBlob(prep, room, world);
+    enterRoom(prep, world, room, { blob });
     const hash = "#" + blob.room;
     if (location.hash !== hash) history.replaceState(null, "", hash);
   }
@@ -236,7 +270,7 @@ async function boot(): Promise<void> {
   });
 
   $("status").textContent =
-    "50 Hz · šipky / WASD pohyb · nahoru sebrat / nastoupit · dolů plošinka · mezerník palba · Left/Right na teleportu kód";
+    "50 Hz · šipky / WASD · Up sběr/pad · Down plošinka · mezerník palba · Left/Right teleport/dveře · jádro #199";
   fitScale();
 
   function frame(now: number): void {

@@ -4,15 +4,36 @@ import {
   ALIEN1_PTR,
   BADALIEN1_PTR,
   BADALIEN2_PTR,
+  CORE_D2DE_INIT,
+  CORE_NEIGHBOR,
+  CORE_ROOM,
+  DOOR_KEY_SPRITE,
+  DOOR_SHIFT_X,
+  GAME_OVER_MSG,
   GAME_Y_ORIGIN,
   GRAFIX_BASE,
   GRAFIX_STRIDE,
 } from "./constants";
 import { tickNasties } from "./entities";
 import { itemGamePos } from "./items";
-import { evaluateTeleport, firstTeleport, lastStation, teleportNameForRoom } from "./objects";
-import { applyTeleport, createWorld, enterRoom, playYToGame, spawnBlob, tick, type BlobState } from "./physics";
+import {
+  expectedDoorCode,
+  evaluateTeleport,
+  firstTeleport,
+  lastStation,
+  teleportNameForRoom,
+} from "./objects";
+import {
+  applyTeleport,
+  createWorld,
+  enterRoom,
+  playYToGame,
+  spawnBlob,
+  tick,
+  type BlobState,
+} from "./physics";
 import { tickFire } from "./projectiles";
+import { formatScore, formatTime } from "./score";
 import type { Entity, World } from "./types";
 import {
   HEIGHT,
@@ -119,11 +140,16 @@ function deathSnap(blob: BlobState, world: World) {
     firepower: world.firepower,
     dd22: world.dd22,
     gameOver: world.gameOver,
+    victory: world.victory,
     message: world.message,
     d2c4: world.d2c4,
     deathA: world.deathA,
     inventory: world.inventory,
     energyDrain: world.energyDrain,
+    endResult: world.endResult,
+    score: formatScore(world.scoreDigits),
+    coresLeft: world.coresLeft,
+    corePairs: world.corePairs,
   };
 }
 
@@ -446,6 +472,126 @@ if (has("--teleport-eval")) {
   const room = parseInt(arg("--room", "343"), 10);
   const code = arg("--code", "VEROX");
   process.stdout.write(JSON.stringify(evaluateTeleport(code, room)) + "\n");
+  process.exit(0);
+}
+
+if (has("--door-test")) {
+  const room = parseInt(arg("--room", "176"), 10);
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  const doors = prep.doorsByRoom?.[room] ?? [];
+  const door = doors.find((d) => d.x === 128) ?? doors[0];
+  if (!door) {
+    process.stdout.write(JSON.stringify({ error: "no door", room }) + "\n");
+    process.exit(1);
+  }
+  blob.x = door.x;
+  blob.y = GAME_Y_ORIGIN - door.y;
+  const expected = expectedDoorCode(room);
+  const useKey = !has("--code");
+  if (useKey) world.inventory = [{ sprite: DOOR_KEY_SPRITE, attr: 3 }];
+  else {
+    const parts = arg("--code", expected.join(","))
+      .split(/[\s,;]+/)
+      .filter(Boolean)
+      .map((p) => parseInt(p, 10));
+    world.inventory = parts.map((sprite) => ({ sprite, attr: 3 }));
+  }
+  const before = { x: blob.x, y: playYToGame(blob.y), room: blob.room, nastyCount: world.nastyCount };
+  const input = { left: false, right: true, up: false, down: false, fire: false };
+  tick(prep, blob, input, world);
+  process.stdout.write(
+    JSON.stringify({
+      room,
+      door,
+      expected,
+      useKey,
+      before,
+      after: {
+        x: blob.x,
+        y: playYToGame(blob.y),
+        room: blob.room,
+        d2c4: world.d2c4,
+        message: world.message,
+        nastyCount: world.nastyCount,
+        shifted: blob.x === ((before.x + DOOR_SHIFT_X) & 0xff),
+      },
+    }) + "\n",
+  );
+  process.exit(0);
+}
+
+if (has("--victory-test")) {
+  const world = createWorld(prep, 0);
+  const blob = spawnBlob(prep, 0, world);
+  world.inventory = CORE_D2DE_INIT.map((v) => ({ sprite: v & 0x7f, attr: 3 })).slice(0, 4);
+  // Deliver in batches of 4 (inventory cap), re-enter $C7 each time.
+  const steps = [];
+  while (world.coresLeft > 0 && !world.gameOver) {
+    const batch = [];
+    for (let i = 0; i < CORE_D2DE_INIT.length && batch.length < 4; i++) {
+      const id = CORE_D2DE_INIT[i]! & 0x7f;
+      if ((world.d2de[i]! & 0x80) === 0) continue;
+      batch.push({ sprite: id, attr: 3 });
+    }
+    world.inventory = batch;
+    blob.room = CORE_ROOM;
+    blob.x = 0x88;
+    blob.y = GAME_Y_ORIGIN - 0x3f;
+    enterRoom(prep, world, CORE_ROOM, { blob });
+    const empty = { left: false, right: false, up: false, down: false, fire: false };
+    while (world.corePhase && !world.gameOver) tick(prep, blob, empty, world);
+    steps.push({
+      coresLeft: world.coresLeft,
+      corePairs: world.corePairs,
+      room: blob.room,
+      score: formatScore(world.scoreDigits),
+      gameOver: world.gameOver,
+      victory: world.victory,
+    });
+    if (world.gameOver) break;
+  }
+  process.stdout.write(
+    JSON.stringify({
+      steps,
+      endResult: world.endResult,
+      gameOver: world.gameOver,
+      victory: world.victory,
+      message: world.message,
+      coresLeft: world.coresLeft,
+      corePairs: world.corePairs,
+      score: formatScore(world.scoreDigits),
+    }) + "\n",
+  );
+  process.exit(0);
+}
+
+if (has("--end-test")) {
+  const mode = arg("--mode", "gameover");
+  const world = createWorld(prep, 0);
+  const blob = spawnBlob(prep, 0, world);
+  world.frames = 50 * 65 + 7; // 01.05 + a bit → display from frames
+  if (mode === "gameover") {
+    world.lives = 0;
+    world.energy = 0;
+    tick(prep, blob, { left: false, right: false, up: false, down: false, fire: false }, world);
+    for (let i = 0; i < 200 && world.deathPhase; i++) {
+      tick(prep, blob, { left: false, right: false, up: false, down: false, fire: false }, world);
+    }
+  }
+  process.stdout.write(
+    JSON.stringify({
+      mode,
+      gameOver: world.gameOver,
+      victory: world.victory,
+      message: world.message || GAME_OVER_MSG,
+      endResult: world.endResult,
+      score: world.endResult ? formatScore(world.endResult.scoreDigits) : formatScore(world.scoreDigits),
+      time: world.endResult
+        ? formatTime(world.endResult.timeMinutes, world.endResult.timeSeconds)
+        : null,
+    }) + "\n",
+  );
   process.exit(0);
 }
 

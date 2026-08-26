@@ -39,6 +39,14 @@ import {
   NASTY_INNER_STEPS,
   NASTY_SLOTS,
   NASTY_SPEED,
+  CORE_GUARD_AI_PERIOD,
+  CORE_GUARD_DIR,
+  CORE_GUARD_INK,
+  CORE_GUARD_PERIOD,
+  CORE_GUARD_PTR,
+  CORE_GUARD_XY,
+  CORE_NEIGHBOR,
+  CORE_ROOM,
   ROOM_DATA_BASE,
   ROOM_DATA_STRIDE,
   ROWS,
@@ -47,6 +55,7 @@ import {
 import { lastStation } from "./objects";
 import type { BlobState } from "./physics";
 import { parkBullet, shotFlying } from "./projectiles";
+import { addScore, killScorePoints } from "./score";
 import type { DacState, Entity, EntityCache, Prepared, World } from "./types";
 
 function cellAttr(world: World, col: number, row: number): number {
@@ -245,7 +254,73 @@ export function spawnNasties(prep: Prepared, room: number, world: World): void {
   applyFixedNasties(prep, room, world);
 }
 
+/**
+ * `$9FD3` stub: X=0 Y=0 ptr `$DF40`. Y=0 keeps `$A03D` from running appear
+ * (engine used to park at Y=`$0F` → balls crawled into the corner).
+ */
+function parkCoreSlot(): Entity {
+  return {
+    x: 0,
+    y: 0,
+    ink: 7,
+    set: "corepieces2",
+    frame: 0,
+    ptr: ENTITY_DUMMY_PTR,
+    basePtr: CORE_GUARD_PTR,
+    dir: CORE_GUARD_DIR,
+    speedX: NASTY_SPEED,
+    speedY: NASTY_SPEED,
+    period: CORE_GUARD_PERIOD,
+    timer: CORE_GUARD_PERIOD,
+    state: 0,
+    stateTimer: 0,
+    ai: 0,
+    aiPeriod: CORE_GUARD_AI_PERIOD,
+    aiCount: CORE_GUARD_AI_PERIOD,
+    homeX: 0,
+    homeY: 0,
+  };
+}
+
+/** `$9F78`: spawn `min($D2E8, 4)` live `corepieces2` / `$B208` in `$C7`. */
+export function spawnCoreGuardians(world: World): void {
+  const n = Math.min(world.corePairs & 0xff, CORE_GUARD_XY.length);
+  world.entities = [];
+  for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(parkCoreSlot());
+  for (let i = 0; i < n; i++) {
+    const [x, y] = CORE_GUARD_XY[i]!;
+    const e = world.entities[i]!;
+    e.x = x;
+    e.y = y;
+    e.homeX = x;
+    e.homeY = y;
+    e.ptr = CORE_GUARD_PTR;
+    e.basePtr = CORE_GUARD_PTR;
+    e.set = setForPtr(CORE_GUARD_PTR);
+    e.ink = CORE_GUARD_INK;
+    e.state = 1;
+    e.stateTimer = 0;
+    e.period = CORE_GUARD_PERIOD;
+    e.timer = CORE_GUARD_PERIOD;
+    e.dir = CORE_GUARD_DIR;
+    e.speedX = NASTY_SPEED;
+    e.speedY = NASTY_SPEED;
+    e.ai = 0;
+    e.aiPeriod = CORE_GUARD_AI_PERIOD;
+    e.aiCount = CORE_GUARD_AI_PERIOD;
+  }
+  world.nastyCount = NASTY_SLOTS;
+  world.spawnGuard = 0;
+  world.cacheRoom = CORE_ROOM;
+}
 export function enterNasties(prep: Prepared, world: World, room: number): void {
+  /** `$9C57`: core room uses `$9F78` guardians, not random spawn. */
+  if (room === CORE_ROOM) {
+    spawnCoreGuardians(world);
+    return;
+  }
+  /** `$9C5C`: entering `$C6` zeros `$959C` before the swap → force respawn. */
+  if (room === CORE_NEIGHBOR) world.entityCache = null;
   const outgoing: EntityCache = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
   const incoming = world.entityCache;
   world.entityCache = outgoing;
@@ -323,7 +398,7 @@ export function syncHoverpad(prep: Prepared, world: World, room: number, blob?: 
   if (world.dd22 === 2 && blob) copyPadFromBlob(world, blob);
 }
 
-/** $A054 AABB vs $DDBD: |dx|<$0E |dy|<$0E → stars $BEC8, state 2, $C546. */
+/** $A054 AABB vs $DDBD: |dx|<$0E |dy|<$0E → stars $BEC8, state 2, `$A2E7` score. */
 function hitByBullet(e: Entity, world: World): void {
   if (!shotFlying(world)) return;
   if (e.state === 2) return;
@@ -331,6 +406,7 @@ function hitByBullet(e: Entity, world: World): void {
   const dx = Math.abs(e.x - world.bullet.x);
   const dy = Math.abs(e.y - world.bullet.y);
   if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
+  addScore(world, killScorePoints(e.basePtr || e.ptr));
   e.ptr = DEAD_GRAPHIC;
   e.set = "stars";
   e.ink = 7;

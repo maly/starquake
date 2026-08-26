@@ -93,6 +93,26 @@ export interface Prepared {
   fixedNastiesByRoom?: Hotspot[][];
   /** $96CB from $A90F nibble $90 (col/row of 2×2 extra spawn). Drawn attrs are never $90. */
   extraMarksByRoom?: Array<Array<{ col: number; row: number }>>;
+  /** Type $00 security doors from raw $01–$0F (not nibble $80). */
+  doorsByRoom?: Hotspot[][];
+  /** Type $0B / nibble $B0 sockets; slot indexes into `$95F0`. */
+  socketsByRoom?: SocketHotspot[][];
+}
+
+/** `$95F0` socket hotspot plus table index. */
+export interface SocketHotspot extends Hotspot {
+  slot: number;
+}
+
+/** `$6730` end fields after `$64A0` (+1000; scramble skipped). */
+export interface EndResult {
+  scoreDigits: number[];
+  adventure: number;
+  timeMinutes: number;
+  timeSeconds: number;
+  coresReplaced: number;
+  victory: boolean;
+  banner?: string;
 }
 
 export interface Buffers {
@@ -221,8 +241,32 @@ export interface World {
   teleportLatch: boolean;
   /** Viewer supplies a blocking 5-char prompt; dump/tests call applyTeleport. */
   readTeleportCode?: (ownName: string) => string | null;
+  /** Door access-code prompt; dump/tests can inject digits. */
+  readDoorCode?: (expected: number[]) => string | null;
   /** $C461 / $6730 — further ticks return immediately. */
   gameOver: boolean;
+  /** Victory path set `$A7CF`; same EndResult shape as lives=0. */
+  victory: boolean;
+  /** `$6730` SCORE/ADVENTURE/TIME/CORES after `$64A0`. */
+  endResult: EndResult | null;
+  /** 6 BCD digits `$D413`…`$D418`. */
+  scoreDigits: number[];
+  /** `$A390` first-visit bits (set = not yet +250). */
+  a390: Uint8Array;
+  visitedCount: number;
+  /** 50 Hz frame counter from new game (FRAMES `$5C78`). */
+  frames: number;
+  /** `$D2DE` nine core IDs; bit7 = still needed. */
+  d2de: number[];
+  /** `$D2E7` cores left (start 9). */
+  coresLeft: number;
+  /** `$D2E8` even-delivery pairs / core guardians (0…5). */
+  corePairs: number;
+  /** `$A6C1` wait loop: hide Blob, fly guardians, then eject `$C6`. */
+  corePhase: "ceremony" | null;
+  coreTicks: number;
+  /** Live `$95F0` socket flags (8 bytes). */
+  socketFlags: number[];
   /** $D2C4. Set by $C35E when A ≥ $10; checkpoint restore on respawn. */
   d2c4: number;
   /** Last A passed to $C350, for --death-test. */

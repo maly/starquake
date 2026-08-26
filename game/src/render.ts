@@ -3,6 +3,14 @@ import {
   CELL,
   CLEAR_ATTR,
   COLS,
+  CORE_D2DE_INIT,
+  CORE_PANEL_ATTR_COL,
+  CORE_PANEL_ATTR_ROW,
+  CORE_PANEL_INK_DONE,
+  CORE_PANEL_INK_PENDING,
+  CORE_PANEL_STEP,
+  CORE_ROOM,
+  CORE_SLOTS,
   GAME_Y_ORIGIN,
   HEIGHT,
   MAP_COLS,
@@ -89,6 +97,8 @@ export function prepare(data: GameData): Prepared {
     pulsesByRoom,
     fixedNastiesByRoom,
     extraMarksByRoom,
+    doorsByRoom,
+    socketsByRoom,
   } = hotspotsFromData(data, rooms, blocks);
   return {
     graphics,
@@ -104,6 +114,8 @@ export function prepare(data: GameData): Prepared {
     pulsesByRoom,
     fixedNastiesByRoom,
     extraMarksByRoom,
+    doorsByRoom,
+    socketsByRoom,
   };
 }
 
@@ -232,6 +244,31 @@ export function blitExtra(prep: Prepared, buf: Buffers, extra: ExtraObject | nul
   if (!extra) return;
   const playRow = extra.row - PLAY_ORIGIN;
   blitSprite(prep, buf, extra.sprite, extra.col, playRow, (extra.ink & 7) | 0x40);
+}
+
+/**
+ * `$A78D` / `$C4AB`: 3×3 panel of `$D2DE` at attr (`$0C`,`$0D`), step 2.
+ * Pending (bit7): sprite to bring, blinking ink (`$C506`).
+ * Delivered: same need-sprite, steady ink `$07`.
+ */
+export function blitCorePanel(prep: Prepared, buf: Buffers, world: World, roomId: number): void {
+  if (roomId !== CORE_ROOM) return;
+  const col0 = CORE_PANEL_ATTR_COL;
+  const row0 = CORE_PANEL_ATTR_ROW - PLAY_ORIGIN;
+  const blinkOn = (world.frames & 8) !== 0;
+  for (let i = 0; i < CORE_SLOTS; i++) {
+    const r = (i / 3) | 0;
+    const c = i % 3;
+    const need = CORE_D2DE_INIT[i]!;
+    const live = world.d2de[i] ?? need;
+    const pending = (live & 0x80) !== 0;
+    const sprite = need & 0x7f;
+    let ink = CORE_PANEL_INK_DONE;
+    if (pending) {
+      ink = blinkOn ? CORE_PANEL_INK_PENDING : ((world.frames + i) & 3) + 2;
+    }
+    blitSprite(prep, buf, sprite, col0 + c * CORE_PANEL_STEP, row0 + r * CORE_PANEL_STEP, (ink & 7) | 0x40);
+  }
 }
 
 function xorPulseLayer(buf: Buffers, col: number, playRow: number, layer: number, attr: number): void {
@@ -453,6 +490,7 @@ export function renderWorld(
     blitItems(prep, buf, roomId, world.collected);
     blitExtra(prep, buf, world.extra);
   }
+  blitCorePanel(prep, buf, world, roomId);
   blitPulses(buf, world.pulses, world.dac.dac0);
   const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
   rasterize(buf, rgba, !!opts.overlay, solid);

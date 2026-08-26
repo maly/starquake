@@ -1,9 +1,22 @@
 import {
   ATTR_NASTY_HI,
+  CORE_SOCKET_ATTR_HI,
+  CORE_SOCKET_TABLE,
+  CORE_TOOL_SPRITE,
+  DOOR_CODE_BC,
+  DOOR_D2C6,
+  DOOR_DIGIT_MAX,
+  DOOR_DIGIT_MIN,
+  DOOR_INPUT_MASK,
+  DOOR_KEY_SPRITE,
+  DOOR_RAW_MAX,
+  DOOR_RAW_MIN,
+  DOOR_SINGLE_WILDCARD,
   EXTRA_ATTR_HI,
   DD22_PAD,
   GAME_Y_ORIGIN,
   HOVERPAD_ATTR_HI,
+  ITEM_NEAR,
   ITEM_ORIGIN_ROWS,
   KILL_AABB,
   KILL_ATTR_HI,
@@ -24,7 +37,7 @@ import {
 } from "./constants";
 import { parkBullet } from "./projectiles";
 import type { BlobState } from "./physics";
-import type { GameData, Hotspot, Prepared, Pulse, PulseDef, Room, World } from "./types";
+import type { GameData, Hotspot, Prepared, Pulse, PulseDef, Room, SocketHotspot, World } from "./types";
 
 export interface TeleportEval {
   ok: boolean;
@@ -54,11 +67,28 @@ export interface HotspotScan {
   pulsesByRoom: PulseDef[][];
   fixedNastiesByRoom: Hotspot[][];
   extraMarksByRoom: Array<Array<{ col: number; row: number }>>;
+  doorsByRoom: Hotspot[][];
+  socketsByRoom: SocketHotspot[][];
+}
+
+function socketRoomId(slot: number): number {
+  const row = CORE_SOCKET_TABLE[slot];
+  if (!row) return -1;
+  const [lo, flags] = row;
+  return lo | ((flags & 0x80) << 1);
+}
+
+function socketSlotForRoom(room: number): number {
+  for (let i = 0; i < CORE_SOCKET_TABLE.length; i++) {
+    if (socketRoomId(i) === room) return i;
+  }
+  return -1;
 }
 
 /**
  * Replicate $A90F / $AA02 from rooms + blocks + $9740 raw.
- * $C0 → $0C, $D0 → $0D, $60 → $06, $70 → $9635, $80 → $9620, $90 → $96CB.
+ * $C0 → $0C, $D0 → $0D, $60 → $06, $70 → $9635, $80 → $9620, $90 → $96CB,
+ * raw $01–$0F → type $00 door, $B0 → type $0B socket.
  * Drawn attrs never hold those nibbles.
  */
 export function scanHotspots(
@@ -71,6 +101,8 @@ export function scanHotspots(
   const killsByRoom = emptyHotspots();
   const pulsesByRoom = emptyPulses();
   const fixedNastiesByRoom = emptyHotspots();
+  const doorsByRoom = emptyHotspots();
+  const socketsByRoom: SocketHotspot[][] = Array.from({ length: ROOM_COUNT }, () => []);
   const extraMarksByRoom: Array<Array<{ col: number; row: number }>> = Array.from(
     { length: ROOM_COUNT },
     () => [],
@@ -82,6 +114,8 @@ export function scanHotspots(
     pulsesByRoom,
     fixedNastiesByRoom,
     extraMarksByRoom,
+    doorsByRoom,
+    socketsByRoom,
   };
   if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
   for (const room of rooms) {
@@ -89,6 +123,7 @@ export function scanHotspots(
     if (id < 0 || id >= ROOM_COUNT) continue;
     const data = room.blocks;
     if (!data?.length) continue;
+    const sockSlot = socketSlotForRoom(id);
     let b = PLAY_ORIGIN;
     let n = 0;
     for (let br = 0; br < 3; br++) {
@@ -114,6 +149,12 @@ export function scanHotspots(
             else if (hi === PULSE_ATTR_HI) pulsesByRoom[id]!.push({ col, row });
             else if (hi === ATTR_NASTY_HI) fixedNastiesByRoom[id]!.push(cellHotspot(col, row));
             else if (hi === EXTRA_ATTR_HI) extraMarksByRoom[id]!.push({ col, row });
+            else if (hi === CORE_SOCKET_ATTR_HI && sockSlot >= 0) {
+              const hs = cellHotspot(col, row);
+              socketsByRoom[id]!.push({ x: hs.x, y: hs.y, slot: sockSlot });
+            } else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
+              doorsByRoom[id]!.push(cellHotspot(col, row));
+            }
           }
         }
         c += 8;
@@ -225,10 +266,108 @@ function boardPad(world: World): void {
   world.dd22 = world.lastDir & 8 ? DD22_PAD : 0;
 }
 
+/** `$D633`: `(n ∧ $3F) % 5 + 9` → `$09`–`$0D`. */
+export function reduceDoorDigit(raw: number): number {
+  return ((raw & 0x3f) % 5) + DOOR_DIGIT_MIN;
+}
+
 /**
- * $CB8A types $06 / $0C / $0D. $06 is AABB (`$CBBB`) and needs no key.
- * $CEAD board/dismount; $CEC9 teleport needs Left|Right.
- * Returns `"$06"` on poison-plant hit, a typed code when the overlay should run.
+ * `$D616`…`$D63B` door code for room.lo and `BC=$110B`.
+ * Seed `$D2C6` from snapshot (`DOOR_D2C6` = `$7B78`).
+ */
+export function expectedDoorCode(room: number, d2c6: number = DOOR_D2C6, bc: number = DOOR_CODE_BC): number[] {
+  const h = (d2c6 >> 8) & 0xff;
+  const l = d2c6 & 0xff;
+  const e = room & 0xff;
+  const b = (bc >> 8) & 0xff;
+  const c = bc & 0xff;
+  let a = (b ^ h ^ e) & 0xff;
+  const d5f7 = a;
+  a = (a ^ l ^ c) & 0xff;
+  const d5f9 = a;
+  a = (a ^ h ^ b) & 0xff;
+  return [reduceDoorDigit(d5f7), reduceDoorDigit(d5f9), reduceDoorDigit(a)];
+}
+
+export function parseDoorCodeInput(text: string): number[] | null {
+  const parts = text.trim().split(/[\s,;]+/).filter(Boolean);
+  if (parts.length >= 3) {
+    const out = parts.slice(0, 3).map((p) => parseInt(p, 10));
+    if (out.every((n) => n >= DOOR_DIGIT_MIN && n <= DOOR_DIGIT_MAX)) return out;
+  }
+  const digits = text.replace(/[^0-9A-Fa-f]/g, "");
+  if (digits.length < 3) return null;
+  const out: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    const n = parseInt(digits[i]!, 16);
+    if (n < DOOR_DIGIT_MIN || n > DOOR_DIGIT_MAX) return null;
+    out.push(n);
+  }
+  return out;
+}
+
+export function inventoryHasSprite(world: World, sprite: number): boolean {
+  return world.inventory.some((it) => (it.sprite & 0xff) === (sprite & 0xff));
+}
+
+/**
+ * `$D693`: open when inventory holds `$0F` (universal), or the three digit
+ * sprites (multiset; each slot used once). `$0E` may cover one digit.
+ * Typed prompt codes are not used — player brings keys.
+ */
+export function doorKeysAccepted(world: World, room: number): boolean {
+  if (inventoryHasSprite(world, DOOR_KEY_SPRITE)) return true;
+  const need = expectedDoorCode(room);
+  const used = new Array(world.inventory.length).fill(false);
+  let wildcards = 0;
+  for (const it of world.inventory) {
+    if ((it.sprite & 0xff) === DOOR_SINGLE_WILDCARD) wildcards += 1;
+  }
+  for (const digit of need) {
+    let found = -1;
+    for (let i = 0; i < world.inventory.length; i++) {
+      if (used[i]) continue;
+      if ((world.inventory[i]!.sprite & 0xff) === (digit & 0xff)) {
+        found = i;
+        break;
+      }
+    }
+    if (found >= 0) {
+      used[found] = true;
+      continue;
+    }
+    if (wildcards > 0) {
+      wildcards -= 1;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+/** @deprecated Use doorKeysAccepted — kept for dump helpers. */
+export function doorCodeAccepted(world: World, room: number, _typed: string | null): boolean {
+  return doorKeysAccepted(world, room);
+}
+
+/** `$CE96`: tool `$10` clears low 7 bits of `$95F0` flag (keep room-hi bit7). */
+export function tryClearSocket(prep: Prepared, blob: BlobState, world: World): boolean {
+  if (!inventoryHasSprite(world, CORE_TOOL_SPRITE)) return false;
+  const { x, y } = blobGame(blob);
+  for (const s of prep.socketsByRoom?.[blob.room] ?? []) {
+    if (Math.abs(x - s.x) >= ITEM_NEAR || Math.abs(y - s.y) >= ITEM_NEAR) continue;
+    const flag = world.socketFlags[s.slot] ?? 0;
+    if ((flag & 0x7f) === 0) return false;
+    world.socketFlags[s.slot] = flag & 0x80;
+    return true;
+  }
+  return false;
+}
+
+/**
+ * $CB8A types $06 / $00 / $0B / $0C / $0D.
+ * $06 AABB; $00 exact + L|R door; $0B AABB + tool `$10`; $0C/$0D as before.
+ * Returns `"$06"`, `"$00"` (door handled), a teleport code, or null.
  */
 export function walkSpecialObjects(
   prep: Prepared,
@@ -237,6 +376,8 @@ export function walkSpecialObjects(
   world: World,
 ): string | null {
   if (hitKillTerrain(prep, blob)) return "$06";
+
+  tryClearSocket(prep, blob, world);
 
   const stations = prep.stationsByRoom?.[blob.room] ?? [];
   for (const s of stations) {
@@ -247,11 +388,18 @@ export function walkSpecialObjects(
   }
 
   const horiz = (input.left ? 2 : 0) | (input.right ? 1 : 0);
-  if (!(horiz & TELEPORT_INPUT_MASK)) {
+  if (!(horiz & (TELEPORT_INPUT_MASK | DOOR_INPUT_MASK))) {
     world.teleportLatch = false;
     return null;
   }
   if (world.teleportLatch) return null;
+
+  const doors = prep.doorsByRoom?.[blob.room] ?? [];
+  for (const d of doors) {
+    if (!exactAt(blob, d.x, d.y)) continue;
+    return doorKeysAccepted(world, blob.room) ? "$00:ok" : "$00:bad";
+  }
+
   const pads = prep.teleportsByRoom?.[blob.room] ?? [];
   for (const t of pads) {
     if (!exactAt(blob, t.x, t.y)) continue;

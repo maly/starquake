@@ -218,10 +218,10 @@ Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA=
 
 | A (typ) | podmínka | účinek | stav enginu |
 |---|---|---|---|
-| `$00` | sem po `$CE82` nejde | security door `$CBDC` | mimo rozsah |
+| `$00` | exact XY + L\|R | security door `$CBDC` | implementováno |
 | `$01` | sem po `$CC5A` nejde | extra `$CC9A` (níže) | implementováno |
 | `$06` | sem po `$CE77` nejde | rostlina `$C350` A=`$10` | implementováno jinde |
-| `$0B` | `$CE82` | dlaždice `$B0` / nástroj `$10` | mimo rozsah |
+| `$0B` | AABB + tool `$10` | dlaždice `$B0` / clear `$95F0` | implementováno |
 | `$0C` | `$CE82` | pad `$CEAD` | implementováno jinde |
 | `$0D` | `$CE82` | teleport `$CEC4` | implementováno jinde |
 | `$0E` | `$DD29==$10` a stejné Y, jinak `$D1A6` | stroj na plošinky; **ne** refill `$D2CE` | mimo rozsah |
@@ -254,12 +254,45 @@ Meze: E/P/F strop `$7F` (`$D469`); dolní mez 0 jen `$D4E9` (ne tato cesta). Ži
 
 | sprite | význam | stav |
 |---|---|---|
-| `$0F` | klíč kódu (`$D693`) | inventář; minihra není |
-| `$10` | nástroj `$B0` (`$CE8C`) | inventář; vkládání jádra není |
-| `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář (staty beze změny) |
+| `$0F` | klíč kódu (`$D693`) | inventář; dveře wildcard všech cifer |
+| `$10` | nástroj `$B0` (`$CE8C`) | inventář; clear socket `$95F0` |
+| `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář (staty beze změny); jádrové ID v `$D2DE` |
 | `$FF` | prázdný záznam | ignorovat |
 
-Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport výše a rostlina `$06` (AABB `$CBBB`, `$CE77` A=`$10`). Není: `$0B` dlaždice `$B0`, `$0E` stroj na plošinky, `$0F` vodorovný přechod, jádro `$C7`.
+Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport, `$00` security door, `$0B` socket `$B0`, rostlina `$06`. Není: `$0E` stroj na plošinky, `$0F` vodorovný přechod (room±1).
+
+## Security doors (`$00`)
+
+Raw `$9740` `$01`–`$0F` (hi nibble 0) → typ `$00` v `$96FC`. **Není** nibble `$80` (to je `$9F05` pevný spawn). Subs `$25`/`$26` (raw `$04`/`$06`). Exact XY + Left\|Right: otevře se, když inventář drží **tři digit-sprity** kódu (multiset, `$D693`) **nebo** univerzální `$0F` (případně jedno `$0E`). **Bez promptu** — požadované sprity ukáže panel vieweru. Seed kódu `$D2C6=$7B78` ⊕ room.lo ⊕ `BC=$110B` → 3× `$09`–`$0D`. Úspěch: X ±`$30` (bit0 Right), Y snap, `$D2C4=$03`, reload bez respawnu vetřelců. Žádný persistentní „opened“. Zeď = `$D2F0` `attr<$40`. Místnosti: 176, 187, 200, 210, 265, 352, 362, 429. Rozbor: [`notes/security-doors.md`](notes/security-doors.md).
+
+## Jádro (`$C7`) / `$C6` / `$B0`
+
+| veličina | hodnota | adresa |
+|---|---|---|
+| místnost jádra | `$C7` (199); `$AA30` RET | `$AA3B` |
+| soused | `$C6` maže `$959C` před swapem | `$9C5C` |
+| požadované prvky | `$D2DE` 9× (bit7 = nedoručeno); snapshot init | `$6399` |
+| zbývá / páry | `$D2E7=9`, `$D2E8=0…5` | `$A729` / `$A7B2` |
+| výhra | `$D2E8==5` po 9 doručeních | `$A7C9` |
+| doručení | inventář vs `$D2DE`, +10000, eject `($F0,$27)` `$C6` | `$A6C1` |
+| nápověda 3×3 | `$A78D` BC=`$0C0D`; pending ink `$02`+blink `$C506`, done ink `$07` | `$C4AB` |
+| strážci | `$D2E8` × `$B208` na (80,111),(168,47),(80,47),(168,111); AI 0 dir `$05` | `$9F78` / `$9FC0` |
+| neaktivní slot | X=0 Y=**0** ptr `$DF40` (ne Y=`$0F` — to spouští appear) | `$9FD3` |
+| scéna | `$A7D5` skryje Blob; `$A757` B=`$C8` ticků; eject `($F0,$27)` `$C6` | `$A6C1` |
+| socket `$B0` | typ `$0B`; tool `$10` clear flag `$95F0` | `$CE96` |
+
+Každý vstup do `$C7` = scéna (panel + koule), pak **vždy** `$C6` (i bez doručení). `$C6` maže cache `$959C` před swapy. Rozbor: [`notes/core.md`](notes/core.md).
+
+## Skóre / konec hry
+
+| událost | body | adresa |
+|---|---|---|
+| kill | `(hi−$AE)×2` tens | `$A2E7` / `$D422` |
+| first-visit | +250; bit `$A390` | `$A47E` |
+| doručení jádra | +10000 | `$A6EA` |
+| konec (výhra i lives=0) | +1000 (scramble low digits **přeskočen**) | `$64A0` |
+
+`EndResult`: SCORE (`$D413`), ADVENTURE `(visited×50)≫8`, TIME frames/50 → MM.SS, CORES `9−$D2E7`, `victory`. UI = HTML overlay, ne Spectrum bitmap. Hi-score `$64FA` se **nezapisuje**. Rozbor: [`notes/endgame-score.md`](notes/endgame-score.md).
 
 ## Pořadí ticku (engine)
 
@@ -270,11 +303,11 @@ ROM `$A523`: `$C5BD` (chůze/zdviž/pad → palba → východ `$C8F4` nebo `$CB5
 3. palba Blob `$C85A` / pad `$CA15`
 4. úbytek energie `$CB58`
 5. sběr extra / `$94E8`
-6. objekty `$0C` / `$0D` **a** `$06` (teleport dál skip zbytku)
+6. objekty `$06` / `$00` / `$0B` / `$0C` / `$0D` (door/teleport skip zbytku)
 7. `energy==0` → `applyDeath(A=2)`; smrt / game over končí tick
 8. puls `$70` + AABB
 9. vetřelci `$A01B` (kontakt může `applyDeath`)
-10. východ z místnosti (park střely v `enterRoom`)
+10. východ z místnosti (park střely v `enterRoom`; doručení `$A6C1` při vstupu do `$C7`)
 
 Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Drain je před vetřelci, takže obtěžující bump `$0A` v tomtéž ticku neprojde wrap `$78`.
 
@@ -290,21 +323,22 @@ Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Dra
 2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne. `$64` je v overlay i chůzi nepevná.
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
-5. **Místnost `$C7` (jádro), bezpečnostní dveře, zvuk `$D7C0`.** Mimo rozsah.
+5. **Zvuk `$D7C0`.** Doors/core/end jen ID větví; beeper ne.
 6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá. Pad vždy `$AFC8` (snímky 1–3 se neindexují).
 7. **Extra spawn `$AAB6` po `$A80A`.** Markery jsou raw nibble `$90` (`$96CB`), ne nakreslený attr. Engine seed `$7530+id×12` + 20× `$DAC6`, ne celý řetězec při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
 8. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah. Extra `$17`/`$18` jsou v enginu (`$CCCC` / přetečení `$CCBC`).
 9. **1. tick Up bez `$14+`.** ROM vsune prázdný slot `00 00`; engine ne. Mimo rozsah.
 10. **Póza Arrow `$BF88` ve zdviži** — není v extractu; engine nechá poslední walk frame.
 11. **Objekt `$0E`** (stroj na plošinky) — mimo rozsah; není zelené pole `$64`.
-12. **Zvuk smrti `$D7C0`.** Flash / `$BEC8` burst / HALT pause jsou v enginu; beeper ne.
-13. **`$A426` vs `$C8DD`.** ROM po teleportu střelu neparkuje; engine parkuje v `enterRoom`.
-14. **Engine `skip64` vs `$A132`** (řada Y+1, skip jen Y, exact `$64`) — ponecháno.
-15. **Opakovaný overlay** při drženém Left/Right po příletu na pad. Viewer má latch do uvolnění, aby `prompt()` nesmyčkoval.
-16. **`$E4` (flash + `$64`).** `$C71C` bere jen přesné `$64`; v exportu 0 výskytů.
-17. **Smrt v `$C7`.** `$A6C1` je vstup do jádra, ne wipe inventáře.
-18. **Plný `$64A0` game-over.** Engine zamkne tick (`world.gameOver`) a napíše `GAME OVER`.
+12. **`$A426` vs `$C8DD`.** ROM po teleportu střelu neparkuje; engine parkuje v `enterRoom`.
+13. **Engine `skip64` vs `$A132`** (řada Y+1, skip jen Y, exact `$64`) — ponecháno.
+14. **Opakovaný overlay** při drženém Left/Right po příletu na pad / dveře. Viewer má latch do uvolnění.
+15. **`$E4` (flash + `$64`).** `$C71C` bere jen přesné `$64`; v exportu 0 výskytů.
+16. **`$64A0` scramble spodních tří cifer.** Engine dělá jen +1000; scramble přeskočen (viz endgame-score.md).
+17. **Digit `$0E` wildcard** — engine podporuje 1×; Spectrum minihra UI (XOR anim) ne.
+18. **Účel osmi `$B0` socketů** mimo clear flagu — NEVÍM (neovlivní výhru).
 19. **Perioda `$70` vs live `$DAC0` při `$A80A`.** Engine bere `dac0` po spawn vetřelců, ne řetězec `$DAC6` při kreslení bloků.
+20. **Místnost 362** — jeden door hotspot (broken pair?).
 
 ## Energie / smrt / terén `$06` / `$70` / smrtící vetřelci
 

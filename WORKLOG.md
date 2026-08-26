@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `554c635` (spawn home `$9EE2`, energie `$7F`/`$DD30=0`, ink≠0). Working tree: jen `tmp_*_probe.py`.
+Poslední commit: `cc710eb` (spawn home `$9EE2`, energie `$7F`/`$DD30=0`, ink≠0). Working tree: goal (doors/core/score/end) + notes + `tmp_*_probe.py` (necommituj sondy).
 
 ## Tvrdé meze
 
@@ -11,15 +11,15 @@ Poslední commit: `554c635` (spawn home `$9EE2`, energie `$7F`/`$DD30=0`, ink≠
 - Nesnižuj match thresholdy (emu vs export = 0 pixelů).
 - Collision/static tile export (`rooms.json` `solid` / `$D280` overlay) neměň.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
-- Zatím **neimplementovat:** jádro `$C7`, security doors, zvuk `$D7C0`, minihra kódu `$D693`, výměna Cheops `$CCF1`, drop přeplněného inventáře `$D1CA`, objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, původní stavovou obrazovku.
+- Zatím **neimplementovat:** zvuk `$D7C0`, výměna Cheops `$CCF1`, drop přeplněného inventáře `$D1CA`, objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří.
 - Konstanty s ROM adresami do `docs/MOVEMENT.md` a comments v `constants.ts`.
-- Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`.
+- Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`, `tmp_security_probe.py`, `tmp_core_probe.py`, `tmp_score_probe.py`.
 
 Ověření:
 
 ```
 npm --prefix game test && npm --prefix game run build
-python -m pytest tests/test_viewer.py tests/test_enemies.py tests/test_fire.py tests/test_items.py tests/test_transport.py tests/test_death.py
+python -m pytest tests/test_viewer.py tests/test_enemies.py tests/test_fire.py tests/test_items.py tests/test_transport.py tests/test_death.py tests/test_goal.py
 ```
 
 ## Spuštění
@@ -30,25 +30,27 @@ npm start
 
 http://127.0.0.1:8000/viewer/
 
-Šipky / WASD chůze, Up/W sběr a nástup na pad, Down/S plošinka, mezerník palba, Left/Right na teleportu = kód, PageUp/Down místnost. `#8` start extra `$17` (dobíjení, nibble `$90`), `#13` puls `$70` (výboj `$DB88`), `#249` výtah, `#15` pad, `#343` teleport EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`.
+Šipky / WASD chůze, Up/W sběr a nástup na pad, Down/S plošinka, mezerník palba, Left/Right na teleportu / security door = kód, PageUp/Down místnost. `#8` start extra `$17`, `#13` puls `$70`, `#176` dveře, `#199` jádro `$C7`, `#249` výtah, `#15` pad, `#343` EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`. Dump: `--door-test`, `--victory-test`, `--end-test`, `--timing`.
 
 ## Architektura
 
 | soubor | role |
 |---|---|
 | `game/src/constants.ts` | ROM + `TEMP_JUMP_*` unbound + `TELEPORT_TABLE` + `DD22_*` + lift/pad + smrt A / `$06`/`$70`/`$80` |
-| `game/src/types.ts` | `World`: `dd22`, `lastDir`, `station`, `pad`, `padShot*`, `collected`, `a350`, `extra`, `inventory`, `cheops`, `teleportLatch`, `message`, `readTeleportCode`, `lives`, `gameOver`, `d2c4`, `deathA`, `entry`, `pulses`, `pulseIndex` |
-| `game/src/objects.ts` | `scanHotspots` (`$A90F`/`$AA02` z rooms+blocks+`block_attrs` raw: `$C0/$D0/$60/$70/$80/$90`), `evaluateTeleport`, `walkSpecialObjects` |
-| `game/src/physics.ts` | tick (viz pořadí), `applyDeath` `$C350` |
+| `game/src/types.ts` | `World` + `EndResult`, doors/sockets, score/core fields, `readDoorCode` |
+| `game/src/objects.ts` | `scanHotspots` (+ doors `$01–$0F`, sockets `$B0`), teleport, door code, `$0B` clear |
+| `game/src/physics.ts` | tick, `applyDeath`, `applySecurityDoor`, `enterRoom` first-visit + `$A6C1` |
+| `game/src/core.ts` | `$D2DE` init, `deliverCoreParts` |
+| `game/src/score.ts` | BCD `$D413`, `$A390`, `composeEndResult` |
 | `game/src/projectiles.ts` | `tickFire` `$C85A`, `tickPadFire` `$CA15` |
-| `game/src/entities.ts` | nasties + pad spawn/kopie, home `$9EE2`, ink `$9E1C`, `hitByBullet`, kontakt `$A305`, `$9F05`, AI 5/6 |
-| `game/src/items.ts` | `$94E8` inventář; extra `$CC9A` / `$CCCC`; teleport/pad/rostlina sem nepatří |
-| `game/src/render.ts` | `prepare()` hotspots, stamp pad, `blitPulses` `$DB88`, kreslí `nastyCount` slotů |
-| `game/src/dump.ts` | `--fire-trace`, `--collect-test`, `--lift-test`, `--pad-test`, `--teleport-test`, `--teleport-eval`, `--death-test`, `--enemy-trace`, `--timing` |
+| `game/src/entities.ts` | nasties, `$9F78` guardians, `$C6` cache wipe, kill score |
+| `game/src/items.ts` | `$94E8` inventář; extra `$CC9A` / `$CCCC` |
+| `game/src/render.ts` | `prepare()` hotspots, stamp pad, `blitPulses` `$DB88` |
+| `game/src/dump.ts` | + `--door-test`, `--victory-test`, `--end-test`, `--timing` |
 
 Souřadnice: `$DD1D` X zleva, `$DD1E` Y odspodu; playY = `143 − gameY`. Start Blob: X=`$88` Y=`$3F`. Entity Y je game-Y.
 
-Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`, `item-effects.md`. Konstanty: `docs/MOVEMENT.md`.
+Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`, `item-effects.md`, `security-doors.md`, `core.md`, `endgame-score.md`. Konstanty: `docs/MOVEMENT.md`.
 
 ### Tick
 
@@ -57,13 +59,13 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 3. palba Blob `$C85A` nebo pad `$CA15`
 4. energy drain `$CB58`
 5. `tickPickup` extra + `$94E8`
-6. `walkSpecialObjects` `$0C`/`$0D`/`$06` (teleport i rostlina skip zbytku)
+6. `walkSpecialObjects` `$06`/`$00`/`$0B`/`$0C`/`$0D` (door/teleport skip zbytku)
 7. `energy==0` → `applyDeath(A=2)`
 8. puls `$70` + AABB (`$9635`)
 9. `tickNasties` (kontakt může `applyDeath`)
-10. room exit (park v `enterRoom`)
+10. room exit (park v `enterRoom`; `$C7` delivery v `enterRoom`)
 
-`gameOver` zamkne tick. ROM je `$C8F4` pak `$CB8A` pak `$A530` pak `$A01B`; engine má objekty před východem, drain před vetřelci.
+`gameOver` / `endResult` zamkne tick. ROM je `$C8F4` pak `$CB8A` pak `$A530` pak `$A01B`; engine má objekty před východem, drain před vetřelci.
 
 ## Hotovo
 
@@ -75,8 +77,9 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - Zdviž `$64` / `$DD22=1`. `$D2F0` 2 řady když `(Y+1)∧7=0`, jinak 3 — otvor `$44` v `#249` neposkakuje.
 - Energie `$CB58` −4 při wrap `$78` (`$DD30` start 0, energie `$7F` jako nová hra); obtěžující `$DD30 += $0A` (až 4×/tick, bez i-frames). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
 - `$9F05` nibble `$80` → živý `$B2C8` AI 6. Perioda spawnu 4…8. AI 5 dir=0 / RRCA, AI 3 zapisuje 8-směr. `$A2B9` = `$08,$09,$01,$05,$04,$06,$02,$0A`.
+- Security doors typ `$00` (raw `$01`–`$0F`), klíč `$0F` / prompt; jádro `$C7` doručení `$A6C1` (9×`$D2DE`), výhra `$D2E8==5`; skóre + společný `EndResult` (HTML overlay).
 
-Ověřeno (working tree): `npm test` 95 pass; pytest viewer+enemies+fire+items+transport+death 22 pass (enemies rooms 0, 1, 52, 253); live ~0,24 ms/snímek (limit 20).
+Ověřeno (working tree): `npm test` 107 pass; pytest +`test_goal` 25 pass; live ~0,23–0,32 ms/snímek (limit 20).
 
 ## Otevřené
 
@@ -86,16 +89,41 @@ Ověřeno (working tree): `npm test` 95 pass; pytest viewer+enemies+fire+items+t
 4. `$DF70` bit-shift `X∧7≠0` — `blitGrafix` emuluje; live je stamp.
 5. Podlaha dál `$D2F4` foot-column, ne inkoust nohou.
 6. Live `$DAC6` po `$A80A` — engine seed `$7530+id×12`. Extra spawn, pad bounce i perioda `$70` z `dac0` po spawn vetřelců.
-7. Jádro `$C7`, security doors. Smrt v `$C7` jde na `$A6C1` (mimo rozsah).
-8. Animace 4 GRAFIX snímků vetřelce — frame 0. Pad vždy `$AFC8`.
-9. Extra `$17`/`$18` v enginu (`$CCCC` / přetečení `$CCBC`). 1. tick Up bez `$14+` vsune `00 00` do inventáře — mimo rozsah.
-10. Inventář overflow `$D1CA`, Cheops UI, pickup `$0F`/`$10` (kód / `$B0`).
-11. Arrow `$BF88` ve zdviži — není v extractu.
-12. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
-13. Objekt `$0E` (auto-plošiny při dopadu).
-14. Zvuk `$D7C0`, teleport overlay, plný `$64A0` — až řeknu. Puls `$DB88` se kreslí (flag≠0).
+7. Animace 4 GRAFIX snímků vetřelce — frame 0. Pad vždy `$AFC8`.
+8. Extra `$17`/`$18` v enginu. 1. tick Up bez `$14+` vsune `00 00` — mimo rozsah.
+9. Inventář overflow `$D1CA`, Cheops UI.
+10. Arrow `$BF88` ve zdviži — není v extractu.
+11. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
+12. Objekt `$0E` (auto-plošiny při dopadu).
+13. Zvuk `$D7C0`, Spectrum end bitmap, hi-score `$64FA`, `$64A0` scramble.
+14. Puls `$DB88` se kreslí (flag≠0).
 
 ## Sezení
+
+### 2026-08-26 — scéna jádra `$A6C1` (koule / Blob / `$C6`)
+
+- Neaktivní sloty `$9FD3` Y=**0** (dřív Y=`$0F` → appear do rohu).
+- Vstup `$C7`: skryje Blob, `$9F78` strážci (AI 0 / dir `$05`), `$C8` ticků, eject `$C6` `($F0,$27)` — i bez doručení.
+- `$C6` dál maže entity cache.
+
+### 2026-08-26 — core panel + door keys (oprava UX)
+
+- Jádro `$C7`: 3×3 nápověda `$A78D`/`$C4AB` (need-sprite, pending bliká, done ink `$07`).
+- Dveře: bez promptu — inventář má 3 digit-sprity **nebo** `$0F` (`$D693`); panel ukáže požadované klíče.
+
+### 2026-08-26 — playable goal (doors / core / score / end)
+
+Orchestrátor: 3 paralelní rozbory → kontrola (emu) → implementace → oddělené ověření (+coverage).
+
+**Spory (rozhodnuto emu):**
+1. Hint/AA30 „dveře = nibble `$80`“ je **špatně**. `$80` = `$9F05` nasties; dveře = typ `$00` z raw `$01`–`$0F` (`$A936`→`$AA02`).
+2. `$95F0`/`$B0` + nástroj `$10` **nejsou** nesené jádrové díly — jen clear socketu. Výhra = 9× inventář vs `$D2DE` v `$C7` (`$A6C1`), milník `$D2E8==5`.
+3. Vstupní hint `$C74F` → jádro spawn je `$9C4F`/`$9C57` → `$9F78`.
+
+- Dveře: `doorsByRoom`, prompt / `$0F`, X±`$30`, `$D2C4=3`, skip `$9C47`.
+- Jádro: `$A6C1`, +10000, eject `$C6` `($F0,$27)`, `$9F78` ×`$B208`, `$C6` wipe `$959C`.
+- Skóre/end: BCD, +250 first-visit, kill `(hi−$AE)×2` tens, `EndResult` (+1000, scramble/hi-score skip). HTML overlay.
+- Dump `--door-test` / `--victory-test` / `--end-test`. Ověřeno 104+25; timing ~0,23 ms. Bez commitu.
 
 ### 2026-08-26 — doprava + oprava zdviže `#249`
 

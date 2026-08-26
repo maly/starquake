@@ -469,6 +469,7 @@ if (has("--collect-test")) {
     energy: world.energy,
     platforms: world.platforms,
     firepower: world.firepower,
+    lives: world.lives,
   };
   enterRoom(prep, world, room === 0 ? 1 : 0);
   enterRoom(prep, world, room);

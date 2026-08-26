@@ -722,6 +722,7 @@ export function createWorld(prep: Prepared, room: number): World {
     lives: START_LIVES,
     slots: Array.from({ length: PLATFORM_SLOTS }, () => null),
     slotIndex: 0,
+    pulseIndex: 0,
     buildLatch: false,
     pickupLatch: false,
     dac0: 0,
@@ -775,6 +776,7 @@ export function enterRoom(prep: Prepared, world: World, room: number, opts?: Ent
   composeTiles(prep, world.terrain, room);
   for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
   world.slotIndex = 0;
+  world.pulseIndex = 0;
   world.buildLatch = false;
   world.pickupLatch = false;
   parkBullet(world);

@@ -168,6 +168,34 @@ export const PULSE_COMP_BASE = 0x1a;
 export const PULSE_COMP_BIAS = 2;
 export const PULSE_PERIOD_MASK = 0x0c;
 export const PULSE_PERIOD_BASE = 8;
+/** $A670 CP $04 — $A66C visits one of four $9635 records per 50 Hz tick. */
+export const PULSE_SLOTS = 4;
+/** $A69B LD L,$05 — XOR this $DC55 layer on flag toggle. */
+export const PULSE_TOGGLE_LAYER = 5;
+/** $A6BD: timer∧3 → layer 6,7,7,6 while flag ≠ 0. */
+export const PULSE_ANIM_LAYERS = [6, 7, 7, 6] as const;
+/** $A6B7 AND $03 / ADD $44, then $DB88 OR $80; $DBA6 writes $44–$47. */
+export const PULSE_ANIM_ATTR_BASE = 0x44;
+/**
+ * $DC55 + L×$10, two cells. L=5..7 are the spark; 0..3 are platforms.
+ */
+export const PULSE_LAYERS: Readonly<Record<number, ReadonlyArray<ReadonlyArray<number>>>> = {
+  5: [
+    [0x02, 0x02, 0x47, 0x67, 0x3d, 0x18, 0x10, 0x00],
+    [0x08, 0x1c, 0x14, 0x36, 0xa2, 0xe0, 0xc0, 0x40],
+  ],
+  6: [
+    [0x02, 0x12, 0x56, 0x5e, 0x56, 0x16, 0x16, 0x04],
+    [0x88, 0xdc, 0xd0, 0x50, 0x8c, 0xd8, 0xd8, 0x50],
+  ],
+  7: [
+    [0x08, 0x1c, 0x0d, 0x6f, 0x19, 0x2d, 0x27, 0x05],
+    [0x80, 0xe0, 0xa6, 0x10, 0xfa, 0xa4, 0x10, 0x10],
+  ],
+};
+
+/** $A90F nibble $90 → $96CB extra 2×2 markers. Drawn attrs never hold $90. */
+export const EXTRA_ATTR_HI = 0x90;
 
 /** $A991 nibble $80 → $9620, then $9F05. */
 export const ATTR_NASTY_HI = 0x80;
@@ -313,9 +341,14 @@ export const EXTRA_CHEOPS = 0x19;
 export const EXTRA_DAC_ROLLS = 0x14;
 
 /**
- * $CCBC pairs for extra sprites $11–$16: offset from $D2CC, addend.
- * $17 is $CCCC, not the table `$00,$00`: lives==0 → +1 (`A=$18`), else no-op.
+ * $CCBC pairs for extra sprites $11–$18: offset from $D2CC, addend.
+ * $17 is $CCCC overlay, not the table `$00,$00` at $CCC8.
+ * $18 overflows the 15-byte table: $CCCA=$00, $CCCB=$01 → lives +1, no $7F cap.
  */
+export const EXTRA_TABLE = 0xccbc;
+export const EXTRA_CCCC = 0xcccc;
+export const STATS_BASE = 0xd2cc;
+export const STAT_HUD = 0xd425;
 export const EXTRA_EFFECTS: ReadonlyArray<readonly [number, number]> = [
   [1, 0x20],
   [1, 0x60],
@@ -324,9 +357,12 @@ export const EXTRA_EFFECTS: ReadonlyArray<readonly [number, number]> = [
   [3, 0x20],
   [3, 0x3c],
   [0, 0x00],
+  [0, 0x01],
 ];
-/** $CC9A CP $17. */
+/** $CC9A CP $17 / CALL Z,$CCCC before SUB $11. */
 export const EXTRA_LIVES_SPRITE = 0x17;
+/** $CC9A sprite $18 → $CCBC+$0E lives +1. */
+export const EXTRA_LIFE_PLUS = 0x18;
 
 /** $DD21 / $DDA1 default ink for GRAFIX merge ($D8B1). */
 export const BLOB_INK = 7;

@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { SPECTRUM } from "./constants";
 import {
   blitGrafix,
+  blitPulses,
   clampRoom,
   graphicForPtr,
   isSolid,
@@ -13,7 +14,7 @@ import {
   roomRow,
   stampGrafix,
 } from "./render";
-import type { Graphic, Prepared } from "./types";
+import type { Graphic, Prepared, Pulse } from "./types";
 
 function fullCell(): number[] {
   return [0x80, 0, 0, 0, 0, 0, 0, 0];
@@ -87,5 +88,33 @@ describe("GRAFIX draw", () => {
     assert.ok(shifted);
     assert.equal(origin.data[0], 0);
     assert.equal(shifted.data[2] & 0x80, 0x80);
+  });
+});
+
+describe("$A66C pulse $DB88", () => {
+  const pulse = (flag: number, timer = 8): Pulse => ({
+    col: 4,
+    row: 8,
+    period: 8,
+    timer,
+    flag,
+  });
+
+  it("does not draw when flag is 0", () => {
+    const buf = newBuffers();
+    blitPulses(buf, [pulse(0)], 0);
+    assert.ok(buf.data.every((b) => b === 0));
+  });
+
+  it("XORs $DC55 L=5 with anim L=6 when flag is 1 (timer∧3=0)", () => {
+    const buf = newBuffers();
+    blitPulses(buf, [pulse(1, 8)], 0);
+    const playRow = 8 - 6;
+    const dst = (playRow * 32 + 4) * 8;
+    assert.equal(buf.data[dst], 0x02 ^ 0x02);
+    assert.equal(buf.data[dst + 1], 0x02 ^ 0x12);
+    assert.equal(buf.data[dst + 2], 0x47 ^ 0x56);
+    assert.equal(buf.attr[playRow * 32 + 4] & 0x47, 0x44);
+    assert.equal(buf.attr[playRow * 32 + 5] & 0x47, 0x44);
   });
 });

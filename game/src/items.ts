@@ -1,17 +1,15 @@
 import {
   A350_BYTES,
-  COLS,
   EXTRA_CHEOPS,
   EXTRA_DAC_ROLLS,
   EXTRA_EFFECTS,
+  EXTRA_LIFE_PLUS,
   EXTRA_LIVES_SPRITE,
   EXTRA_MIN_DAC,
   EXTRA_SPRITE_BASE,
   GAME_Y_ORIGIN,
   ITEM_NEAR,
   ITEM_ORIGIN_ROWS,
-  PLAY_ORIGIN,
-  ROWS,
   ROOM_SKIP,
   STAT_CAP,
 } from "./constants";
@@ -56,10 +54,30 @@ export function freshA350(): Uint8Array {
   return new Uint8Array(A350_BYTES).fill(0xff);
 }
 
-function clampStat(v: number): number {
-  if (v < 0) return 0;
-  if (v > STAT_CAP) return STAT_CAP;
-  return v;
+/** $D425: cap energy/platforms/firepower at $7F. Lives ($D2CC) are not cut. */
+function capEnergyPlatformsFire(world: World): void {
+  if (world.energy > STAT_CAP) world.energy = STAT_CAP;
+  if (world.platforms > STAT_CAP) world.platforms = STAT_CAP;
+  if (world.firepower > STAT_CAP) world.firepower = STAT_CAP;
+}
+
+/**
+ * $CCCC: extra $17 picks which $CCBC row to apply.
+ * Lives==0 → A=$18. Else walk energy/platforms/firepower with A=$FF;
+ * on A≥(HL) record E=2×(3−B) and replace A with (HL); return E+$12.
+ */
+function ccccSprite(world: World): number {
+  if ((world.lives & 0xff) === 0) return EXTRA_LIFE_PLUS;
+  let a = 0xff;
+  let e = 0;
+  const stats = [world.energy & 0xff, world.platforms & 0xff, world.firepower & 0xff];
+  for (let b = 3; b !== 0; b--) {
+    const hl = stats[3 - b]!;
+    if (a < hl) continue;
+    e = ((3 - b) << 1) & 0xff;
+    a = hl;
+  }
+  return (e + 0x12) & 0xff;
 }
 
 /** $CC9A. Sprite $19 (Cheops) is recorded only — no exchange UI. */
@@ -68,28 +86,16 @@ export function applyExtra(world: World, sprite: number): void {
     world.cheops = true;
     return;
   }
-  if (sprite === EXTRA_LIVES_SPRITE) {
-    if (world.lives === 0) world.lives = 1;
-    return;
-  }
-  const row = EXTRA_EFFECTS[sprite - EXTRA_SPRITE_BASE];
+  let a = sprite & 0xff;
+  if (a === EXTRA_LIVES_SPRITE) a = ccccSprite(world);
+  const row = EXTRA_EFFECTS[a - EXTRA_SPRITE_BASE];
   if (!row) return;
   const [off, add] = row;
-  if (off === 1) world.energy = clampStat(world.energy + add);
-  else if (off === 2) world.platforms = clampStat(world.platforms + add);
-  else if (off === 3) world.firepower = clampStat(world.firepower + add);
-}
-
-function markers90(world: World): Array<{ col: number; row: number }> {
-  const out: Array<{ col: number; row: number }> = [];
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      if (world.terrain.attr[row * COLS + col] === 0x90) {
-        out.push({ col, row: row + PLAY_ORIGIN });
-      }
-    }
-  }
-  return out;
+  if (off === 0) world.lives = (world.lives + add) & 0xff;
+  else if (off === 1) world.energy = (world.energy + add) & 0xff;
+  else if (off === 2) world.platforms = (world.platforms + add) & 0xff;
+  else if (off === 3) world.firepower = (world.firepower + add) & 0xff;
+  capEnergyPlatformsFire(world);
 }
 
 function extraPos(col: number, row: number): { x: number; y: number } {
@@ -97,14 +103,15 @@ function extraPos(col: number, row: number): { x: number; y: number } {
 }
 
 /**
- * $AAB6 after the $A350 bit test. Uses $90-attr cells as $96CB markers.
- * $DAC6 after $A80A is not fully replayed; type/effect still come from $CCBC.
+ * $AAB6 after the $A350 bit test. $96CB markers come from $A90F nibble $90
+ * (rooms+blocks+block_attrs raw), not drawn attr $90 — that nibble never lands
+ * in the Spectrum grid. $DAC6 after $A80A is not fully replayed.
  */
-export function spawnExtra(_prep: Prepared, world: World, room: number): void {
+export function spawnExtra(prep: Prepared, world: World, room: number): void {
   world.extra = null;
   if (room === ROOM_SKIP) return;
   if (!a350Allows(world.a350, room)) return;
-  const marks = markers90(world);
+  const marks = prep.extraMarksByRoom?.[room] ?? [];
   if (marks.length < 2) return;
   world.dac = seedDac(room);
   for (let i = 0; i < EXTRA_DAC_ROLLS; i++) dacStep(world.dac);

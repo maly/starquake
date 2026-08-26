@@ -232,7 +232,7 @@ První `$D425` (`$A45C` skrz `$666D CALL $A410`) řeže energii i palbu na `$7F`
 
 ## 7. Extra `$17` (životy)
 
-`$CC9A CP $17` / `CALL Z,$CCCC` **před** `SUB $11` a tabulkou `$CCBC`. `$CCCC` je překryv (`21 CC D2…`), ne `$00,$00` z tabulky.
+`$CC9A CP $17` / `CALL Z,$CCCC` **před** `SUB $11` a tabulkou `$CCBC`. `$CCCC` je překryv (`21 CC D2…`), ne `$00,$00` z tabulky. Plný rozbor smyčky a extra `$18`: [`item-effects.md`](item-effects.md) § 4–6.
 
 `$CCCC` (bajty snapshotu):
 
@@ -240,19 +240,20 @@ První `$D425` (`$A45C` skrz `$666D CALL $A410`) řeže energii i palbu na `$7F`
 LD HL,$D2CC / XOR A / CP (HL)
 JR NZ,$CCD6
 LD A,$18 / RET          ; lives == 0
-$CCD6: B=3, A=$FF, tři INC HL (energie, plošinky, palba)
-  (HL) < $FF → přeskoč
+$CCD6: B=3, A=$FF
+  INC HL / CP (HL) / JR C skip
   jinak E := 2×(3−B), A := (HL)
 LD A,E / ADD A,$12 / RET
 ```
 
-Sonda:
+Sonda (`tmp_itemfx_probe.py`):
 
 - lives = 0 → `A=$18` → `SUB $11` = `$07` → `$CCBC+$0E` = `$00,$01` → **životy +1** (`0→1`).
-- lives ≠ 0 a žádný stat `$FF` (běžná hra po `$D425`) → `$CCCC` **E nezapíše**, `A = E+$12`. Izolovaný CALL po bootu (E=0) se choval jako extra `$12` (energie `$17+$60=$77`).
-- tabulkový pár `$00,$00` u `$17` se z `$CCCC` **nedá** dostat (`E+$12` z last-match je `$12/$14/$16`; lives 0 dává `$18`).
+- lives ≠ 0, E/P/F `$17/$30/$7E` → `A=$12` (energie +`$60`). První iterace A=`$FF` vždy sedne a **přepíše E**; leftover E z ticku nerozhoduje.
+- all `$7F` → `A=$16`; energie `$FF` → `A=$14` a `$D425` ořeže energii na `$7F`.
+- tabulkový pár `$00,$00` u `$17` se z `$CCCC` **nedá** dostat (`$12/$14/$16` nebo lives 0 → `$18`).
 
-In-game E při lives ≠ 0 **NEVÍM** (zbytek z ticku; `$D4E9` při wrapu v tomtéž `$CB58` dává `E=0`). Životy jinde nerostou.
+Životy jinde nerostou. Extra `$18` (přetečení `$CCBC`) přičte 1 k `$D2CC` bez stropu `$7F`.
 
 ---
 
@@ -296,11 +297,10 @@ ATTR_NIBBLE_KILL         = 0x60     // $A963
 
 ## (b) Nevyřešené
 
-1. **Extra `$17` při lives ≠ 0.** Mechanismus `A=E+$12` je z ROM; in-game E po `$CB8A` není krokované v celém ticku. Neimplementovat jako „životy +0“.
-2. **Plný `$64A0`.** `$5E29 JP $64A0`; `$64EB RET`. Stub `RET` na `$5E29` dopadl na `$C3EA` a `$C461`. `$679C` (512 místností) v emu neběžel.
-3. **Smrt v `$C7`.** `$A6C1` je vstup do jádra, ne wipe. Kolik dílů se při překreslení položí — mimo rozsah.
-4. **`$A= $11` mimo `badalien1`.** Každá sada s lo=`$C8` by se chovala stejně; v `ENEMY_SETS` je to `$B2C8`.
-5. **Čtyři `$0A` za tick u živého spawnu.** Skool (4× `$A305`) + izolovaná `$A345`; kompletní `$A01B` slot proti Blobovi v této sondě nebyl (engine test `0x0a*4` to už tvrdí).
+1. **Plný `$64A0`.** `$5E29 JP $64A0`; `$64EB RET`. Stub `RET` na `$5E29` dopadl na `$C3EA` a `$C461`. `$679C` (512 místností) v emu neběžel.
+2. **Smrt v `$C7`.** `$A6C1` je vstup do jádra, ne wipe. Kolik dílů se při překreslení položí — mimo rozsah.
+3. **`$A= $11` mimo `badalien1`.** Každá sada s lo=`$C8` by se chovala stejně; v `ENEMY_SETS` je to `$B2C8`.
+4. **Čtyři `$0A` za tick u živého spawnu.** Skool (4× `$A305`) + izolovaná `$A345`; kompletní `$A01B` slot proti Blobovi v této sondě nebyl (engine test `0x0a*4` to už tvrdí).
 
 ---
 

@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `276cdb2`. Working tree: energie, životy, smrt `$C35E`, terén `$06`/`$70`, smrtící vetřelci.
+Poslední commit: `eb8daa9` (extra `$CC9A`/`$90` spawn, puls `$DB88`, `$A66C` 1 ze 4 slotů). Working tree čistý až na `tmp_*_probe.py`.
 
 ## Tvrdé meze
 
@@ -11,9 +11,9 @@ Poslední commit: `276cdb2`. Working tree: energie, životy, smrt `$C35E`, teré
 - Nesnižuj match thresholdy (emu vs export = 0 pixelů).
 - Collision/static tile export (`rooms.json` `solid` / `$D280` overlay) neměň.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
-- Zatím **neimplementovat:** jádro `$C7`, security doors, zvuk `$D7C0`, minihra kódu `$D693`, výměna Cheops `$CCF1`, drop přeplněného inventáře `$D1CA`, objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, původní stavovou obrazovku, grafiku pulsu `$DB88`.
+- Zatím **neimplementovat:** jádro `$C7`, security doors, zvuk `$D7C0`, minihra kódu `$D693`, výměna Cheops `$CCF1`, drop přeplněného inventáře `$D1CA`, objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, původní stavovou obrazovku.
 - Konstanty s ROM adresami do `docs/MOVEMENT.md` a comments v `constants.ts`.
-- Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`.
+- Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`.
 
 Ověření:
 
@@ -30,7 +30,7 @@ npm start
 
 http://127.0.0.1:8000/viewer/
 
-Šipky / WASD chůze, Up/W sběr a nástup na pad, Down/S plošinka, mezerník palba, Left/Right na teleportu = kód, PageUp/Down místnost. `#249` výtah, `#15` pad, `#343` teleport EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`.
+Šipky / WASD chůze, Up/W sběr a nástup na pad, Down/S plošinka, mezerník palba, Left/Right na teleportu = kód, PageUp/Down místnost. `#8` start extra `$17` (dobíjení, nibble `$90`), `#13` puls `$70` (výboj `$DB88`), `#249` výtah, `#15` pad, `#343` teleport EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`.
 
 ## Architektura
 
@@ -38,17 +38,17 @@ http://127.0.0.1:8000/viewer/
 |---|---|
 | `game/src/constants.ts` | ROM + `TEMP_JUMP_*` unbound + `TELEPORT_TABLE` + `DD22_*` + lift/pad + smrt A / `$06`/`$70`/`$80` |
 | `game/src/types.ts` | `World`: `dd22`, `lastDir`, `station`, `pad`, `padShot*`, `collected`, `a350`, `extra`, `inventory`, `cheops`, `teleportLatch`, `message`, `readTeleportCode`, `lives`, `gameOver`, `d2c4`, `deathA`, `entry`, `pulses` |
-| `game/src/objects.ts` | `scanHotspots` (`$A90F`/`$AA02` z rooms+blocks+`block_attrs` raw: `$C0/$D0/$60/$70/$80`), `evaluateTeleport`, `walkSpecialObjects` |
+| `game/src/objects.ts` | `scanHotspots` (`$A90F`/`$AA02` z rooms+blocks+`block_attrs` raw: `$C0/$D0/$60/$70/$80/$90`), `evaluateTeleport`, `walkSpecialObjects` |
 | `game/src/physics.ts` | tick (viz pořadí), `applyDeath` `$C350` |
 | `game/src/projectiles.ts` | `tickFire` `$C85A`, `tickPadFire` `$CA15` |
 | `game/src/entities.ts` | nasties + pad spawn/kopie, `hitByBullet`, kontakt `$A305`, `$9F05`, AI 5/6 |
-| `game/src/items.ts` | `$94E8` / extra; teleport/pad/rostlina sem nepatří |
+| `game/src/items.ts` | `$94E8` inventář; extra `$CC9A` / `$CCCC`; teleport/pad/rostlina sem nepatří |
 | `game/src/render.ts` | `prepare()` hotspots, stamp pad, kreslí `nastyCount` slotů |
 | `game/src/dump.ts` | `--fire-trace`, `--collect-test`, `--lift-test`, `--pad-test`, `--teleport-test`, `--teleport-eval`, `--death-test`, `--enemy-trace`, `--timing` |
 
 Souřadnice: `$DD1D` X zleva, `$DD1E` Y odspodu; playY = `143 − gameY`. Start Blob: X=`$88` Y=`$3F`. Entity Y je game-Y.
 
-Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`. Konstanty: `docs/MOVEMENT.md`.
+Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`, `item-effects.md`. Konstanty: `docs/MOVEMENT.md`.
 
 ### Tick
 
@@ -70,13 +70,13 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - Extract: grafika, bloky, 512 místností, attrs `$EAD3`, solid bit 6 / `$64`, items `$94E8`, actors, `$AA30`.
 - BLOB: ±2 px, pád `$C751`, inkoust + `attr < $40`, 4 směry `$C8F4`. Hop `TEMP_JUMP_*` unbound.
 - Plošinky `$C79F`. Nepřátelé 4 sloty, stampGrafix, park se nekreslí. S padem `nastyCount=3`.
-- Střelba `$C85A`, předměty `$94E8` + extra `$A350`.
+- Střelba `$C85A`, předměty `$94E8` (inventář, **ne** refill) + extra `$A350` / `$CC9A` (`$11`–`$16` tabulka, `$17` `$CCCC`, `$18` lives+1 bez stropu `$7F`, `$19` Cheops flag).
 - Vznášedlo `$0C` / `$C967` / `$CA15`. Teleport `$0D` / `$D036` (prompt, ne Spectrum overlay).
 - Zdviž `$64` / `$DD22=1`. `$D2F0` 2 řady když `(Y+1)∧7=0`, jinak 3 — otvor `$44` v `#249` neposkakuje.
-- Energie `$CB58` −4 při wrap `$78`; obtěžující `$DD30 += $0A` (až 4×/tick, bez i-frames). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`.
+- Energie `$CB58` −4 při wrap `$78`; obtěžující `$DD30 += $0A` (až 4×/tick, bez i-frames). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
 - `$9F05` nibble `$80` → živý `$B2C8` AI 6. Perioda spawnu 4…8. AI 5 dir=0 / RRCA, AI 3 zapisuje 8-směr. `$A2B9` = `$08,$09,$01,$05,$04,$06,$02,$0A`.
 
-Ověřeno (working tree): `npm test` 65 pass; pytest viewer+enemies+fire+items+transport+death 22 pass (enemies rooms 0, 1, 52, 253); live ~0,24 ms/snímek (limit 20).
+Ověřeno (working tree): `npm test` 91 pass; pytest viewer+enemies+fire+items+transport+death 22 pass (enemies rooms 0, 1, 52, 253); live ~0,24 ms/snímek (limit 20).
 
 ## Otevřené
 
@@ -88,12 +88,12 @@ Ověřeno (working tree): `npm test` 65 pass; pytest viewer+enemies+fire+items+t
 6. Live `$DAC6` po `$A80A` — engine seed `$7530+id×12`. Extra spawn, pad bounce i perioda `$70` z `dac0` po spawn vetřelců.
 7. Jádro `$C7`, security doors. Smrt v `$C7` jde na `$A6C1` (mimo rozsah).
 8. Animace 4 GRAFIX snímků vetřelce — frame 0. Pad vždy `$AFC8`.
-9. Extra `$17` při lives≠0 (`$CCCC` `A=E+$12`); lives==0 → +1.
+9. Extra `$17`/`$18` v enginu (`$CCCC` / přetečení `$CCBC`). 1. tick Up bez `$14+` vsune `00 00` do inventáře — mimo rozsah.
 10. Inventář overflow `$D1CA`, Cheops UI, pickup `$0F`/`$10` (kód / `$B0`).
 11. Arrow `$BF88` ve zdviži — není v extractu.
 12. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
 13. Objekt `$0E` (auto-plošiny při dopadu).
-14. Zvuk `$D7C0`, grafika pulsu `$DB88`, teleport overlay, plný `$64A0` — až řeknu.
+14. Zvuk `$D7C0`, teleport overlay, plný `$64A0` — až řeknu. Puls `$DB88` se kreslí (flag≠0).
 
 ## Sezení
 
@@ -127,3 +127,25 @@ Spor 3: start stats `$17/$30/$7E` jsou snapshot, ne nová hra (`$7F/$32/$7F`). E
 ### 2026-08-26 — animace smrti `$C35E`
 
 BLOB se zarazí, 45 snímků XOR inkoustu `$05`, čtyři `$BEC8` obláčky 80 snímků (`$A01B`, směry `$C498`), 50 HALT, teprve pak DEC života / respawn. ROM bliká jen A∧7=2; engine bliká u všech smrtí. Zvuk `$D7C0` ne. `--death-test` dokroutí sekvenci (do 200 ticků).
+
+### 2026-08-26 — účinky sbíraných předmětů
+
+Orchestrátor: rozbor `$CE82`/`$D09F` → implementace extra `$CC9A` → ověření jiným agentem.
+
+Spor: zadání čekalo refill z `$D09F`. Emu (`tmp_itemfx_probe.py`): `$D09F`/`$94E8` jde do inventáře, `$CC9A`=0, `$D4E9`=0. Staty mění jen extra typ `$01`. `$D4E9` je SUB (min 0); zvyšuje `$CC9A` (ADD od `$D2CC` + `$D425`). Druhá rutina na `$D4xx` je `$D422` skóre, ne refill.
+
+`$17` při lives≠0 **není** no-op: `$CCCC` A=`$12`/`$14`/`$16` (energie +`$60` / plošinky +`$32` / palba +`$3C`). `$18` lives+1 bez stropu (`$7F`→`$80`, `$FF`→0). `$0E`/`$0F` zdokumentované, mimo rozsah.
+
+Ověřeno jiným agentem: `npm test` 85; pytest 22.
+
+### 2026-08-26 — extra `$11`–`$19` nebyly vidět
+
+Spawn hledal nakreslený attr `$90` (0 buněk v exportu). ROM `$A90F` bere raw nibble `$90` do `$96CB`, stejně jako `$C0` pad. 399 místností má ≥2 markery; start `#8` spawne extra `$17` na (13,19). Panel: `Extra $A350` ukáže sprite i buňku. Sebrání extra je AABB (bez Up), `$94E8` pořád Up.
+
+### 2026-08-26 — výboje `$70` / `$DB88`
+
+Sloupy (terén) byly, AABB zabíjela, jiskra se nekreslila. `$A66C` při flag≠0 XOR `$DC55` L=`$05` a anim L=`$06`/`$07` (`$A6BD`), attr `$44`+(`$DAC0`∧3). Engine kreslí na snímek, ne persist XOR. Panel `Puls $70`. Příklad `#13`.
+
+### 2026-08-26 — tempo výbojů `$A66C`
+
+Engine toggloval **všechny** pulsy každý 50 Hz tick (perioda 8…20 → 0,16–0,4 s). ROM `$A66C` INC `$9634`, wrap `$04`, DEC jen jeden záznam; prázdný řádek RET. Jeden puls se aktualizuje každé 4 snímky: perioda 8 → 9 návštěv × 4 = 36 ticků ≈ 0,72 s fáze; 12 → 1,0 s; 20 → 1,7 s. Wrap je DEC na `$FF` (ne nula). AABB pořád kontroluje všechny flagy (`$A530`). Úbytek energie `$CB58` / `$78` se **neměnil** (jiná smyčka, 50 Hz, snapshot `$17`/`$DD30=$51`).

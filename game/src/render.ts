@@ -8,6 +8,10 @@ import {
   MAP_COLS,
   MAP_ROWS,
   PLAY_ORIGIN,
+  PULSE_ANIM_ATTR_BASE,
+  PULSE_ANIM_LAYERS,
+  PULSE_LAYERS,
+  PULSE_TOGGLE_LAYER,
   ROOM_COUNT,
   ROOM_SKIP,
   ROWS,
@@ -16,7 +20,7 @@ import {
 } from "./constants";
 import { entityVisible } from "./entities";
 import { hotspotsFromData } from "./objects";
-import type { Buffers, ExtraObject, GameData, Graphic, Item, Prepared, RenderOpts, Rgb, World } from "./types";
+import type { Buffers, ExtraObject, GameData, Graphic, Item, Prepared, Pulse, RenderOpts, Rgb, World } from "./types";
 
 export function paperInk(attr: number): [Rgb, Rgb] {
   const table = attr & 0x40 ? BRIGHT : SPECTRUM;
@@ -78,8 +82,14 @@ export function prepare(data: GameData): Prepared {
     if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
   }
   const rooms = data.rooms.rooms;
-  const { stationsByRoom, teleportsByRoom, killsByRoom, pulsesByRoom, fixedNastiesByRoom } =
-    hotspotsFromData(data, rooms, blocks);
+  const {
+    stationsByRoom,
+    teleportsByRoom,
+    killsByRoom,
+    pulsesByRoom,
+    fixedNastiesByRoom,
+    extraMarksByRoom,
+  } = hotspotsFromData(data, rooms, blocks);
   return {
     graphics,
     sprites,
@@ -93,6 +103,7 @@ export function prepare(data: GameData): Prepared {
     killsByRoom,
     pulsesByRoom,
     fixedNastiesByRoom,
+    extraMarksByRoom,
   };
 }
 
@@ -221,6 +232,34 @@ export function blitExtra(prep: Prepared, buf: Buffers, extra: ExtraObject | nul
   if (!extra) return;
   const playRow = extra.row - PLAY_ORIGIN;
   blitSprite(prep, buf, extra.sprite, extra.col, playRow, (extra.ink & 7) | 0x40);
+}
+
+function xorPulseLayer(buf: Buffers, col: number, playRow: number, layer: number, attr: number): void {
+  const cells = PULSE_LAYERS[layer];
+  if (!cells) return;
+  for (let i = 0; i < 2; i++) {
+    const cx = col + i;
+    if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
+    const bytes = cells[i]!;
+    const dst = (playRow * COLS + cx) * CELL;
+    for (let py = 0; py < CELL; py++) buf.data[dst + py]! ^= bytes[py]!;
+    buf.attr[playRow * COLS + cx] = attr;
+  }
+}
+
+/**
+ * $A66C / $DB88: when $9635 flag ≠ 0, XOR L=$05 and anim L=$A6BD[timer∧3]
+ * at (col,row) and (col+1,row). Attr $44+($DAC0∧3). Flag 0 draws nothing.
+ */
+export function blitPulses(buf: Buffers, pulses: Pulse[], dac0: number): void {
+  const attr = (PULSE_ANIM_ATTR_BASE + (dac0 & 3)) & 0xff;
+  for (const p of pulses) {
+    if (p.flag === 0) continue;
+    const playRow = p.row - PLAY_ORIGIN;
+    xorPulseLayer(buf, p.col, playRow, PULSE_TOGGLE_LAYER, attr);
+    const anim = PULSE_ANIM_LAYERS[p.timer & 3]!;
+    xorPulseLayer(buf, p.col, playRow, anim, attr);
+  }
 }
 
 /**
@@ -414,6 +453,7 @@ export function renderWorld(
     blitItems(prep, buf, roomId, world.collected);
     blitExtra(prep, buf, world.extra);
   }
+  blitPulses(buf, world.pulses, world.dac.dac0);
   const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
   rasterize(buf, rgba, !!opts.overlay, solid);
   if (opts.enemies !== false) {

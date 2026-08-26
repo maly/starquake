@@ -208,11 +208,29 @@ ROM `$A426` **nevolá** `$C8DD`. Engine parkuje střelu při každém `enterRoom
 
 Interakce `$CB8A` (seznam `$96FC`) → `$CC5A` / `$CE82` / `$D09F`. Blízkost: \|dx\|<`$0F` \|dy\|<`$0F` v souřadnicích `$DD1D`/`$DD1E`. Pixel z buňky: X=`col≪3`, Y=`($18−row)≪3 − 1` (`$AA02`).
 
-`$94E8` typ v seznamu = `$14+index` (`$AB80 LD A,$41 / SUB D`). Sebrání **jen Up samo** (`$DD23==$08`, první tick `$DD31=1`). `$D16B` zapíše byte1=`$01` (řádek < 6 → `$AB40` nekreslí). XOR-smazání attr `$47`. Sprite+ink do inventáře `$D2D2` (4× `{sprite, attr}`). Trvá po odchodu; engine drží `world.collected`.
+`$94E8` typ v seznamu = `$14+index` (`$AB80 LD A,$41 / SUB D`). Sebrání **jen Up samo** (`$DD23==$08`, první tick `$DD31=1`). `$D16B` zapíše byte1=`$01` (řádek < 6 → `$AB40` nekreslí). XOR-smazání attr `$47`. Sprite+ink do inventáře `$D2D2` (4× `{sprite, attr}`). Trvá po odchodu; engine drží `world.collected`. **`$D09F` / `$94E8` nemění `$D2CC`–`$D2CF`** (energie / plošinky / palba / životy). Refill je jen extra `$CC9A`.
 
-Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA==1`. Sprite `$11`–`$19`, typ `$01`, **automaticky** AABB. Sebrání `$CC9A` + `$A801` maže bit.
+Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA==1` (jeden marker). Sprite `$11`–`$19`, typ `$01`, **automaticky** AABB. Sebrání `$CC9A` + `$A801` maže bit. Markery `$96CB` bere `$A90F` z raw nibble `$90` v `$9740` (jako `$C0`/`$D0`/`$60`) — **nakreslený** attr `$90` v exportu není (0 buněk). Engine skládá XY z `rooms.json` + `blocks.json` + `block_attrs.json` raw. Start `#8` má 2 markery, seed+20 dá extra `$17` na (13,19). Rozbor: [`notes/item-effects.md`](notes/item-effects.md).
 
-### Extra `$11`–`$19` (`$CCBC` od `$D2CC`)
+### `$D09F` typy (A z `$96FC`)
+
+| A (typ) | podmínka | účinek | stav enginu |
+|---|---|---|---|
+| `$00` | sem po `$CE82` nejde | security door `$CBDC` | mimo rozsah |
+| `$01` | sem po `$CC5A` nejde | extra `$CC9A` (níže) | implementováno |
+| `$06` | sem po `$CE77` nejde | rostlina `$C350` A=`$10` | implementováno jinde |
+| `$0B` | `$CE82` | dlaždice `$B0` / nástroj `$10` | mimo rozsah |
+| `$0C` | `$CE82` | pad `$CEAD` | implementováno jinde |
+| `$0D` | `$CE82` | teleport `$CEC4` | implementováno jinde |
+| `$0E` | `$DD29==$10` a stejné Y, jinak `$D1A6` | stroj na plošinky; **ne** refill `$D2CE` | mimo rozsah |
+| `$0F` | `$DD23 ∧ $03 ≠ 0`, jinak `$D1A6` | místnost ±1 (`A=$05` RET) | mimo rozsah |
+| `$02`–`$05`, `$0A`, `$10`–`$13` | `CP $14` C | no-op `$D1A6` | no-op |
+| `$14`+ | `$DD31==$01`, jinak `$D1A6` | inventář `$D1CA`, byte1=`$01` | implementováno |
+| 1. tick Up bez `$14+` | `$D1B3` | vsune prázdný slot `00 00` | mimo rozsah |
+
+### Extra `$11`–`$19` (`$CC9A` / `$CCBC` od `$D2CC`)
+
+`$CC9A CP $17 / CALL Z,$CCCC` **před** `SUB $11`. ADD wrapne 8bit, pak `$D425` ořeže jen E/P/F na `$7F`. Životy `$D2CC` **nemají** strop.
 
 | sprite | offset | přičte | kam |
 |---|---|---|---|
@@ -222,11 +240,13 @@ Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA=
 | `$14` | 2 | `$32` | plošinky `$D2CE` |
 | `$15` | 3 | `$20` | palba `$D2CF` |
 | `$16` | 3 | `$3C` | palba |
-| `$17` | — | `$CCCC` | lives==0 → +1 (`A=$18`); lives≠0 no-op |
-| `$18` | — | — | mimo tabulku / 0 |
-| `$19` | — | — | Cheops (`$CCF1`); stav `cheops`, bez výměny |
+| `$17` | `$CCCC` | viz níže | ne tabulkové `$00,$00` |
+| `$18` | 0 (`$CCCA`) | `$01` (`$CCCB`) | životy `$D2CC` +1 (přetečení tabulky); `$7F`→`$80`, `$FF`→`0` |
+| `$19` | — | — | Cheops (`$CCF1`); stav `cheops`, bez výměny; `$CC9A` se nevolá |
 
-Hodnoty se po `$D425` oříznou na `$7F`.
+`$CCCC` (lives=0 → `A=$18` → lives +1). Lives≠0: smyčka B=3 od energie/plošinek/palby, A start `$FF`; při `A≥(HL)` zapíše `E=2×(3−B)` a A←`(HL)`; `A=E+$12` → `$12` / `$14` / `$16`. Leftover E z ticku nerozhoduje.
+
+Meze: E/P/F strop `$7F` (`$D469`); dolní mez 0 jen `$D4E9` (ne tato cesta). Životy bez stropu (`$D425` B=3 od `$D2CF`).
 
 ### `$94E8` sprite (inventář, ne přímý refill)
 
@@ -234,7 +254,7 @@ Hodnoty se po `$D425` oříznou na `$7F`.
 |---|---|---|
 | `$0F` | klíč kódu (`$D693`) | inventář; minihra není |
 | `$10` | nástroj `$B0` (`$CE8C`) | inventář; vkládání jádra není |
-| `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář |
+| `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář (staty beze změny) |
 | `$FF` | prázdný záznam | ignorovat |
 
 Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport výše a rostlina `$06` (AABB `$CBBB`, `$CE77` A=`$10`). Není: `$0B` dlaždice `$B0`, `$0E` stroj na plošinky, `$0F` vodorovný přechod, jádro `$C7`.
@@ -270,9 +290,9 @@ Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Dra
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
 5. **Místnost `$C7` (jádro), bezpečnostní dveře, zvuk `$D7C0`.** Mimo rozsah.
 6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá. Pad vždy `$AFC8` (snímky 1–3 se neindexují).
-7. **Extra spawn `$AAB6` po `$A80A`.** Engine bere buňky attr `$90` a seed `$7530+id×12`, ne celý `$DAC6` při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
-8. **Extra `$17` při lives ≠ 0.** `$CCCC` `A=E+$12` z ROM; in-game E po `$CB8A` není krokované. Engine: lives==0 → +1, jinak no-op.
-9. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah.
+7. **Extra spawn `$AAB6` po `$A80A`.** Markery jsou raw nibble `$90` (`$96CB`), ne nakreslený attr. Engine seed `$7530+id×12` + 20× `$DAC6`, ne celý řetězec při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
+8. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah. Extra `$17`/`$18` jsou v enginu (`$CCCC` / přetečení `$CCBC`).
+9. **1. tick Up bez `$14+`.** ROM vsune prázdný slot `00 00`; engine ne. Mimo rozsah.
 10. **Póza Arrow `$BF88` ve zdviži** — není v extractu; engine nechá poslední walk frame.
 11. **Objekt `$0E`** (stroj na plošinky) — mimo rozsah; není zelené pole `$64`.
 12. **Zvuk smrti `$D7C0`.** Flash / `$BEC8` burst / HALT pause jsou v enginu; beeper ne.
@@ -307,7 +327,7 @@ Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Dra
 | AABB `$06` | \|d\| < `$0F`, bez klávesy | `$CBBB` / `$CE77` |
 | nibble `$60` / `$70` / `$80` | `$9740` → `$06` / `$9635` / `$9F05` | `$A963` / `$A968` / `$A991` |
 | puls AABB | \|dx\| < `$0E`, Y ∈ `[comp−$16, comp]`, `comp=($1A−row)<<3−2` | `$A530` |
-| puls timer | perioda `($DAC0 ∧ $0C)+8`, XOR flag, start 0 | `$A66C` / `$A986` |
+| puls timer | perioda `($DAC0 ∧ $0C)+8`, XOR flag, start 0; `$A66C` 1 ze 4 slotů / tick (`$9634`) | `$A66C` / `$A986` |
 | `$9F05` | ptr `$B2C8`, stav 1, AI 6, dir 1, `period \|= 8` | `$9F27`…`$9F42` |
 | perioda náhodného spawnu | `(nibble % 5)+4` = 4…8 | `$9E30 SUB $05` / `ADD $09` |
 | typ C náhodného spawnu | `$DAC1` `SUB $0F`/`ADD $11` → 2…16 (`$B388`+) | `$9DE6` |
@@ -343,4 +363,4 @@ stateDiagram-v2
 
 Checkpoint: `enterRoom` / `spawnBlob` / východ / teleport uloží Blob XY (game) + `$DD22` do `world.entry`. `$06` a `$11` po smrti vrací na vstup do místnosti. Nula energie a běžný vetřelec zarovnají místo smrti a pad (`$DD22`) nechají.
 
-Nedořešené v této sekci: zvuk `$D7C0`; `$C7` při respawnu; pixel `$DB88` pulsu (nekreslí se); statistika AI 5 carry/chase. ROM bliká jen A∧7=2.
+Nedořešené v této sekci: zvuk `$D7C0`; `$C7` při respawnu; statistika AI 5 carry/chase. ROM bliká jen A∧7=2. Puls `$DB88`: XOR L=`$05` + `$A6BD`[timer∧3] když flag≠0; engine kreslí každý snímek znovu (ne persist XOR obrazovky). `$A66C` 1 ze 4 slotů / tick (`$9634` wrap `$04`); DEC timer, `$FF` → reload + XOR flag.

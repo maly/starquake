@@ -9,7 +9,7 @@ import {
   TELEPORT_MSG_BAD,
   TELEPORT_TABLE,
 } from "./constants";
-import { evaluateTeleport, firstTeleport, hitKillTerrain, teleportNameForRoom } from "./objects";
+import { evaluateTeleport, firstTeleport, hitKillTerrain, teleportNameForRoom, tickPulses } from "./objects";
 import { applyTeleport, attrAt, blocksBlob, createWorld, playYToGame, spawnBlob } from "./physics";
 import { prepare } from "./render";
 import { REPO_ROOT } from "./server";
@@ -138,6 +138,22 @@ describe("teleport dest hotspots $A4F6", () => {
       const list = prep.teleportsByRoom?.[dest] ?? [];
       assert.ok(list.length >= 1, `${name} room ${dest} missing $0D`);
     }
+  });
+});
+
+describe("$A66C pulse slot round-robin", () => {
+  it("updates one of 4 $9635 slots per tick, so period 8 toggles after 9 visits (36 ticks)", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 13);
+    world.pulses = [{ col: 10, row: 12, period: 8, timer: 8, flag: 0 }];
+    const blob = spawnBlob(prep, 13, world);
+    blob.x = 0;
+    blob.y = 0;
+    for (let i = 0; i < 8; i++) tickPulses(blob, world);
+    assert.equal(world.pulses[0]!.flag, 0, "must not toggle on the first 8 frames (that was 1:1 with 50 Hz)");
+    for (let i = 0; i < 28; i++) tickPulses(blob, world);
+    assert.equal(world.pulses[0]!.flag, 1, "DEC to $FF after 9 slot visits × 4 frames");
   });
 });
 

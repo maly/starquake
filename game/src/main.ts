@@ -37,6 +37,10 @@ function $(id: string): HTMLElement {
   return el;
 }
 
+function fmtStat(n: number): string {
+  return `${n} ($${n.toString(16).padStart(2, "0")})`;
+}
+
 async function loadJson(name: string): Promise<unknown> {
   const res = await fetch(DATA_BASE + "/" + name);
   if (!res.ok) throw new Error(name + " HTTP " + res.status);
@@ -129,14 +133,22 @@ async function boot(): Promise<void> {
     const cell = cellPos(blob);
     $("blob-cell").textContent = `${cell.col}, ${cell.row}`;
     $("blob-vy").textContent = String(fallSpeed(blob, world));
-    $("stat-energy").textContent = String(world.energy);
-    $("stat-platforms").textContent = String(world.platforms);
-    $("stat-firepower").textContent = String(world.firepower);
-    $("stat-lives").textContent = String(world.lives);
+    $("stat-energy").textContent = fmtStat(world.energy);
+    $("stat-platforms").textContent = fmtStat(world.platforms);
+    $("stat-firepower").textContent = fmtStat(world.firepower);
+    $("stat-lives").textContent = fmtStat(world.lives);
     $("stat-inv").textContent = world.inventory.length
       ? world.inventory.map((it) => "$" + it.sprite.toString(16)).join(" ")
       : "—";
-    $("stat-extra").textContent = world.extra ? "$" + world.extra.sprite.toString(16) : "—";
+    $("stat-extra").textContent = world.extra
+      ? "$" + world.extra.sprite.toString(16) + " @ " + world.extra.col + "," + world.extra.row
+      : "—";
+    const on = world.pulses.filter((p) => p.flag !== 0);
+    $("stat-pulse").textContent = on.length
+      ? on.map((p) => p.col + "," + p.row).join(" ")
+      : world.pulses.length
+        ? "off"
+        : "—";
     const dd22El = $("stat-dd22");
     dd22El.textContent = String(world.dd22);
     const padEl = $("stat-pad");

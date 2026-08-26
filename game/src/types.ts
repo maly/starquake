@@ -91,6 +91,8 @@ export interface Prepared {
   pulsesByRoom?: PulseDef[][];
   /** $9F05 fixed $B2C8 from nibble $80, pixel XY. */
   fixedNastiesByRoom?: Hotspot[][];
+  /** $96CB from $A90F nibble $90 (col/row of 2×2 extra spawn). Drawn attrs are never $90. */
+  extraMarksByRoom?: Array<Array<{ col: number; row: number }>>;
 }
 
 export interface Buffers {
@@ -169,6 +171,8 @@ export interface World {
   lives: number;
   slots: Array<PlatformSlot | null>;
   slotIndex: number;
+  /** $9634: which of 4 $9635 pulse records $A66C visits this tick. */
+  pulseIndex: number;
   buildLatch: boolean;
   pickupLatch: boolean;
   dac0: number;

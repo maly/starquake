@@ -1,5 +1,6 @@
 import {
   ATTR_NASTY_HI,
+  EXTRA_ATTR_HI,
   DD22_PAD,
   GAME_Y_ORIGIN,
   HOVERPAD_ATTR_HI,
@@ -14,6 +15,7 @@ import {
   PULSE_COMP_BIAS,
   PULSE_PERIOD_BASE,
   PULSE_PERIOD_MASK,
+  PULSE_SLOTS,
   ROOM_COUNT,
   TELEPORT_ATTR_HI,
   TELEPORT_INPUT_MASK,
@@ -51,11 +53,12 @@ export interface HotspotScan {
   killsByRoom: Hotspot[][];
   pulsesByRoom: PulseDef[][];
   fixedNastiesByRoom: Hotspot[][];
+  extraMarksByRoom: Array<Array<{ col: number; row: number }>>;
 }
 
 /**
  * Replicate $A90F / $AA02 from rooms + blocks + $9740 raw.
- * $C0 → $0C, $D0 → $0D, $60 → $06, $70 → $9635, $80 → $9620.
+ * $C0 → $0C, $D0 → $0D, $60 → $06, $70 → $9635, $80 → $9620, $90 → $96CB.
  * Drawn attrs never hold those nibbles.
  */
 export function scanHotspots(
@@ -68,12 +71,17 @@ export function scanHotspots(
   const killsByRoom = emptyHotspots();
   const pulsesByRoom = emptyPulses();
   const fixedNastiesByRoom = emptyHotspots();
+  const extraMarksByRoom: Array<Array<{ col: number; row: number }>> = Array.from(
+    { length: ROOM_COUNT },
+    () => [],
+  );
   const empty: HotspotScan = {
     stationsByRoom,
     teleportsByRoom,
     killsByRoom,
     pulsesByRoom,
     fixedNastiesByRoom,
+    extraMarksByRoom,
   };
   if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
   for (const room of rooms) {
@@ -105,6 +113,7 @@ export function scanHotspots(
             else if (hi === KILL_ATTR_HI) killsByRoom[id]!.push(cellHotspot(col, row));
             else if (hi === PULSE_ATTR_HI) pulsesByRoom[id]!.push({ col, row });
             else if (hi === ATTR_NASTY_HI) fixedNastiesByRoom[id]!.push(cellHotspot(col, row));
+            else if (hi === EXTRA_ATTR_HI) extraMarksByRoom[id]!.push({ col, row });
           }
         }
         c += 8;
@@ -168,18 +177,25 @@ export function hitKillTerrain(prep: Prepared, blob: BlobState): boolean {
 }
 
 /**
- * $A66C: DEC timer, reload period, XOR flag. Then $A56A AABB when flag ≠ 0.
+ * $A66C: one of 4 $9635 slots per tick ($9634 INC, wrap at $04).
+ * DEC timer; $FF → reload period and XOR flag. $A56A AABB when flag ≠ 0.
  * |dx| < $0E, Y in [comp−$16, comp], comp = ($1A−row)<<3 − 2.
  */
 export function tickPulses(blob: BlobState, world: World): boolean {
+  let i = (world.pulseIndex + 1) & 0xff;
+  if (i >= PULSE_SLOTS) i = 0;
+  world.pulseIndex = i;
+  const slot = world.pulses[i];
+  if (slot) {
+    slot.timer = (slot.timer - 1) & 0xff;
+    if (slot.timer === 0xff) {
+      slot.timer = slot.period;
+      slot.flag ^= 1;
+    }
+  }
   const { x, y } = blobGame(blob);
   let hit = false;
   for (const p of world.pulses) {
-    p.timer = (p.timer - 1) & 0xff;
-    if (p.timer === 0) {
-      p.timer = p.period;
-      p.flag ^= 1;
-    }
     if (p.flag === 0) continue;
     const px = (p.col << 3) & 0xff;
     const comp = ((PULSE_COMP_BASE - p.row) << 3) - PULSE_COMP_BIAS;

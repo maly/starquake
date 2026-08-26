@@ -105,6 +105,25 @@ var PULSE_COMP_BASE = 26;
 var PULSE_COMP_BIAS = 2;
 var PULSE_PERIOD_MASK = 12;
 var PULSE_PERIOD_BASE = 8;
+var PULSE_SLOTS = 4;
+var PULSE_TOGGLE_LAYER = 5;
+var PULSE_ANIM_LAYERS = [6, 7, 7, 6];
+var PULSE_ANIM_ATTR_BASE = 68;
+var PULSE_LAYERS = {
+  5: [
+    [2, 2, 71, 103, 61, 24, 16, 0],
+    [8, 28, 20, 54, 162, 224, 192, 64]
+  ],
+  6: [
+    [2, 18, 86, 94, 86, 22, 22, 4],
+    [136, 220, 208, 80, 140, 216, 216, 80]
+  ],
+  7: [
+    [8, 28, 13, 111, 25, 45, 39, 5],
+    [128, 224, 166, 16, 250, 164, 16, 16]
+  ]
+};
+var EXTRA_ATTR_HI = 144;
 var ATTR_NASTY_HI = 128;
 var FIXED_NASTY_PTR = 45768;
 var FIXED_NASTY_AI = 6;
@@ -191,9 +210,11 @@ var EXTRA_EFFECTS = [
   [2, 50],
   [3, 32],
   [3, 60],
-  [0, 0]
+  [0, 0],
+  [0, 1]
 ];
 var EXTRA_LIVES_SPRITE = 23;
+var EXTRA_LIFE_PLUS = 24;
 var BLOB_INK = 7;
 var DD22_WALK = 0;
 var DD22_LIFT = 1;
@@ -438,12 +459,17 @@ function scanHotspots(rooms, blocks, rawBySub) {
   const killsByRoom = emptyHotspots();
   const pulsesByRoom = emptyPulses();
   const fixedNastiesByRoom = emptyHotspots();
+  const extraMarksByRoom = Array.from(
+    { length: ROOM_COUNT },
+    () => []
+  );
   const empty = {
     stationsByRoom,
     teleportsByRoom,
     killsByRoom,
     pulsesByRoom,
-    fixedNastiesByRoom
+    fixedNastiesByRoom,
+    extraMarksByRoom
   };
   if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
   for (const room2 of rooms) {
@@ -475,6 +501,7 @@ function scanHotspots(rooms, blocks, rawBySub) {
             else if (hi === KILL_ATTR_HI) killsByRoom[id].push(cellHotspot(col, row));
             else if (hi === PULSE_ATTR_HI) pulsesByRoom[id].push({ col, row });
             else if (hi === ATTR_NASTY_HI) fixedNastiesByRoom[id].push(cellHotspot(col, row));
+            else if (hi === EXTRA_ATTR_HI) extraMarksByRoom[id].push({ col, row });
           }
         }
         c += 8;
@@ -527,14 +554,20 @@ function hitKillTerrain(prep2, blob) {
   return false;
 }
 function tickPulses(blob, world) {
+  let i = world.pulseIndex + 1 & 255;
+  if (i >= PULSE_SLOTS) i = 0;
+  world.pulseIndex = i;
+  const slot = world.pulses[i];
+  if (slot) {
+    slot.timer = slot.timer - 1 & 255;
+    if (slot.timer === 255) {
+      slot.timer = slot.period;
+      slot.flag ^= 1;
+    }
+  }
   const { x, y } = blobGame(blob);
   let hit = false;
   for (const p of world.pulses) {
-    p.timer = p.timer - 1 & 255;
-    if (p.timer === 0) {
-      p.timer = p.period;
-      p.flag ^= 1;
-    }
     if (p.flag === 0) continue;
     const px = p.col << 3 & 255;
     const comp = (PULSE_COMP_BASE - p.row << 3) - PULSE_COMP_BIAS;
@@ -1071,46 +1104,48 @@ function clearA350Bit(a350, room2) {
   for (let i = 0; i < rot; i++) value = (value >> 1 | (value & 1) << 7) & 255;
   a350[offset] = value;
 }
-function clampStat(v) {
-  if (v < 0) return 0;
-  if (v > STAT_CAP) return STAT_CAP;
-  return v;
+function capEnergyPlatformsFire(world) {
+  if (world.energy > STAT_CAP) world.energy = STAT_CAP;
+  if (world.platforms > STAT_CAP) world.platforms = STAT_CAP;
+  if (world.firepower > STAT_CAP) world.firepower = STAT_CAP;
+}
+function ccccSprite(world) {
+  if ((world.lives & 255) === 0) return EXTRA_LIFE_PLUS;
+  let a = 255;
+  let e = 0;
+  const stats = [world.energy & 255, world.platforms & 255, world.firepower & 255];
+  for (let b = 3; b !== 0; b--) {
+    const hl = stats[3 - b];
+    if (a < hl) continue;
+    e = 3 - b << 1 & 255;
+    a = hl;
+  }
+  return e + 18 & 255;
 }
 function applyExtra(world, sprite) {
   if (sprite === EXTRA_CHEOPS) {
     world.cheops = true;
     return;
   }
-  if (sprite === EXTRA_LIVES_SPRITE) {
-    if (world.lives === 0) world.lives = 1;
-    return;
-  }
-  const row = EXTRA_EFFECTS[sprite - EXTRA_SPRITE_BASE];
+  let a = sprite & 255;
+  if (a === EXTRA_LIVES_SPRITE) a = ccccSprite(world);
+  const row = EXTRA_EFFECTS[a - EXTRA_SPRITE_BASE];
   if (!row) return;
   const [off, add] = row;
-  if (off === 1) world.energy = clampStat(world.energy + add);
-  else if (off === 2) world.platforms = clampStat(world.platforms + add);
-  else if (off === 3) world.firepower = clampStat(world.firepower + add);
-}
-function markers90(world) {
-  const out = [];
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      if (world.terrain.attr[row * COLS + col] === 144) {
-        out.push({ col, row: row + PLAY_ORIGIN });
-      }
-    }
-  }
-  return out;
+  if (off === 0) world.lives = world.lives + add & 255;
+  else if (off === 1) world.energy = world.energy + add & 255;
+  else if (off === 2) world.platforms = world.platforms + add & 255;
+  else if (off === 3) world.firepower = world.firepower + add & 255;
+  capEnergyPlatformsFire(world);
 }
 function extraPos(col, row) {
   return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
 }
-function spawnExtra(_prep, world, room2) {
+function spawnExtra(prep2, world, room2) {
   world.extra = null;
   if (room2 === ROOM_SKIP) return;
   if (!a350Allows(world.a350, room2)) return;
-  const marks = markers90(world);
+  const marks = prep2.extraMarksByRoom?.[room2] ?? [];
   if (marks.length < 2) return;
   world.dac = seedDac(room2);
   for (let i = 0; i < EXTRA_DAC_ROLLS; i++) dacStep(world.dac);
@@ -1229,7 +1264,14 @@ function prepare(data) {
     if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
   }
   const rooms = data.rooms.rooms;
-  const { stationsByRoom, teleportsByRoom, killsByRoom, pulsesByRoom, fixedNastiesByRoom } = hotspotsFromData(data, rooms, blocks);
+  const {
+    stationsByRoom,
+    teleportsByRoom,
+    killsByRoom,
+    pulsesByRoom,
+    fixedNastiesByRoom,
+    extraMarksByRoom
+  } = hotspotsFromData(data, rooms, blocks);
   return {
     graphics,
     sprites,
@@ -1242,7 +1284,8 @@ function prepare(data) {
     teleportsByRoom,
     killsByRoom,
     pulsesByRoom,
-    fixedNastiesByRoom
+    fixedNastiesByRoom,
+    extraMarksByRoom
   };
 }
 function newBuffers() {
@@ -1360,6 +1403,28 @@ function blitExtra(prep2, buf2, extra) {
   if (!extra) return;
   const playRow = extra.row - PLAY_ORIGIN;
   blitSprite(prep2, buf2, extra.sprite, extra.col, playRow, extra.ink & 7 | 64);
+}
+function xorPulseLayer(buf2, col, playRow, layer, attr) {
+  const cells = PULSE_LAYERS[layer];
+  if (!cells) return;
+  for (let i = 0; i < 2; i++) {
+    const cx = col + i;
+    if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
+    const bytes = cells[i];
+    const dst = (playRow * COLS + cx) * CELL;
+    for (let py = 0; py < CELL; py++) buf2.data[dst + py] ^= bytes[py];
+    buf2.attr[playRow * COLS + cx] = attr;
+  }
+}
+function blitPulses(buf2, pulses, dac0) {
+  const attr = PULSE_ANIM_ATTR_BASE + (dac0 & 3) & 255;
+  for (const p of pulses) {
+    if (p.flag === 0) continue;
+    const playRow = p.row - PLAY_ORIGIN;
+    xorPulseLayer(buf2, p.col, playRow, PULSE_TOGGLE_LAYER, attr);
+    const anim = PULSE_ANIM_LAYERS[p.timer & 3];
+    xorPulseLayer(buf2, p.col, playRow, anim, attr);
+  }
 }
 function packGrafix(frame) {
   const out = new Uint8Array(48);
@@ -1506,6 +1571,7 @@ function renderWorld(prep2, world, buf2, rgba2, roomId, opts = {}) {
     blitItems(prep2, buf2, roomId, world.collected);
     blitExtra(prep2, buf2, world.extra);
   }
+  blitPulses(buf2, world.pulses, world.dac.dac0);
   const solid = opts.overlay ? prep2.rooms[roomId].solid : null;
   rasterize(buf2, rgba2, !!opts.overlay, solid);
   if (opts.enemies !== false) {
@@ -1997,6 +2063,7 @@ function createWorld(prep2, room2) {
     lives: START_LIVES,
     slots: Array.from({ length: PLATFORM_SLOTS }, () => null),
     slotIndex: 0,
+    pulseIndex: 0,
     buildLatch: false,
     pickupLatch: false,
     dac0: 0,
@@ -2043,6 +2110,7 @@ function enterRoom(prep2, world, room2, opts) {
   composeTiles(prep2, world.terrain, room2);
   for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
   world.slotIndex = 0;
+  world.pulseIndex = 0;
   world.buildLatch = false;
   world.pickupLatch = false;
   parkBullet(world);
@@ -2582,7 +2650,8 @@ if (has("--collect-test")) {
     inventory: world.inventory,
     energy: world.energy,
     platforms: world.platforms,
-    firepower: world.firepower
+    firepower: world.firepower,
+    lives: world.lives
   };
   enterRoom(prep, world, room2 === 0 ? 1 : 0);
   enterRoom(prep, world, room2);

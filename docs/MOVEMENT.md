@@ -16,13 +16,14 @@ Souřadnice v paměti: `$DD1D` = X (pixely zleva), `$DD1E` = Y **odspodu obrazov
 | krok vpravo | `blobwr1` → `blobsr1` → `blobwr2` → `blobsr2` (frame 0) | `$C67C HL=$E074` + `$DD25*$C0` |
 | krok vlevo | `blobwl1` → `blobsl1` → `blobwl2` → `blobsl2` (frame 0) | `$C6C3 HL=$E374` + `$DD25*$C0` |
 | stání / dojezd | `$E674` (`blobxr`) | `$C666` — engine drží poslední pose, když není směr |
-| jetpack nahoru | 2 px / tick | `$C76D ADD A,$02` |
+| zelené pole `$64` | `$DD22=1`, +2 px / tick nahoru | `$C71C` / `$C761` / `$C76D ADD A,$02` |
+| vznášedlo | `$DD22=2`, ±2 px / osu | `$C967` / `$CEAD` |
 | práh výstupu vpravo | X ∈ `$F0`..`$F3` | `$C8FC SUB $F0 / CP $04` |
 | vstup zleva | X = 0 | `$C906 LD (HL),$00` |
 | práh výstupu vlevo | X + 2 < 4 | `$C90E ADD A,$02 / CP $04` |
 | vstup zprava | X = `$F0` | `$C918 LD (HL),$F0` |
-| výstup dolů | Y < `$0E` | `$C921 CP $0E` → Y=`$8F`, místnost +16 |
-| výstup nahoru | Y ≥ `$90` | `$C92C CP $90` → Y=`$0F`, místnost −16 |
+| výstup dolů | Y < `$0E` (na padu Y < `$16`) | `$C921` / `$CB3F` → Y=`$8F`, místnost +16 |
+| výstup nahoru | Y ≥ `$90` | `$C92C` → Y=`$0F` (padu `$17`) místnost −16 |
 | zarovnání Y po přechodu | `(Y+1) ∧ $F8 − 1` | `$C93D` |
 | start X, Y | `$88`, `$3F` | `$6468 LD HL,$3F88` |
 | kreslení | XOR 3 bajty/scanline, inkoust `AND $F8 / OR ink` pokud není bit 5 | `$DF70`, `$D8B1` |
@@ -97,17 +98,181 @@ Kontakt `$A305` jen ve stavu 1. Smrtící sady `badalien*` mají high bajt `< $B
 
 Mezi místnostmi: `$9C78` prohodí 21 bajtů × 4 se `$959C`. Návrat do **ihned předchozí** místnosti obnoví cache; třetí místnost ji zahodí a spawne znovu. Stav se **nehromadí** (vždy ≤ 4). Nejsou vázaní na 512 místností napevno.
 
+## Střelba
+
+`$C85A` (větev `$C5BD` po stavbě plošinky). Slot **5** tabulky `$DD18` (`$DDB8`, 32 B). `$DF70` ho kreslí stejně jako vetřelce; engine používá `stampGrafix` (bez clash `$D8B1`).
+
+### Životní cyklus střely
+
+```mermaid
+stateDiagram-v2
+  [*] --> parked: "$C8DD X=0 Y=$0F $DF40"
+  parked --> flying: "$DD27 a $D2CF>0"
+  flying --> flying: "3× ±2 px"
+  flying --> parked: "zeď / X≥$F2 / zásah"
+```
+
+| veličina | hodnota | adresa |
+|---|---|---|
+| počet současně | 1 (`$DD2A≠0` blokuje další) | `$C85A` / `$C88E` |
+| podkroky | 3 × 2 px | `$C8A8 LD B,$03` |
+| rychlost | 6 px / tick, jen vodorovně | `$C8C7 SUB $02` / `$C8CB ADD A,$02` |
+| směr | `$DD2B`: 1 vpravo, jinak vlevo | `$C622` z `$DD23∧$03`; `$C8C0 CP $01` |
+| grafika vpravo | `$E8B4` (`blobfire` snímek 0) | `$C891` |
+| grafika vlevo | `$E974` (`blobfire` + `$C0`) | `$C898` |
+| start XY | kopie `$DD1D`/`$DD1E` (nesleduje postavu) | `$C89E` |
+| zeď | `$D2F0` když `X∧7=0`, `A ∧ $DD2A` | `$C8B6` |
+| konec dráhy | `X ≥ $F2` (unsigned; vlevo wrap `$FE`) | `$C8D0 CP $F2` |
+| park | X=0 Y=`$0F` ptr `$DF40`, `$DD2A=0` | `$C8DD` |
+| odchod z místnosti | `$C947 CALL $C8DD` | `$C8F4` |
+| palebná síla | −1 za výstřel, 0 = nelze | `$C869` / `$C884 A=2 C=1` `$D41F` |
+| účinek zásahu | firepower **nemění** damage | `$A054` nečte `$D2CF` |
+| doplnění | extra `$15` +`$20`, `$16` +`$3C`; strop `$7F` | `$CCBC` / `$D469` |
+| zásah vetřelce | \|dx\|<`$0E` \|dy\|<`$0E` | `$A054` |
+| následek | stav 2, grafika `$BEC8`, ink 7, park střely | `$A078` / `$C546` |
+| odolnost | žádná (1 zásah) | `$A084 LD (IX+$15),$02` |
+| zanechá | skóre `$A2E7` (hi−`$AE`)×2; ne předmět | `$A2E7` |
+| klávesa | bit 4 `$C55A` (P / Kempston fire) | `$C5D5` |
+
+Vznášedlo střílí `$CA15` (níže). Blob `$C85A` na palubě neběží.
+
+## Zelené zdvižné pole (`$64`, `$DD22=1`)
+
+Atribut `$64` je zelená výplň (paper 6, ink 4). Overlay `$D280` ho bere jako **nepevný**; chůze `$D2F0` (`attr < $40`) taky — `$64` bit 6 má, není zeď. Stavba `$C800` na něm končí. `solid` v exportu se nemění.
+
+`$C625`: 0 chůze, **1** zdviž `$C761`, 2 vznášedlo `$C967`. `$C76D +2` patří **jen** větvi 1, ne padu.
+
+Po vodorovné chůzi, jen když `$DD22=0` a Blob **není** na `$D2CA` (`$C6D6` exact XY stanice `$0C` → `RES 3,$DD23`, `JP $C85A`, pád i `$C71C` se přeskočí):
+
+| podmínka | hodnota | adresa |
+|---|---|---|
+| X | `(X−8) ∧ $1F = 0` | `$C708` |
+| Y | Y ≡ 0 (mod 3) | `$C70F` |
+| buňka | origin GRAFIX +1 sl., +1 ř. **přesně** `$64` | `$C71C` |
+
+Zásah: `$DD22=1` a **v tom samém ticku** `$C761`. Vzdviž: žádná chůze, žádný `FALL_TABLE`. `$D2F4` bit 3 (strop) → Y beze změny, jinak game-Y += 2. Pak `$D2F0`: `(A ∧ 3)==3` flag drží, jinak `$DD22=0` a `$DD28=2`. `$D2F0` při `(Y+1) ∧ 7 ≠ 0` sondá **tři** atributové řady (`$D330`), ne dvě — otvor `$44` (místnost 249 řady 4–5) proto výtah nepustí, dokud sprite není celý v otvoru. Bez Left/Right se `$C71C` chytí znovu a jízda pokračuje výš. Dál palba `$C85A` a východ `$C8F4`. Flag se při odchodu **nemaže** (`$C94A A=0`). Plošinka z této větve se nestaví.
+
+Póza ROM `$BF88` (Arrow) v `actors.json` není (extract končí u `stars` `$BEC8`). Engine drží poslední walk frame.
+
+Objekt `$0E` (stroj, který staví plošinky) **není** toto pole a je mimo rozsah.
+
+## Vznášedlo (`$0C`, `$DD22=2`)
+
+Stanice je objekt `$0C` z high nibble `$C0` v `$9740` (`$A90F` → `$AA02`). Nakreslené atributy `$C0` **neobsahují** — engine skládá XY z `rooms.json` + `blocks.json` + `block_attrs.json` raw. `$D2CA` je **poslední** stanice v místnosti (ne nula, pokud `$0C` je).
+
+| veličina | hodnota | adresa |
+|---|---|---|
+| GRAFIX | `$AFC8`, ink 7, slot 4 | `$9F67` |
+| pad Y | blob Y − 8 | `$C952` |
+| `nastyCount` | 3 (slot 4 není vetřelec) | `$9F72` |
+| nástup | exact XY + bit 3 `$DD24` (Up v posledním nenulovém vstupu) | `$CEAD` |
+| výstup | totéž XY, bit 3 = 0 | `$CEBE` |
+| let | ±2 px / osu, dual `$D2F0`/`$D2F4` Blob i Y−8 | `$C967` |
+| pad X | kopie po svislém kroku, o 1 tick pozadu | `$C94D` pak `$C9BA` |
+| palba | slot 5, 8 px, bounce XOR, park po 2 zdech / X≥`$F2` / Y<`$0F` / Y≥`$91` | `$CA15` |
+| grafika palby | `hfirepower` `$B088`… | `$CB2B` |
+| východ dolů | Y < `$16` → Y=`$8F`, místnost +16 | `$CB3F` |
+| východ nahoru | Y ≥ `$90` → Y=`$17`, místnost −16 | `$CB50` |
+
+`$DD24` se aktualizuje jen při nenulovém `$DD23` (`$C61B`); puštění kláves ho nemaže. Nástup/výstup parkuje střelu (`$C8DD`). `$A305` dál bere sedadlo Blob XY. `$DD22` východ neresetuje; `$9F57` položí pad na Blob i bez stanice.
+
+## Teleporty (`$0D`)
+
+15 padů, tabulka `$D036` (jméno 5 ASCII + word místnosti). High nibble `$D0` → typ `$0D`. Detekce **přesná** shoda XY a `$DD23 ∧ $03` (Left\|Right). Up samotné je sběr `$94E8`.
+
+| jméno | místnost |
+|---|---|
+| VEROX | 40 |
+| RAMIX | 31 |
+| TULSA | 66 |
+| ASOIC | 150 |
+| DELTA | 162 |
+| QUAKE | 213 |
+| ALGOL | 289 |
+| EXIAL | 343 |
+| KYZIA | 380 |
+| ULTRA | 433 |
+| IRAGE | 457 |
+| OKTUP | 461 |
+| SONIQ | 470 |
+| AMIGA | 499 |
+| AMAHA | 506 |
+
+Žádný příznak „objeveno“. UI enginu je `prompt` / `alert`, ne Spectrum overlay. Platný kód (`$D2C4=$04`): načíst cílovou místnost, spawn na jejím `$0D` XY, `$9C47` vetřelci. Neplatný (`$D2C4=$03`): `CODE NOT RECOGNISED`, zůstat, smazat plošinky, **bez** respawnu vetřelců, bez trestu energie.
+
+ROM `$A426` **nevolá** `$C8DD`. Engine parkuje střelu při každém `enterRoom` (včetně teleportu) — zdokumentovaný rozdíl.
+
+## Předměty
+
+Interakce `$CB8A` (seznam `$96FC`) → `$CC5A` / `$CE82` / `$D09F`. Blízkost: \|dx\|<`$0F` \|dy\|<`$0F` v souřadnicích `$DD1D`/`$DD1E`. Pixel z buňky: X=`col≪3`, Y=`($18−row)≪3 − 1` (`$AA02`).
+
+`$94E8` typ v seznamu = `$14+index` (`$AB80 LD A,$41 / SUB D`). Sebrání **jen Up samo** (`$DD23==$08`, první tick `$DD31=1`). `$D16B` zapíše byte1=`$01` (řádek < 6 → `$AB40` nekreslí). XOR-smazání attr `$47`. Sprite+ink do inventáře `$D2D2` (4× `{sprite, attr}`). Trvá po odchodu; engine drží `world.collected`.
+
+Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA==1`. Sprite `$11`–`$19`, typ `$01`, **automaticky** AABB. Sebrání `$CC9A` + `$A801` maže bit.
+
+### Extra `$11`–`$19` (`$CCBC` od `$D2CC`)
+
+| sprite | offset | přičte | kam |
+|---|---|---|---|
+| `$11` | 1 | `$20` | energie `$D2CD` |
+| `$12` | 1 | `$60` | energie |
+| `$13` | 1 | `$40` | energie |
+| `$14` | 2 | `$32` | plošinky `$D2CE` |
+| `$15` | 3 | `$20` | palba `$D2CF` |
+| `$16` | 3 | `$3C` | palba |
+| `$17` | 0 | `$00` | životy `$D2CC` (`$CCCC` zvláštní; nedořešeno) |
+| `$18` | — | — | mimo tabulku / 0 |
+| `$19` | — | — | Cheops (`$CCF1`); stav `cheops`, bez výměny |
+
+Hodnoty se po `$D425` oříznou na `$7F`.
+
+### `$94E8` sprite (inventář, ne přímý refill)
+
+| sprite | význam | stav |
+|---|---|---|
+| `$0F` | klíč kódu (`$D693`) | inventář; minihra není |
+| `$10` | nástroj `$B0` (`$CE8C`) | inventář; vkládání jádra není |
+| `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář |
+| `$FF` | prázdný záznam | ignorovat |
+
+Typy objektů **mimo** `$94E8`: `$0C` vznášedlo a `$0D` teleport výše. Není: `$06` smrt, `$0B` dlaždice `$B0`, `$0E` stroj na plošinky, `$0F` vodorovný přechod, jádro `$C7`.
+
+## Pořadí ticku (engine)
+
+ROM `$C5BD`: chůze/zdviž/pad → palba → východ `$C8F4` → `$CB8A` objekty. Engine:
+
+1. chůze **nebo** zdviž **nebo** pad
+2. plošinky `$C79F` jen při chůzi mimo stanici `$D2CA`
+3. palba Blob `$C85A` / pad `$CA15`
+4. vetřelci `$A01B`
+5. úbytek energie `$CB58`
+6. sběr extra / `$94E8`
+7. objekty `$0C` / `$0D`
+8. východ z místnosti (park střely v `enterRoom`)
+
+Platný teleport v kroku 7 hned volá `$A426` a zbytek ticku se přeskočí.
+
 ## Dočasné hodnoty
 
 | veličina | dočasně | důvod |
 |---|---|---|
-| skok | 12 ticků × 2 px nahoru | V `$C5BD` není hop. `$C79F CP $04` staví plošinku (`$D2CE`), jetpack je +2 px/tick (`$C76D`). Označeno `TEMP_JUMP_*` v `constants.ts`. |
+| skok | odmapovaný | V `$C5BD` není hop. Up je sběr (`$D09F`) / nástup na pad. `$TEMP_JUMP_*` zůstává v kódu, žádná klávesa ho nespouští. |
 
 ## Otevřené otázky
 
-1. **Skok při chůzi.** Impulz v `$C5BD` chybí. Down staví plošinku (`$C79F`); jetpack je `$C76D`. Hop v engine zůstává `TEMP_JUMP_*`.
-2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne.
+1. **Skok při chůzi.** Impulz v `$C5BD` chybí. Down staví plošinku (`$C79F`); `$C76D` je zdviž `$64`, ne hop. Dočasný hop je odmapovaný (Up = sběr / nástup na pad).
+2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne. `$64` je v overlay i chůzi nepevná.
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
-5. **Místnost `$C7` (jádro)** a **jetpack ve slotu 4** (`$9C43=3`, `$AFC8`) — mimo rozsah.
-6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá.
+5. **Místnost `$C7` (jádro), bezpečnostní dveře, zvuk `$D7C0`.** Mimo rozsah.
+6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá. Pad vždy `$AFC8` (snímky 1–3 se neindexují).
+7. **Extra spawn `$AAB6` po `$A80A`.** Engine bere buňky attr `$90` a seed `$7530+id×12`, ne celý `$DAC6` při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
+8. **`$CCCC` u extra `$17`** (životy) — skool má překryv dat; engine přičte 0.
+9. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah.
+10. **Póza Arrow `$BF88` ve zdviži** — není v extractu; engine nechá poslední walk frame.
+11. **Objekt `$0E`** (stroj na plošinky) — mimo rozsah; není zelené pole `$64`.
+12. **Smrt na padu `$C35E`.** `$DD22` se na nulu neklade; detaily respawnu mimo rozsah.
+13. **`$A426` vs `$C8DD`.** ROM po teleportu střelu neparkuje; engine parkuje v `enterRoom`.
+14. **Engine `skip64` vs `$A132`** (řada Y+1, skip jen Y, exact `$64`) — ponecháno.
+15. **Opakovaný overlay** při drženém Left/Right po příletu na pad. Viewer má latch do uvolnění, aby `prompt()` nesmyčkoval.
+16. **`$E4` (flash + `$64`).** `$C71C` bere jen přesné `$64`; v exportu 0 výskytů.

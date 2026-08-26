@@ -37,7 +37,7 @@ python -m starquake_extract render --out out --all
 
 | vstup | význam |
 |---|---|
-| šipky | sousední místnost v mřížce 16×32; na okraji nic |
+| šipky / WASD | pohyb BLOBa; nahoru sběr / nástup na vznášedlo; Left/Right na teleportu kód |
 | pole + Jít | identifikátor 0–511 |
 | `#N` v URL | totéž |
 | Pevné buňky | magenta překryv podle `rooms.json` → `solid` |

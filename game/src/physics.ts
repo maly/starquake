@@ -4,6 +4,9 @@ import {
   BLOB_W,
   CELL,
   COLS,
+  DD22_LIFT,
+  DD22_PAD,
+  DD22_WALK,
   ENTER_BOTTOM_Y,
   ENTER_LEFT_X,
   ENTER_RIGHT_X,
@@ -14,6 +17,15 @@ import {
   FALL_TABLE,
   GAME_Y_ORIGIN,
   HEIGHT,
+  HOVERPAD_FLY_PX,
+  ITEM_COUNT,
+  LIFT_ATTR,
+  LIFT_PX,
+  LIFT_X_BIAS,
+  LIFT_X_MASK,
+  LIFT_Y_MOD,
+  PAD_ENTER_UP_Y,
+  PAD_EXIT_DOWN_Y,
   PLATFORM_COST,
   PLATFORM_INPUT,
   PLATFORM_LAYERS,
@@ -24,18 +36,33 @@ import {
   PLAY_ORIGIN,
   ROOM_COUNT,
   ROWS,
+  A350_BYTES,
+  SEATED_SETS,
   START_ENERGY,
   START_ENERGY_DRAIN,
   START_FIREPOWER,
+  START_LIVES,
   START_PLATFORMS,
+  TELEPORT_INVALID_REASON,
+  TELEPORT_MSG_BAD,
+  TELEPORT_MSG_OK,
+  TELEPORT_REASON,
   TEMP_JUMP_PX,
-  TEMP_JUMP_TICKS,
   WALK_LEFT_SETS,
   WALK_PX,
   WALK_RIGHT_SETS,
   WIDTH,
 } from "./constants";
-import { enterNasties, tickEnergyDrain, tickNasties } from "./entities";
+import { copyPadFromBlob, enterNasties, syncHoverpad, tickEnergyDrain, tickNasties } from "./entities";
+import { spawnExtra, tickPickup } from "./items";
+import {
+  evaluateTeleport,
+  firstTeleport,
+  onStationPixel,
+  walkSpecialObjects,
+  type TeleportEval,
+} from "./objects";
+import { parkBullet, parkedBullet, tickFire, tickPadFire } from "./projectiles";
 import { composeTiles, moveRoom, newBuffers } from "./render";
 import type { Graphic, Prepared, World } from "./types";
 
@@ -44,6 +71,7 @@ export interface Input {
   right: boolean;
   up: boolean;
   down?: boolean;
+  fire?: boolean;
 }
 
 export interface BlobState {
@@ -145,8 +173,8 @@ export function blobInkPixels(graphic: Graphic | undefined): readonly InkPixel[]
   return pixels;
 }
 
-export function poseGraphic(prep: Prepared, blob: BlobState): Graphic | undefined {
-  const anim = animationSet(blob);
+export function poseGraphic(prep: Prepared, blob: BlobState, world?: World): Graphic | undefined {
+  const anim = animationSet(blob, world);
   return prep.actorsBySet.get(anim.set)?.[anim.frame];
 }
 
@@ -213,6 +241,41 @@ export function wallBlocked(
   return false;
 }
 
+/**
+ * $D2F0 bits: 0 right, 1 left. Only when X ∧ 7 = 0.
+ * $D330: if (Y+1) ∧ 7 = 0 two attr rows, otherwise three (origin, +1, +2).
+ */
+export function d2f0Bits(prep: Prepared, room: number, x: number, playY: number, world?: World): number {
+  if ((x & 7) !== 0) return 0;
+  const col = x >> 3;
+  const top = playY >> 3;
+  const rows = ((playYToGame(playY) + 1) & 7) === 0 ? 2 : 3;
+  let bits = 0;
+  for (let r = 0; r < rows; r++) {
+    if (solidAt(prep, room, col + 2, top + r, world)) bits |= 1;
+    if (solidAt(prep, room, col - 1, top + r, world)) bits |= 2;
+  }
+  return bits;
+}
+
+/** $D2F4 bits: 2 floor, 3 ceiling. Only when (Y+1) ∧ 7 = 0. */
+export function d2f4Bits(prep: Prepared, room: number, x: number, playY: number, world?: World): number {
+  const gameY = playYToGame(playY);
+  if (((gameY + 1) & 7) !== 0) return 0;
+  const cols = footColumns(x);
+  const origin = playY >> 3;
+  let bits = 0;
+  for (const col of cols) {
+    if (solidAt(prep, room, col, origin + 2, world)) bits |= 4;
+    if (solidAt(prep, room, col, origin - 1, world)) bits |= 8;
+  }
+  return bits;
+}
+
+export function dirBits(input: Input): number {
+  return (input.right ? 1 : 0) | (input.left ? 2 : 0) | (input.down ? 4 : 0) | (input.up ? 8 : 0);
+}
+
 export function insideSolid(
   prep: Prepared,
   room: number,
@@ -260,7 +323,10 @@ function applyRoomExit(
   movingLeft: boolean,
   world?: World,
 ): boolean {
+  const boarded = world?.dd22 === DD22_PAD;
   const gameY = playYToGame(blob.y);
+  const downY = boarded ? PAD_EXIT_DOWN_Y : EXIT_DOWN_Y;
+  const enterUp = boarded ? PAD_ENTER_UP_Y : ENTER_BOTTOM_Y;
   let dx = 0;
   let dy = 0;
   if (blob.x >= EXIT_RIGHT && blob.x - EXIT_RIGHT < 4 && movingRight) {
@@ -269,11 +335,11 @@ function applyRoomExit(
   } else if (blob.x + 2 < 4 && movingLeft) {
     blob.x = ENTER_RIGHT_X;
     dx = -1;
-  } else if (gameY < EXIT_DOWN_Y) {
+  } else if (gameY < downY) {
     blob.y = gameYToPlay(ENTER_TOP_Y);
     dy = 1;
   } else if (gameY >= EXIT_UP_Y) {
-    blob.y = gameYToPlay(ENTER_BOTTOM_Y);
+    blob.y = gameYToPlay(enterUp);
     dy = -1;
   } else {
     return false;
@@ -289,8 +355,11 @@ function applyRoomExit(
   blob.room = next;
   const gy = playYToGame(blob.y);
   blob.y = gameYToPlay(((gy + 1) & 0xf8) - 1);
-  if (world) enterRoom(prep, world, blob.room);
-  nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob)), world);
+  if (world) {
+    enterRoom(prep, world, blob.room);
+    syncHoverpad(prep, world, blob.room, blob);
+  }
+  nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob, world)), world);
   return true;
 }
 
@@ -298,14 +367,76 @@ function applyRoomExit(
  * $C679 stores $DD25 then $C67C/$C6C3 + $C0*E. Idle keeps the last pose
  * ($C6D6 does not rewrite $DD1F when no direction is held).
  */
-export function animationSet(blob: BlobState): { set: string; frame: number } {
+export function animationSet(blob: BlobState, world?: World): { set: string; frame: number } {
+  if (world?.dd22 === DD22_PAD) {
+    return { set: SEATED_SETS[world.seatPose] ?? "blobxs", frame: 0 };
+  }
   const sets = blob.facing > 0 ? WALK_RIGHT_SETS : WALK_LEFT_SETS;
   return { set: sets[blob.walkFrame & 3]!, frame: 0 };
 }
 
-export function tick(prep: Prepared, blob: BlobState, input: Input, world?: World): void {
-  const pixels = blobInkPixels(poseGraphic(prep, blob));
+function padPlayY(blob: BlobState): number {
+  return blob.y + 8;
+}
 
+function tickLift(prep: Prepared, blob: BlobState, world: World): void {
+  const ceil = d2f4Bits(prep, blob.room, blob.x, blob.y, world) & 8;
+  if (!ceil) blob.y = gameYToPlay(playYToGame(blob.y) + LIFT_PX);
+  const walls = d2f0Bits(prep, blob.room, blob.x, blob.y, world) & 3;
+  if (walls !== 3) {
+    world.dd22 = DD22_WALK;
+    blob.walkTick = 2;
+  }
+  blob.fallIndex = 0;
+  blob.onGround = false;
+}
+
+function tryEnterLift(prep: Prepared, blob: BlobState, world: World): boolean {
+  if (((blob.x - LIFT_X_BIAS) & LIFT_X_MASK) !== 0) return false;
+  const gameY = playYToGame(blob.y);
+  if (((gameY % LIFT_Y_MOD) + LIFT_Y_MOD) % LIFT_Y_MOD !== 0) return false;
+  const a = attrAt(prep, blob.room, (blob.x >> 3) + 1, (blob.y >> 3) + 1, world);
+  if (a !== LIFT_ATTR) return false;
+  world.dd22 = DD22_LIFT;
+  return true;
+}
+
+function tickPadFlight(prep: Prepared, blob: BlobState, input: Input, world: World): void {
+  const bits = dirBits(input);
+  const vHit =
+    d2f4Bits(prep, blob.room, blob.x, blob.y, world) | d2f4Bits(prep, blob.room, blob.x, padPlayY(blob), world);
+  const vAllow = bits ^ (bits & vHit);
+  if (vAllow & 8) blob.y = gameYToPlay(playYToGame(blob.y) + HOVERPAD_FLY_PX);
+  if (vAllow & 4) blob.y = gameYToPlay(playYToGame(blob.y) - HOVERPAD_FLY_PX);
+  copyPadFromBlob(world, blob);
+  const hHit =
+    d2f0Bits(prep, blob.room, blob.x, blob.y, world) | d2f0Bits(prep, blob.room, blob.x, padPlayY(blob), world);
+  const hAllow = bits ^ (bits & hHit);
+  if (hAllow & 1) {
+    blob.x = (blob.x + HOVERPAD_FLY_PX) & 0xff;
+    blob.facing = 1;
+  }
+  if (hAllow & 2) {
+    blob.x = (blob.x - HOVERPAD_FLY_PX) & 0xff;
+    blob.facing = -1;
+  }
+  world.seatTick += 1;
+  if (world.seatTick >= ANIM_PERIOD) {
+    world.seatTick = 0;
+    if (hAllow & 1) world.seatPose = Math.max(0, world.seatPose - 1);
+    if (hAllow & 2) world.seatPose = Math.min(4, world.seatPose + 1);
+  }
+  blob.fallIndex = 0;
+  blob.onGround = false;
+}
+
+function applyWalk(
+  prep: Prepared,
+  blob: BlobState,
+  input: Input,
+  pixels: readonly InkPixel[],
+  world?: World,
+): void {
   if (input.right && !input.left) {
     const nx = blob.x + WALK_PX;
     if (!overlapsTerrain(prep, blob.room, nx, blob.y, pixels, world)) blob.x = nx;
@@ -323,6 +454,18 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
     blob.walkFrame = (blob.walkFrame + 1) & 3;
   }
 
+  const onStation = world ? onStationPixel(blob, world) : false;
+  if (onStation) {
+    blob.fallIndex = 0;
+    blob.onGround = true;
+    return;
+  }
+
+  if (world && world.dd22 === DD22_WALK && tryEnterLift(prep, blob, world)) {
+    tickLift(prep, blob, world);
+    return;
+  }
+
   if (blob.jumpTicks > 0) {
     const ny = blob.y - TEMP_JUMP_PX;
     if (!overlapsTerrain(prep, blob.room, blob.x, ny, pixels, world)) blob.y = ny;
@@ -335,10 +478,6 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
       blob.y = support;
       blob.fallIndex = 0;
       blob.onGround = true;
-      if (input.up) {
-        blob.jumpTicks = TEMP_JUMP_TICKS;
-        blob.onGround = false;
-      }
     } else {
       blob.onGround = false;
       const idx = Math.min(blob.fallIndex, FALL_TABLE.length - 1);
@@ -355,12 +494,49 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
       }
     }
   }
+}
 
+/**
+ * Walk/lift/pad → platforms if walking → fire → nasties → drain → pickup → $0C/$0D → room exit.
+ */
+export function tick(prep: Prepared, blob: BlobState, input: Input, world?: World): void {
+  const pixels = blobInkPixels(poseGraphic(prep, blob, world));
   if (world) {
-    tryBuildPlatform(prep, blob, input, world);
-    tickBridges(world);
-    tickNasties(prep, blob, world);
-    tickEnergyDrain(world);
+    const dirs = dirBits(input);
+    if (dirs) world.lastDir = dirs;
+  }
+
+  if (world?.dd22 === DD22_PAD) tickPadFlight(prep, blob, input, world);
+  else if (world?.dd22 === DD22_LIFT) tickLift(prep, blob, world);
+  else applyWalk(prep, blob, input, pixels, world);
+
+  if (!world) {
+    applyRoomExit(prep, blob, input.right && !input.left, input.left && !input.right, world);
+    if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
+    return;
+  }
+
+  const walking = world.dd22 === DD22_WALK;
+  const stationed = walking && onStationPixel(blob, world);
+  if (walking && !stationed) tryBuildPlatform(prep, blob, input, world);
+  tickBridges(world);
+
+  if (world.dd22 === DD22_PAD) tickPadFire(prep, blob, !!input.fire, world);
+  else tickFire(prep, blob, !!input.fire, world);
+
+  tickNasties(prep, blob, world);
+  tickEnergyDrain(world);
+
+  const pickupInput = stationed ? { ...input, up: false } : input;
+  tickPickup(prep, blob, pickupInput, world);
+
+  const boardedBefore = world.dd22 === DD22_PAD;
+  const code = walkSpecialObjects(prep, blob, input, world);
+  if (world.dd22 === DD22_PAD && !boardedBefore) copyPadFromBlob(world, blob);
+  if (code !== null) {
+    applyTeleport(prep, blob, world, code);
+    if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
+    return;
   }
 
   applyRoomExit(prep, blob, input.right && !input.left, input.left && !input.right, world);
@@ -373,9 +549,11 @@ export function createWorld(prep: Prepared, room: number): World {
     energy: START_ENERGY,
     platforms: START_PLATFORMS,
     firepower: START_FIREPOWER,
+    lives: START_LIVES,
     slots: Array.from({ length: PLATFORM_SLOTS }, () => null),
     slotIndex: 0,
     buildLatch: false,
+    pickupLatch: false,
     dac0: 0,
     dac: { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 },
     entities: [],
@@ -384,18 +562,80 @@ export function createWorld(prep: Prepared, room: number): World {
     nastyCount: 0,
     spawnGuard: 0,
     energyDrain: START_ENERGY_DRAIN,
+    bullet: parkedBullet(),
+    fireDir: 0,
+    aim: 1,
+    collected: new Uint8Array(ITEM_COUNT),
+    a350: new Uint8Array(A350_BYTES).fill(0xff),
+    extra: null,
+    inventory: [],
+    cheops: false,
+    dd22: DD22_WALK,
+    lastDir: 0,
+    station: { x: 0, y: 0 },
+    pad: null,
+    padShotDir: 0,
+    padShotHits: 0,
+    padShotFrame: 0,
+    seatPose: 2,
+    seatTick: 0,
+    message: "",
+    teleportLatch: false,
   };
   enterRoom(prep, world, room);
   return world;
 }
 
+export interface EnterRoomOpts {
+  /** $A519 CP $03: invalid teleport skips $9C47. */
+  nasties?: boolean;
+}
+
 /** $A426 draws the packed room then $A4B1 zeros $DBBB for $31 bytes. */
-export function enterRoom(prep: Prepared, world: World, room: number): void {
+export function enterRoom(prep: Prepared, world: World, room: number, opts?: EnterRoomOpts): void {
   composeTiles(prep, world.terrain, room);
   for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
   world.slotIndex = 0;
   world.buildLatch = false;
-  enterNasties(prep, world, room);
+  world.pickupLatch = false;
+  parkBullet(world);
+  spawnExtra(prep, world, room);
+  if (opts?.nasties !== false) enterNasties(prep, world, room);
+  syncHoverpad(prep, world, room);
+}
+
+export interface TeleportResult extends TeleportEval {
+  message: string;
+  reason: number;
+}
+
+/**
+ * $CFB3 then $A426. Valid $D2C4=$04 loads dest and snaps to its $0D.
+ * Invalid $D2C4=$03 stays, wipes platforms, does not respawn nasties.
+ */
+export function applyTeleport(prep: Prepared, blob: BlobState, world: World, code: string): TeleportResult {
+  const ev = evaluateTeleport(code, blob.room);
+  world.teleportLatch = true;
+  if (ev.ok) {
+    blob.room = ev.dest;
+    enterRoom(prep, world, ev.dest);
+    const pad = firstTeleport(prep, ev.dest);
+    if (pad) {
+      blob.x = pad.x;
+      blob.y = gameYToPlay(pad.y);
+      blob.fallIndex = 0;
+      blob.onGround = true;
+    }
+    syncHoverpad(prep, world, blob.room, blob);
+    world.message = TELEPORT_MSG_OK;
+    return { ...ev, message: world.message, reason: TELEPORT_REASON };
+  }
+  blob.x &= 0xf8;
+  blob.y = gameYToPlay(((playYToGame(blob.y) + 1) & 0xf8) - 1);
+  enterRoom(prep, world, blob.room, { nasties: false });
+  syncHoverpad(prep, world, blob.room, blob);
+  world.message = TELEPORT_MSG_BAD;
+  return { ...ev, dest: blob.room, message: world.message, reason: TELEPORT_INVALID_REASON };
 }
 
 export function platformCol(x: number): number {
@@ -515,7 +755,9 @@ function tickBridges(world: World): void {
   world.slots[world.slotIndex] = null;
 }
 
-export function fallSpeed(blob: BlobState): number {
+export function fallSpeed(blob: BlobState, world?: World): number {
+  if (world?.dd22 === DD22_LIFT) return -LIFT_PX;
+  if (world?.dd22 === DD22_PAD) return 0;
   if (blob.jumpTicks > 0) return -TEMP_JUMP_PX;
   if (blob.onGround) return 0;
   const idx = Math.min(Math.max(blob.fallIndex - 1, 0), FALL_TABLE.length - 1);

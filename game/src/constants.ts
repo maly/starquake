@@ -62,10 +62,9 @@ export const EXIT_UP_Y = 0x90;
 export const ENTER_BOTTOM_Y = 0x0f;
 
 /**
- * TEMPORARY jump. Walking Blob in $C5BD has no hop: $C79F CP $04 is platform
- * building (out of scope), jetpack is +2 px/tick at $C76D. A 12-tick hop at
- * the jetpack quantum lets the character reach platforms until a jump impulse
- * is found in the disassembly.
+ * Leftover hop quantum (unbound). $C5BD has no walk jump: Up is pickup
+ * ($D09F / $DD23==$08), Down builds a platform ($C79F), jetpack is $C76D.
+ * No key starts jumpTicks; the values remain for any leftover airborne ticks.
  */
 export const TEMP_JUMP_TICKS = 12;
 export const TEMP_JUMP_PX = 2;
@@ -198,8 +197,134 @@ export const PLATFORM_LAYERS: ReadonlyArray<ReadonlyArray<ReadonlyArray<number>>
   ],
 ];
 
+/**
+ * Blob fire from $C85A. One shot in GRAFIX slot $DDB8 (table index 5).
+ * $C8A8 LD B,$03 substeps of 2 px; $C8D0 CP $F2 ends the shot.
+ * $C888 LD A,$02 / LD C,$01 → $D41F decrements $D2CF by 1.
+ * Right graphic $E8B4 (blobfire frame 0); left $E974 ($E8B4+$C0).
+ */
+export const FIRE_SLOT = 5;
+export const FIRE_STEPS = 3;
+export const FIRE_PX = 2;
+export const FIRE_END_X = 0xf2;
+export const FIRE_COST = 1;
+export const FIREPOWER_STAT = 2;
+export const FIRE_RIGHT_PTR = 0xe8b4;
+export const FIRE_LEFT_PTR = 0xe974;
+export const FIRE_DIR_RIGHT = 1;
+export const FIRE_DIR_LEFT = 2;
+export const BULLET_HIT = 0x0e;
+export const STAT_CAP = 0x7f;
+
+/** $D2CC lives; $D2CD–$D2CF are energy / platforms / firepower. */
+export const START_LIVES = 4;
+
+/** $94E8: 45 × 4 bytes. $D16B writes byte1=$01 (row < 6 → hidden). */
+export const ITEM_TABLE = 0x94e8;
+export const ITEM_COUNT = 0x2d;
+export const ITEM_STRIDE = 4;
+export const ITEM_COLLECTED_Y = 0x01;
+export const ITEM_NEAR = 0x0f;
+export const ITEM_TYPE_BASE = 0x14;
+export const INVENTORY_SLOTS = 4;
+export const ITEM_ORIGIN_ROWS = 0x18;
+
+/** $A350: 128 bytes, one bit per room. $AAB6 spawns extra 2×2; $A801 clears. */
+export const A350 = 0xa350;
+export const A350_BYTES = 0x80;
+export const EXTRA_MIN_DAC = 0x55;
+export const EXTRA_SPRITE_BASE = 0x11;
+export const EXTRA_TYPE = 0x01;
+export const EXTRA_CHEOPS = 0x19;
+export const EXTRA_DAC_ROLLS = 0x14;
+
+/**
+ * $CCBC pairs for extra sprites $11–$17: offset from $D2CC, addend.
+ * $11–$13 energy, $14 platforms, $15–$16 firepower, $17 lives (add 0).
+ */
+export const EXTRA_EFFECTS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0x20],
+  [1, 0x60],
+  [1, 0x40],
+  [2, 0x32],
+  [3, 0x20],
+  [3, 0x3c],
+  [0, 0x00],
+];
+
 /** $DD21 / $DDA1 default ink for GRAFIX merge ($D8B1). */
 export const BLOB_INK = 7;
+
+/**
+ * $DD22 movement mode ($C625). 0 walk, 1 green lift $C761, 2 hoverpad $C967.
+ * $C76D +2 is the lift, not the pad.
+ */
+export const DD22_WALK = 0;
+export const DD22_LIFT = 1;
+export const DD22_PAD = 2;
+
+/** $C71D CP $64 — exact attribute of the green lift field. */
+export const LIFT_ATTR = 0x64;
+/** $C708 (X−8) ∧ $1F = 0; $C70F Y ≡ 0 (mod 3). */
+export const LIFT_X_BIAS = 8;
+export const LIFT_X_MASK = 0x1f;
+export const LIFT_Y_MOD = 3;
+/** $C76D ADD A,$02 — game-Y up while $DD22=1. */
+export const LIFT_PX = 2;
+
+/** $9F67 GRAFIX $AFC8, ink 7, slot 4. $C952 pad Y = blob Y − 8. */
+export const HOVERPAD_PTR = 0xafc8;
+export const HOVERPAD_INK = 7;
+export const HOVERPAD_SLOT = 4;
+export const HOVERPAD_Y_BIAS = 8;
+export const HOVERPAD_FLY_PX = 2;
+export const HOVERPAD_TYPE = 0x0c;
+export const HOVERPAD_ATTR_HI = 0xc0;
+export const NASTY_COUNT_WITH_PAD = 3;
+
+/** $CA0B seated Blob pointers while boarded. */
+export const SEATED_SETS = ["blobwr1", "blobxr", "blobxs", "blobsl", "blobwl1"] as const;
+
+/** $CA15 pad shot: 8 px / tick, bounce, park after 2 wall hits. */
+export const PAD_SHOT_PX = 8;
+export const PAD_SHOT_BOUNCE_MAX = 2;
+export const PAD_SHOT_PTRS = [0xb088, 0xb0b8, 0xb0e8, 0xb118] as const;
+export const PAD_SHOT_Y_LO = 0x0f;
+export const PAD_SHOT_Y_HI = 0x91;
+/** $CB3F / $CB50 boarded room exits. */
+export const PAD_EXIT_DOWN_Y = 0x16;
+export const PAD_ENTER_UP_Y = 0x17;
+
+/** $0D teleport ($CEC4). Names at $D036, 15 × (5 chars + room word). */
+export const TELEPORT_TYPE = 0x0d;
+export const TELEPORT_ATTR_HI = 0xd0;
+export const TELEPORT_COUNT = 15;
+export const TELEPORT_NAME_LEN = 5;
+export const TELEPORT_TABLE_ADDR = 0xd036;
+export const TELEPORT_INPUT_MASK = 0x03;
+export const TELEPORT_REASON = 0x04;
+export const TELEPORT_INVALID_REASON = 0x03;
+export const TELEPORT_MSG_OK = "NOW TELEPORTING";
+export const TELEPORT_MSG_BAD = "CODE NOT RECOGNISED";
+
+/** $D036 name → dest room. Spawn XY comes from the dest $0D hotspot, not this table. */
+export const TELEPORT_TABLE: ReadonlyArray<readonly [string, number]> = [
+  ["VEROX", 40],
+  ["RAMIX", 31],
+  ["TULSA", 66],
+  ["ASOIC", 150],
+  ["DELTA", 162],
+  ["QUAKE", 213],
+  ["ALGOL", 289],
+  ["EXIAL", 343],
+  ["KYZIA", 380],
+  ["ULTRA", 433],
+  ["IRAGE", 457],
+  ["OKTUP", 461],
+  ["SONIQ", 470],
+  ["AMIGA", 499],
+  ["AMAHA", 506],
+];
 
 export const TICK_MS = 20;
 

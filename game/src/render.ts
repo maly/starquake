@@ -15,7 +15,8 @@ import {
   WIDTH,
 } from "./constants";
 import { entityVisible } from "./entities";
-import type { Buffers, GameData, Graphic, Item, Prepared, RenderOpts, Rgb, World } from "./types";
+import { hotspotsFromData } from "./objects";
+import type { Buffers, ExtraObject, GameData, Graphic, Item, Prepared, RenderOpts, Rgb, World } from "./types";
 
 export function paperInk(attr: number): [Rgb, Rgb] {
   const table = attr & 0x40 ? BRIGHT : SPECTRUM;
@@ -76,7 +77,9 @@ export function prepare(data: GameData): Prepared {
     if (it.room === ROOM_SKIP) continue;
     if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
   }
-  return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms: data.rooms.rooms, itemsByRoom };
+  const rooms = data.rooms.rooms;
+  const { stationsByRoom, teleportsByRoom } = hotspotsFromData(data, rooms, blocks);
+  return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms, itemsByRoom, stationsByRoom, teleportsByRoom };
 }
 
 export function newBuffers(): Buffers {
@@ -166,10 +169,11 @@ export function itemCells(item: Item): Array<[number, number]> {
   return cells;
 }
 
-export function blitItems(prep: Prepared, buf: Buffers, roomId: number): void {
+export function blitItems(prep: Prepared, buf: Buffers, roomId: number, collected?: Uint8Array): void {
   const list = prep.itemsByRoom[roomId];
   if (!list?.length) return;
   for (const it of list) {
+    if (collected && collected[it.index]) continue;
     const sprite = prep.sprites[it.sprite];
     if (!sprite) continue;
     const attr = (it.attr_bits & 7) | 0x40;
@@ -184,6 +188,25 @@ export function blitItems(prep: Prepared, buf: Buffers, roomId: number): void {
       buf.attr[cy * COLS + cx] = attr;
     }
   }
+}
+
+function blitSprite(prep: Prepared, buf: Buffers, spriteId: number, col: number, row: number, attr: number): void {
+  const sprite = prep.sprites[spriteId];
+  if (!sprite) return;
+  for (const cell of sprite.cells) {
+    const cy = row + cell.row;
+    const cx = col + cell.col;
+    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+    const dst = (cy * COLS + cx) * CELL;
+    for (let py = 0; py < CELL; py++) buf.data[dst + py]! ^= cell.data[py]!;
+    buf.attr[cy * COLS + cx] = attr;
+  }
+}
+
+export function blitExtra(prep: Prepared, buf: Buffers, extra: ExtraObject | null): void {
+  if (!extra) return;
+  const playRow = extra.row - PLAY_ORIGIN;
+  blitSprite(prep, buf, extra.sprite, extra.col, playRow, (extra.ink & 7) | 0x40);
 }
 
 /**
@@ -373,15 +396,28 @@ export function renderWorld(
   opts: RenderOpts = {},
 ): Uint8ClampedArray {
   copyBuffers(world.terrain, buf);
-  if (opts.items !== false) blitItems(prep, buf, roomId);
+  if (opts.items !== false) {
+    blitItems(prep, buf, roomId, world.collected);
+    blitExtra(prep, buf, world.extra);
+  }
   const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
   rasterize(buf, rgba, !!opts.overlay, solid);
   if (opts.enemies !== false) {
-    for (const e of world.entities) {
+    const n = Math.min(world.nastyCount, world.entities.length);
+    for (let i = 0; i < n; i++) {
+      const e = world.entities[i]!;
       if (!entityVisible(e)) continue;
       const frame = graphicForPtr(prep, e.ptr) ?? prep.actorsBySet.get(e.set)?.[e.frame];
       if (frame) stampGrafix(rgba, frame, e.x, GAME_Y_ORIGIN - e.y, e.ink);
     }
+    if (world.pad && entityVisible(world.pad)) {
+      const frame = graphicForPtr(prep, world.pad.ptr) ?? prep.actorsBySet.get(world.pad.set)?.[world.pad.frame];
+      if (frame) stampGrafix(rgba, frame, world.pad.x, GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
+    }
+  }
+  if (opts.enemies !== false && entityVisible(world.bullet)) {
+    const frame = graphicForPtr(prep, world.bullet.ptr) ?? prep.actorsBySet.get(world.bullet.set)?.[world.bullet.frame];
+    if (frame) stampGrafix(rgba, frame, world.bullet.x, GAME_Y_ORIGIN - world.bullet.y, world.bullet.ink);
   }
   if (opts.blob) {
     const frames = prep.actorsBySet.get(opts.blob.set);

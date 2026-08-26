@@ -1,4 +1,5 @@
 import { TICK_MS } from "./constants";
+import { teleportNameForRoom } from "./objects";
 import {
   cellPos,
   fallSpeed,
@@ -24,10 +25,10 @@ import type { GameData, Prepared } from "./types";
 
 const DATA_BASE = "../out";
 
-const keys = { left: false, right: false, up: false, down: false };
+const keys = { left: false, right: false, up: false, down: false, fire: false };
 
 function input(): Input {
-  return { left: keys.left, right: keys.right, up: keys.up, down: keys.down };
+  return { left: keys.left, right: keys.right, up: keys.up, down: keys.down, fire: keys.fire };
 }
 
 function $(id: string): HTMLElement {
@@ -72,7 +73,16 @@ async function boot(): Promise<void> {
     loadJson("sprites.json"),
     loadJson("items.json"),
     loadJson("actors.json"),
-  ])) as [GameData["rooms"], GameData["graphics"], GameData["blocks"], GameData["sprites"], GameData["items"], GameData["actors"]];
+    loadJson("block_attrs.json"),
+  ])) as [
+    GameData["rooms"],
+    GameData["graphics"],
+    GameData["blocks"],
+    GameData["sprites"],
+    GameData["items"],
+    GameData["actors"],
+    GameData["blockAttrs"],
+  ];
 
   const prep: Prepared = prepare({
     rooms: pack[0],
@@ -81,10 +91,13 @@ async function boot(): Promise<void> {
     sprites: pack[3],
     items: pack[4],
     actors: pack[5],
+    blockAttrs: pack[6],
   });
 
   const start = parseHash() ?? 0;
   const world = createWorld(prep, start);
+  world.readTeleportCode = (ownName: string) =>
+    window.prompt(`YOU HAVE ENTERED TELEPORT\nCODE : ${ownName}\nENTER TELEPORTAL DESTINATION CODE`, "");
   let blob = spawnBlob(prep, start, world);
   let overlay = false;
   let lastMs = 0;
@@ -108,10 +121,23 @@ async function boot(): Promise<void> {
     $("blob-xy").textContent = `${blob.x}, ${blob.y}`;
     const cell = cellPos(blob);
     $("blob-cell").textContent = `${cell.col}, ${cell.row}`;
-    $("blob-vy").textContent = String(fallSpeed(blob));
+    $("blob-vy").textContent = String(fallSpeed(blob, world));
     $("stat-energy").textContent = String(world.energy);
     $("stat-platforms").textContent = String(world.platforms);
     $("stat-firepower").textContent = String(world.firepower);
+    $("stat-lives").textContent = String(world.lives);
+    $("stat-inv").textContent = world.inventory.length
+      ? world.inventory.map((it) => "$" + it.sprite.toString(16)).join(" ")
+      : "—";
+    $("stat-extra").textContent = world.extra ? "$" + world.extra.sprite.toString(16) : "—";
+    const dd22El = $("stat-dd22");
+    dd22El.textContent = String(world.dd22);
+    const padEl = $("stat-pad");
+    padEl.textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "—";
+    const tpEl = $("stat-teleport");
+    tpEl.textContent = teleportNameForRoom(blob.room) || "—";
+    const msgEl = $("stat-message");
+    msgEl.textContent = world.message || "—";
     gotoEl.value = String(blob.room);
     $("time").textContent = lastMs.toFixed(2) + " ms";
     $("avg").textContent = avgMs.toFixed(2) + " ms";
@@ -120,7 +146,7 @@ async function boot(): Promise<void> {
 
   function draw(): void {
     const t0 = performance.now();
-    const anim = animationSet(blob);
+    const anim = animationSet(blob, world);
     renderWorld(prep, world, buf, imageData.data, blob.room, {
       items: true,
       overlay,
@@ -150,11 +176,16 @@ async function boot(): Promise<void> {
     } else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") {
       keys.right = true;
       ev.preventDefault();
-    } else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W" || ev.key === " ") {
+    } else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") {
       keys.up = true;
+      ev.preventDefault();
+    } else if (ev.key === " ") {
       ev.preventDefault();
     } else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") {
       keys.down = true;
+      ev.preventDefault();
+    } else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") {
+      keys.fire = true;
       ev.preventDefault();
     } else if (ev.key === "PageUp") {
       goRoom(moveRoom(blob.room, 0, -1));
@@ -165,8 +196,9 @@ async function boot(): Promise<void> {
   document.addEventListener("keyup", (ev) => {
     if (ev.key === "ArrowLeft" || ev.key === "a" || ev.key === "A") keys.left = false;
     else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") keys.right = false;
-    else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W" || ev.key === " ") keys.up = false;
+    else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") keys.up = false;
     else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") keys.down = false;
+    else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
   });
   $("go").addEventListener("click", () => goRoom(parseInt(gotoEl.value, 10) || 0));
   gotoEl.addEventListener("keydown", (ev) => {
@@ -181,7 +213,8 @@ async function boot(): Promise<void> {
     if (id !== null && id !== blob.room) goRoom(id);
   });
 
-  $("status").textContent = "50 Hz · šipky / WASD pohyb · mezerník skok · dolů staví plošinku";
+  $("status").textContent =
+    "50 Hz · šipky / WASD pohyb · nahoru sebrat / nastoupit · dolů plošinka · P/X palba · Left/Right na teleportu kód";
   fitScale();
 
   function frame(now: number): void {

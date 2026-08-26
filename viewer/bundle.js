@@ -29,7 +29,6 @@
   var ENTER_TOP_Y = 143;
   var EXIT_UP_Y = 144;
   var ENTER_BOTTOM_Y = 15;
-  var TEMP_JUMP_TICKS = 12;
   var TEMP_JUMP_PX = 2;
   var START_ENERGY = 23;
   var START_PLATFORMS = 48;
@@ -104,6 +103,79 @@
       [2, 64, 8, 0, 32, 0, 32, 0]
     ]
   ];
+  var FIRE_STEPS = 3;
+  var FIRE_PX = 2;
+  var FIRE_END_X = 242;
+  var FIRE_RIGHT_PTR = 59572;
+  var FIRE_LEFT_PTR = 59764;
+  var FIRE_DIR_RIGHT = 1;
+  var FIRE_DIR_LEFT = 2;
+  var BULLET_HIT = 14;
+  var STAT_CAP = 127;
+  var START_LIVES = 4;
+  var ITEM_COUNT = 45;
+  var ITEM_NEAR = 15;
+  var ITEM_ORIGIN_ROWS = 24;
+  var A350_BYTES = 128;
+  var EXTRA_MIN_DAC = 85;
+  var EXTRA_SPRITE_BASE = 17;
+  var EXTRA_CHEOPS = 25;
+  var EXTRA_DAC_ROLLS = 20;
+  var EXTRA_EFFECTS = [
+    [1, 32],
+    [1, 96],
+    [1, 64],
+    [2, 50],
+    [3, 32],
+    [3, 60],
+    [0, 0]
+  ];
+  var DD22_WALK = 0;
+  var DD22_LIFT = 1;
+  var DD22_PAD = 2;
+  var LIFT_ATTR = 100;
+  var LIFT_X_BIAS = 8;
+  var LIFT_X_MASK = 31;
+  var LIFT_Y_MOD = 3;
+  var LIFT_PX = 2;
+  var HOVERPAD_PTR = 45e3;
+  var HOVERPAD_INK = 7;
+  var HOVERPAD_Y_BIAS = 8;
+  var HOVERPAD_FLY_PX = 2;
+  var HOVERPAD_ATTR_HI = 192;
+  var NASTY_COUNT_WITH_PAD = 3;
+  var SEATED_SETS = ["blobwr1", "blobxr", "blobxs", "blobsl", "blobwl1"];
+  var PAD_SHOT_PX = 8;
+  var PAD_SHOT_BOUNCE_MAX = 2;
+  var PAD_SHOT_PTRS = [45192, 45240, 45288, 45336];
+  var PAD_SHOT_Y_LO = 15;
+  var PAD_SHOT_Y_HI = 145;
+  var PAD_EXIT_DOWN_Y = 22;
+  var PAD_ENTER_UP_Y = 23;
+  var TELEPORT_ATTR_HI = 208;
+  var TELEPORT_NAME_LEN = 5;
+  var TELEPORT_INPUT_MASK = 3;
+  var TELEPORT_REASON = 4;
+  var TELEPORT_INVALID_REASON = 3;
+  var TELEPORT_MSG_OK = "NOW TELEPORTING";
+  var TELEPORT_MSG_BAD = "CODE NOT RECOGNISED";
+  var TELEPORT_TABLE = [
+    ["VEROX", 40],
+    ["RAMIX", 31],
+    ["TULSA", 66],
+    ["ASOIC", 150],
+    ["DELTA", 162],
+    ["QUAKE", 213],
+    ["ALGOL", 289],
+    ["EXIAL", 343],
+    ["KYZIA", 380],
+    ["ULTRA", 433],
+    ["IRAGE", 457],
+    ["OKTUP", 461],
+    ["SONIQ", 470],
+    ["AMIGA", 499],
+    ["AMAHA", 506]
+  ];
   var TICK_MS = 20;
   var SPECTRUM = [
     [0, 0, 0],
@@ -126,12 +198,284 @@
     [255, 255, 255]
   ];
 
+  // src/projectiles.ts
+  function cellSolid(world, col, row) {
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return false;
+    return (world.terrain.attr[row * COLS + col] & 64) === 0;
+  }
+  function wallBits(world, x, playY) {
+    if ((x & 7) !== 0) return 0;
+    const col = x >> 3;
+    const top = playY >> 3;
+    let bits = 0;
+    for (let r = 0; r < BLOB_H / CELL; r++) {
+      if (cellSolid(world, col - 1, top + r)) bits |= 2;
+      if (cellSolid(world, col + 2, top + r)) bits |= 1;
+    }
+    return bits;
+  }
+  function parkedBullet() {
+    return {
+      x: 0,
+      y: ENTITY_PARK_Y,
+      ink: 7,
+      set: "blobfire",
+      frame: 0,
+      ptr: ENTITY_DUMMY_PTR,
+      basePtr: FIRE_RIGHT_PTR,
+      dir: 0,
+      speedX: FIRE_PX,
+      speedY: 0,
+      period: 1,
+      timer: 1,
+      state: 0,
+      stateTimer: 0,
+      ai: 0,
+      aiPeriod: 0,
+      aiCount: 0,
+      homeX: 0,
+      homeY: ENTITY_PARK_Y
+    };
+  }
+  function parkBullet(world) {
+    world.bullet = parkedBullet();
+    world.fireDir = 0;
+    world.padShotDir = 0;
+    world.padShotHits = 0;
+    world.padShotFrame = 0;
+  }
+  function shotFlying(world) {
+    return world.fireDir !== 0 || world.padShotDir !== 0;
+  }
+  function aimFromFacing(facing) {
+    return facing > 0 ? FIRE_DIR_RIGHT : FIRE_DIR_LEFT;
+  }
+  function floorCeilingBits(world, x, playY) {
+    const gameY = GAME_Y_ORIGIN - playY;
+    if ((gameY + 1 & 7) !== 0) return 0;
+    const cols = (x & 7) === 0 ? [x >> 3, (x >> 3) + 1] : [x >> 3, (x >> 3) + 1, (x >> 3) + 2];
+    const origin = playY >> 3;
+    let bits = 0;
+    for (const col of cols) {
+      if (cellSolid(world, col, origin + 2)) bits |= 4;
+      if (cellSolid(world, col, origin - 1)) bits |= 8;
+    }
+    return bits;
+  }
+  function tickPadFire(_prep, blob, fire, world) {
+    if (world.padShotDir === 0) {
+      if (world.fireDir !== 0) return;
+      if (!fire || world.firepower === 0) return;
+      world.firepower = Math.max(0, world.firepower - 1);
+      const gameY = GAME_Y_ORIGIN - blob.y;
+      world.padShotDir = world.lastDir || 1;
+      world.padShotHits = 0;
+      world.padShotFrame = 0;
+      world.bullet.x = blob.x & 248;
+      world.bullet.y = (gameY + 1 & 248) - 1;
+      world.bullet.ptr = PAD_SHOT_PTRS[0];
+      world.bullet.set = "hfirepower";
+      world.bullet.frame = 0;
+      world.bullet.ink = 7;
+      world.bullet.basePtr = PAD_SHOT_PTRS[0];
+    }
+    let dir = world.padShotDir;
+    const playY = GAME_Y_ORIGIN - world.bullet.y;
+    const hWall = wallBits(world, world.bullet.x, playY);
+    const vWall = floorCeilingBits(world, world.bullet.x, playY);
+    const hHit = dir & 3 & hWall;
+    const vHit = dir & 12 & vWall;
+    let hits = 0;
+    const dac0 = world.dac.dac0 & 255;
+    const dac1 = world.dac.dac0 >> 8 & 255;
+    if (hHit && vHit) {
+      hits = 2;
+      if (dac0 & 32) dir &= 3;
+      else dir &= 12;
+    } else {
+      if (hHit) {
+        dir ^= 3;
+        if ((dir & 12) === 0) dir = dir & 243 | (dac0 & 8 ? 8 : 4);
+        hits += 1;
+      }
+      if (vHit) {
+        dir ^= 12;
+        if ((dir & 3) === 0) dir = dir & 252 | (dac1 & 1 ? 1 : 2);
+        hits += 1;
+      }
+    }
+    world.padShotHits += hits;
+    world.padShotDir = dir;
+    if (world.padShotHits >= PAD_SHOT_BOUNCE_MAX) {
+      parkBullet(world);
+      return;
+    }
+    if (dir & 1) world.bullet.x = world.bullet.x + PAD_SHOT_PX & 255;
+    if (dir & 2) world.bullet.x = world.bullet.x - PAD_SHOT_PX & 255;
+    if (dir & 8) world.bullet.y = world.bullet.y + PAD_SHOT_PX & 255;
+    if (dir & 4) world.bullet.y = world.bullet.y - PAD_SHOT_PX & 255;
+    if (world.bullet.x >= FIRE_END_X || world.bullet.y < PAD_SHOT_Y_LO || world.bullet.y >= PAD_SHOT_Y_HI) {
+      parkBullet(world);
+      return;
+    }
+    world.padShotFrame = world.padShotFrame + 1 & 3;
+    world.bullet.ptr = PAD_SHOT_PTRS[world.padShotFrame];
+    world.bullet.frame = world.padShotFrame;
+    world.bullet.set = "hfirepower";
+  }
+  function tickFire(_prep, blob, fire, world) {
+    if (blob.facing) world.aim = aimFromFacing(blob.facing);
+    if (world.fireDir === 0) {
+      if (world.padShotDir !== 0) return;
+      if (!fire || world.firepower === 0) return;
+      world.firepower = Math.max(0, world.firepower - 1);
+      world.fireDir = world.aim || FIRE_DIR_RIGHT;
+      world.bullet.x = blob.x & 255;
+      world.bullet.y = GAME_Y_ORIGIN - blob.y & 255;
+      const right = (world.fireDir & 1) !== 0;
+      world.bullet.ptr = right ? FIRE_RIGHT_PTR : FIRE_LEFT_PTR;
+      world.bullet.set = "blobfire";
+      world.bullet.frame = right ? 0 : 4;
+      world.bullet.ink = 7;
+      world.bullet.basePtr = world.bullet.ptr;
+    }
+    const playY = GAME_Y_ORIGIN - world.bullet.y;
+    for (let step = 0; step < FIRE_STEPS; step++) {
+      const bits = wallBits(world, world.bullet.x, playY);
+      if (bits & world.fireDir) {
+        parkBullet(world);
+        return;
+      }
+      if (world.fireDir === FIRE_DIR_RIGHT) world.bullet.x = world.bullet.x + FIRE_PX & 255;
+      else world.bullet.x = world.bullet.x - FIRE_PX & 255;
+      if (world.bullet.x >= FIRE_END_X) {
+        parkBullet(world);
+        return;
+      }
+    }
+  }
+
+  // src/objects.ts
+  function emptyHotspots() {
+    return Array.from({ length: ROOM_COUNT }, () => []);
+  }
+  function scanHotspots(rooms, blocks, rawBySub) {
+    const stationsByRoom = emptyHotspots();
+    const teleportsByRoom = emptyHotspots();
+    if (!rooms.length || !blocks.length || !rawBySub.length) {
+      return { stationsByRoom, teleportsByRoom };
+    }
+    for (const room of rooms) {
+      const id = room.id;
+      if (id < 0 || id >= ROOM_COUNT) continue;
+      const data = room.blocks;
+      if (!data?.length) continue;
+      let b = PLAY_ORIGIN;
+      let n = 0;
+      for (let br = 0; br < 3; br++) {
+        let c = 0;
+        for (let bc = 0; bc < 4; bc++) {
+          const block = data[n++] ?? 0;
+          const subs = blocks[block];
+          if (subs?.length) {
+            const origins = [
+              [c + 4, b + 3, subs[0]],
+              [c, b + 3, subs[1]],
+              [c + 4, b, subs[2]],
+              [c, b, subs[3]]
+            ];
+            for (const [col0, row0, sid] of origins) {
+              const raw = rawBySub[sid] ?? 0;
+              const hi = raw & 240;
+              if (hi !== HOVERPAD_ATTR_HI && hi !== TELEPORT_ATTR_HI) continue;
+              const col = col0 + (raw & 3);
+              const row = row0 + ((raw & 12) >> 2);
+              const spot = {
+                x: col << 3 & 255,
+                y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255
+              };
+              if (hi === HOVERPAD_ATTR_HI) stationsByRoom[id].push(spot);
+              else teleportsByRoom[id].push(spot);
+            }
+          }
+          c += 8;
+        }
+        b += 6;
+      }
+    }
+    return { stationsByRoom, teleportsByRoom };
+  }
+  function hotspotsFromData(data, rooms, blocks) {
+    const rawBySub = [];
+    for (const a of data.blockAttrs?.attributes ?? []) rawBySub[a.id] = a.raw;
+    return scanHotspots(rooms, blocks, rawBySub);
+  }
+  function lastStation(prep, room) {
+    const list = prep.stationsByRoom?.[room];
+    const hit = list?.[list.length - 1];
+    return hit ? { x: hit.x, y: hit.y } : { x: 0, y: 0 };
+  }
+  function firstTeleport(prep, room) {
+    const list = prep.teleportsByRoom?.[room];
+    return list?.[0] ?? null;
+  }
+  function teleportNameForRoom(room) {
+    for (const [name, dest] of TELEPORT_TABLE) {
+      if (dest === room) return name;
+    }
+    return "";
+  }
+  function evaluateTeleport(code, room) {
+    const own = teleportNameForRoom(room);
+    const norm = code.replace(/[^A-Za-z]/g, "").toUpperCase().slice(0, TELEPORT_NAME_LEN);
+    if (norm.length !== TELEPORT_NAME_LEN) return { ok: false, dest: room, name: own };
+    for (const [name, dest] of TELEPORT_TABLE) {
+      if (name === norm) return { ok: true, dest, name };
+    }
+    return { ok: false, dest: room, name: own };
+  }
+  function exactAt(blob, x, y) {
+    return blob.x === x && GAME_Y_ORIGIN - blob.y === y;
+  }
+  function onStationPixel(blob, world) {
+    if (world.station.x === 0 && world.station.y === 0) return false;
+    return exactAt(blob, world.station.x, world.station.y);
+  }
+  function boardPad(world) {
+    parkBullet(world);
+    world.dd22 = world.lastDir & 8 ? DD22_PAD : 0;
+  }
+  function walkSpecialObjects(prep, blob, input2, world) {
+    const stations = prep.stationsByRoom?.[blob.room] ?? [];
+    for (const s of stations) {
+      if (exactAt(blob, s.x, s.y)) {
+        boardPad(world);
+        break;
+      }
+    }
+    const horiz = (input2.left ? 2 : 0) | (input2.right ? 1 : 0);
+    if (!(horiz & TELEPORT_INPUT_MASK)) {
+      world.teleportLatch = false;
+      return null;
+    }
+    if (world.teleportLatch) return null;
+    const pads = prep.teleportsByRoom?.[blob.room] ?? [];
+    for (const t of pads) {
+      if (!exactAt(blob, t.x, t.y)) continue;
+      const own = teleportNameForRoom(blob.room);
+      if (!world.readTeleportCode) return null;
+      const typed = world.readTeleportCode(own);
+      return typed ?? "";
+    }
+    return null;
+  }
+
   // src/entities.ts
   function cellAttr(world, col, row) {
     if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return 71;
     return world.terrain.attr[row * COLS + col];
   }
-  function cellSolid(world, col, row) {
+  function cellSolid2(world, col, row) {
     return (cellAttr(world, col, row) & 64) === 0;
   }
   function cloneEntity(e) {
@@ -296,6 +640,58 @@
     }
     world.energyDrain = world.energyDrain + ANNOY_DRAIN_BUMP & 255;
   }
+  function makePad(x, blobGameY) {
+    const py = blobGameY - HOVERPAD_Y_BIAS & 255;
+    return {
+      x: x & 255,
+      y: py,
+      ink: HOVERPAD_INK,
+      set: "hoverpad",
+      frame: 0,
+      ptr: HOVERPAD_PTR,
+      basePtr: HOVERPAD_PTR,
+      dir: 0,
+      speedX: 0,
+      speedY: 0,
+      period: 1,
+      timer: 1,
+      state: 0,
+      stateTimer: 0,
+      ai: 0,
+      aiPeriod: 0,
+      aiCount: 0,
+      homeX: x & 255,
+      homeY: py
+    };
+  }
+  function copyPadFromBlob(world, blob) {
+    world.pad = makePad(blob.x, GAME_Y_ORIGIN - blob.y);
+    world.nastyCount = NASTY_COUNT_WITH_PAD;
+  }
+  function syncHoverpad(prep, world, room, blob) {
+    world.station = lastStation(prep, room);
+    if (world.station.x !== 0 || world.station.y !== 0) {
+      world.pad = makePad(world.station.x, world.station.y);
+      world.nastyCount = NASTY_COUNT_WITH_PAD;
+    } else if (world.dd22 !== 2) {
+      world.pad = null;
+    }
+    if (world.dd22 === 2 && blob) copyPadFromBlob(world, blob);
+  }
+  function hitByBullet(e, world) {
+    if (!shotFlying(world)) return;
+    if (e.state === 2) return;
+    if (e.state === 0 && e.stateTimer === 0) return;
+    const dx = Math.abs(e.x - world.bullet.x);
+    const dy = Math.abs(e.y - world.bullet.y);
+    if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
+    e.ptr = DEAD_GRAPHIC;
+    e.set = "stars";
+    e.ink = 7;
+    e.state = 2;
+    e.stateTimer = 0;
+    parkBullet(world);
+  }
   function bounceH(e, world) {
     if (e.x < NASTY_EDGE_L) {
       e.dir = e.dir & 252 | 1;
@@ -312,8 +708,8 @@
     let left = false;
     let right = false;
     for (let r = 0; r < 2; r++) {
-      if (cellSolid(world, col - 1, top + r)) left = true;
-      if (cellSolid(world, col + 2, top + r)) right = true;
+      if (cellSolid2(world, col - 1, top + r)) left = true;
+      if (cellSolid2(world, col + 2, top + r)) right = true;
     }
     const bits = (right ? 1 : 0) | (left ? 2 : 0);
     if (!bits) return;
@@ -337,8 +733,8 @@
     let down = false;
     let up = false;
     for (const c of cols) {
-      if (cellSolid(world, c, floor)) down = true;
-      if (cellSolid(world, c, ceil)) up = true;
+      if (cellSolid2(world, c, floor)) down = true;
+      if (cellSolid2(world, c, ceil)) up = true;
     }
     const bits = (down ? 4 : 0) | (up ? 8 : 0);
     if (!bits) return;
@@ -465,6 +861,7 @@
   }
   function stepOne(e, prep, blob, world, slot) {
     if (e.y === 0) return;
+    hitByBullet(e, world);
     applyContact(e, blob, world);
     e.timer = e.timer - 1 & 255;
     if (e.timer !== 0) return;
@@ -489,6 +886,138 @@
     if (world.energyDrain < ENERGY_DRAIN_WRAP) return;
     world.energyDrain = 0;
     world.energy = Math.max(0, world.energy - ENERGY_DRAIN_STEP);
+  }
+
+  // src/items.ts
+  function itemGamePos(item) {
+    const col = item.col & 31;
+    const row = item.row & 127;
+    return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
+  }
+  function nearItem(ax, ay, bx, by) {
+    return Math.abs(ax - bx) < ITEM_NEAR && Math.abs(ay - by) < ITEM_NEAR;
+  }
+  function a350Allows(a350, room) {
+    const high = room >> 8 & 1;
+    const low = room & 255;
+    const offset = (high >> 3 | (low & 248) >> 3) & 255;
+    let value = a350[offset] ?? 0;
+    for (let i = 0; i < (low & 7) + 1; i++) value = (value << 1 | value >> 7) & 255;
+    return (value & 1) !== 0;
+  }
+  function clearA350Bit(a350, room) {
+    const high = room >> 8 & 1;
+    const low = room & 255;
+    const offset = (high >> 3 | (low & 248) >> 3) & 255;
+    const rot = (low & 7) + 1;
+    let value = a350[offset] ?? 0;
+    for (let i = 0; i < rot; i++) value = (value << 1 | value >> 7) & 255;
+    value = value & 254 & 255;
+    for (let i = 0; i < rot; i++) value = (value >> 1 | (value & 1) << 7) & 255;
+    a350[offset] = value;
+  }
+  function clampStat(v) {
+    if (v < 0) return 0;
+    if (v > STAT_CAP) return STAT_CAP;
+    return v;
+  }
+  function applyExtra(world, sprite) {
+    if (sprite === EXTRA_CHEOPS) {
+      world.cheops = true;
+      return;
+    }
+    const row = EXTRA_EFFECTS[sprite - EXTRA_SPRITE_BASE];
+    if (!row) return;
+    const [off, add] = row;
+    if (off === 0) world.lives = clampStat(world.lives + add);
+    else if (off === 1) world.energy = clampStat(world.energy + add);
+    else if (off === 2) world.platforms = clampStat(world.platforms + add);
+    else if (off === 3) world.firepower = clampStat(world.firepower + add);
+  }
+  function markers90(world) {
+    const out = [];
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        if (world.terrain.attr[row * COLS + col] === 144) {
+          out.push({ col, row: row + PLAY_ORIGIN });
+        }
+      }
+    }
+    return out;
+  }
+  function extraPos(col, row) {
+    return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
+  }
+  function spawnExtra(_prep, world, room) {
+    world.extra = null;
+    if (room === ROOM_SKIP) return;
+    if (!a350Allows(world.a350, room)) return;
+    const marks = markers90(world);
+    if (marks.length < 2) return;
+    world.dac = seedDac(room);
+    for (let i = 0; i < EXTRA_DAC_ROLLS; i++) dacStep(world.dac);
+    if ((world.dac.dac0 & 255) < EXTRA_MIN_DAC) return;
+    dacStep(world.dac);
+    let slot = (world.dac.dac0 & 127) % marks.length;
+    const mark = marks[slot];
+    dacStep(world.dac);
+    let kind = world.dac.dac0 & 255;
+    while (kind >= 9) kind -= 9;
+    if (kind === 8) {
+      dacStep(world.dac);
+      if ((world.dac.dac2 & 255) >= 127) kind = 0;
+    }
+    const sprite = kind + EXTRA_SPRITE_BASE;
+    dacStep(world.dac);
+    let ink = world.dac.dac2 & 63;
+    while (ink >= 6) ink -= 6;
+    ink = ink + 2 & 7;
+    const pos = extraPos(mark.col, mark.row);
+    world.extra = {
+      sprite,
+      ink,
+      col: mark.col,
+      row: mark.row,
+      x: pos.x,
+      y: pos.y
+    };
+  }
+  function collectTableItem(prep, blob, world) {
+    const list = prep.itemsByRoom[blob.room] ?? [];
+    const bx = blob.x;
+    const by = GAME_Y_ORIGIN - blob.y;
+    for (const it of list) {
+      if (it.sprite === 255) continue;
+      if (!it.placed) continue;
+      if (world.collected[it.index]) continue;
+      const pos = itemGamePos(it);
+      if (!nearItem(bx, by, pos.x, pos.y)) continue;
+      world.collected[it.index] = 1;
+      world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits });
+      if (world.inventory.length > 4) world.inventory.pop();
+      return;
+    }
+  }
+  function tickPickup(prep, blob, input2, world) {
+    const bx = blob.x;
+    const by = GAME_Y_ORIGIN - blob.y;
+    if (world.extra && nearItem(bx, by, world.extra.x, world.extra.y)) {
+      if (world.extra.sprite === EXTRA_CHEOPS) {
+        if (input2.up && !input2.left && !input2.right) world.cheops = true;
+      } else {
+        applyExtra(world, world.extra.sprite);
+        clearA350Bit(world.a350, blob.room);
+        world.extra = null;
+      }
+    }
+    const upOnly = Boolean(input2.up) && !input2.left && !input2.right && !input2.down && !input2.fire;
+    if (!upOnly) {
+      world.pickupLatch = false;
+      return;
+    }
+    if (world.pickupLatch) return;
+    world.pickupLatch = true;
+    collectTableItem(prep, blob, world);
   }
 
   // src/render.ts
@@ -541,7 +1070,9 @@
       if (it.room === ROOM_SKIP) continue;
       if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
     }
-    return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms: data.rooms.rooms, itemsByRoom };
+    const rooms = data.rooms.rooms;
+    const { stationsByRoom, teleportsByRoom } = hotspotsFromData(data, rooms, blocks);
+    return { graphics, sprites, actorsBySet, actorsByPtr, blocks, rooms, itemsByRoom, stationsByRoom, teleportsByRoom };
   }
   function newBuffers() {
     return {
@@ -606,10 +1137,11 @@
       for (let cx = 0; cx < COLS; cx++) buf.attr[base + cx] = row[cx];
     }
   }
-  function blitItems(prep, buf, roomId) {
+  function blitItems(prep, buf, roomId, collected) {
     const list = prep.itemsByRoom[roomId];
     if (!list?.length) return;
     for (const it of list) {
+      if (collected && collected[it.index]) continue;
       const sprite = prep.sprites[it.sprite];
       if (!sprite) continue;
       const attr = it.attr_bits & 7 | 64;
@@ -624,6 +1156,23 @@
         buf.attr[cy * COLS + cx] = attr;
       }
     }
+  }
+  function blitSprite(prep, buf, spriteId, col, row, attr) {
+    const sprite = prep.sprites[spriteId];
+    if (!sprite) return;
+    for (const cell of sprite.cells) {
+      const cy = row + cell.row;
+      const cx = col + cell.col;
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+      const dst = (cy * COLS + cx) * CELL;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py] ^= cell.data[py];
+      buf.attr[cy * COLS + cx] = attr;
+    }
+  }
+  function blitExtra(prep, buf, extra) {
+    if (!extra) return;
+    const playRow = extra.row - PLAY_ORIGIN;
+    blitSprite(prep, buf, extra.sprite, extra.col, playRow, extra.ink & 7 | 64);
   }
   function packGrafix(frame) {
     const out = new Uint8Array(48);
@@ -729,15 +1278,28 @@
   }
   function renderWorld(prep, world, buf, rgba, roomId, opts = {}) {
     copyBuffers(world.terrain, buf);
-    if (opts.items !== false) blitItems(prep, buf, roomId);
+    if (opts.items !== false) {
+      blitItems(prep, buf, roomId, world.collected);
+      blitExtra(prep, buf, world.extra);
+    }
     const solid = opts.overlay ? prep.rooms[roomId].solid : null;
     rasterize(buf, rgba, !!opts.overlay, solid);
     if (opts.enemies !== false) {
-      for (const e of world.entities) {
+      const n = Math.min(world.nastyCount, world.entities.length);
+      for (let i = 0; i < n; i++) {
+        const e = world.entities[i];
         if (!entityVisible(e)) continue;
         const frame = graphicForPtr(prep, e.ptr) ?? prep.actorsBySet.get(e.set)?.[e.frame];
         if (frame) stampGrafix(rgba, frame, e.x, GAME_Y_ORIGIN - e.y, e.ink);
       }
+      if (world.pad && entityVisible(world.pad)) {
+        const frame = graphicForPtr(prep, world.pad.ptr) ?? prep.actorsBySet.get(world.pad.set)?.[world.pad.frame];
+        if (frame) stampGrafix(rgba, frame, world.pad.x, GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
+      }
+    }
+    if (opts.enemies !== false && entityVisible(world.bullet)) {
+      const frame = graphicForPtr(prep, world.bullet.ptr) ?? prep.actorsBySet.get(world.bullet.set)?.[world.bullet.frame];
+      if (frame) stampGrafix(rgba, frame, world.bullet.x, GAME_Y_ORIGIN - world.bullet.y, world.bullet.ink);
     }
     if (opts.blob) {
       const frames = prep.actorsBySet.get(opts.blob.set);
@@ -798,8 +1360,8 @@
     inkCache.set(graphic, pixels);
     return pixels;
   }
-  function poseGraphic(prep, blob) {
-    const anim = animationSet(blob);
+  function poseGraphic(prep, blob, world) {
+    const anim = animationSet(blob, world);
     return prep.actorsBySet.get(anim.set)?.[anim.frame];
   }
   function overlapsTerrain(prep, room, x, y, pixels, world) {
@@ -829,6 +1391,33 @@
     }
     return null;
   }
+  function d2f0Bits(prep, room, x, playY, world) {
+    if ((x & 7) !== 0) return 0;
+    const col = x >> 3;
+    const top = playY >> 3;
+    const rows = (playYToGame(playY) + 1 & 7) === 0 ? 2 : 3;
+    let bits = 0;
+    for (let r = 0; r < rows; r++) {
+      if (solidAt(prep, room, col + 2, top + r, world)) bits |= 1;
+      if (solidAt(prep, room, col - 1, top + r, world)) bits |= 2;
+    }
+    return bits;
+  }
+  function d2f4Bits(prep, room, x, playY, world) {
+    const gameY = playYToGame(playY);
+    if ((gameY + 1 & 7) !== 0) return 0;
+    const cols = footColumns(x);
+    const origin = playY >> 3;
+    let bits = 0;
+    for (const col of cols) {
+      if (solidAt(prep, room, col, origin + 2, world)) bits |= 4;
+      if (solidAt(prep, room, col, origin - 1, world)) bits |= 8;
+    }
+    return bits;
+  }
+  function dirBits(input2) {
+    return (input2.right ? 1 : 0) | (input2.left ? 2 : 0) | (input2.down ? 4 : 0) | (input2.up ? 8 : 0);
+  }
   function nudgeOutOfSolid(prep, blob, pixels, world) {
     let guard = 0;
     while (overlapsTerrain(prep, blob.room, blob.x, blob.y, pixels, world) && guard < HEIGHT) {
@@ -857,7 +1446,10 @@
     return blob;
   }
   function applyRoomExit(prep, blob, movingRight, movingLeft, world) {
+    const boarded = world?.dd22 === DD22_PAD;
     const gameY = playYToGame(blob.y);
+    const downY = boarded ? PAD_EXIT_DOWN_Y : EXIT_DOWN_Y;
+    const enterUp = boarded ? PAD_ENTER_UP_Y : ENTER_BOTTOM_Y;
     let dx = 0;
     let dy = 0;
     if (blob.x >= EXIT_RIGHT && blob.x - EXIT_RIGHT < 4 && movingRight) {
@@ -866,11 +1458,11 @@
     } else if (blob.x + 2 < 4 && movingLeft) {
       blob.x = ENTER_RIGHT_X;
       dx = -1;
-    } else if (gameY < EXIT_DOWN_Y) {
+    } else if (gameY < downY) {
       blob.y = gameYToPlay(ENTER_TOP_Y);
       dy = 1;
     } else if (gameY >= EXIT_UP_Y) {
-      blob.y = gameYToPlay(ENTER_BOTTOM_Y);
+      blob.y = gameYToPlay(enterUp);
       dy = -1;
     } else {
       return false;
@@ -886,16 +1478,70 @@
     blob.room = next;
     const gy = playYToGame(blob.y);
     blob.y = gameYToPlay((gy + 1 & 248) - 1);
-    if (world) enterRoom(prep, world, blob.room);
-    nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob)), world);
+    if (world) {
+      enterRoom(prep, world, blob.room);
+      syncHoverpad(prep, world, blob.room, blob);
+    }
+    nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob, world)), world);
     return true;
   }
-  function animationSet(blob) {
+  function animationSet(blob, world) {
+    if (world?.dd22 === DD22_PAD) {
+      return { set: SEATED_SETS[world.seatPose] ?? "blobxs", frame: 0 };
+    }
     const sets = blob.facing > 0 ? WALK_RIGHT_SETS : WALK_LEFT_SETS;
     return { set: sets[blob.walkFrame & 3], frame: 0 };
   }
-  function tick(prep, blob, input2, world) {
-    const pixels = blobInkPixels(poseGraphic(prep, blob));
+  function padPlayY(blob) {
+    return blob.y + 8;
+  }
+  function tickLift(prep, blob, world) {
+    const ceil = d2f4Bits(prep, blob.room, blob.x, blob.y, world) & 8;
+    if (!ceil) blob.y = gameYToPlay(playYToGame(blob.y) + LIFT_PX);
+    const walls = d2f0Bits(prep, blob.room, blob.x, blob.y, world) & 3;
+    if (walls !== 3) {
+      world.dd22 = DD22_WALK;
+      blob.walkTick = 2;
+    }
+    blob.fallIndex = 0;
+    blob.onGround = false;
+  }
+  function tryEnterLift(prep, blob, world) {
+    if ((blob.x - LIFT_X_BIAS & LIFT_X_MASK) !== 0) return false;
+    const gameY = playYToGame(blob.y);
+    if ((gameY % LIFT_Y_MOD + LIFT_Y_MOD) % LIFT_Y_MOD !== 0) return false;
+    const a = attrAt(prep, blob.room, (blob.x >> 3) + 1, (blob.y >> 3) + 1, world);
+    if (a !== LIFT_ATTR) return false;
+    world.dd22 = DD22_LIFT;
+    return true;
+  }
+  function tickPadFlight(prep, blob, input2, world) {
+    const bits = dirBits(input2);
+    const vHit = d2f4Bits(prep, blob.room, blob.x, blob.y, world) | d2f4Bits(prep, blob.room, blob.x, padPlayY(blob), world);
+    const vAllow = bits ^ bits & vHit;
+    if (vAllow & 8) blob.y = gameYToPlay(playYToGame(blob.y) + HOVERPAD_FLY_PX);
+    if (vAllow & 4) blob.y = gameYToPlay(playYToGame(blob.y) - HOVERPAD_FLY_PX);
+    copyPadFromBlob(world, blob);
+    const hHit = d2f0Bits(prep, blob.room, blob.x, blob.y, world) | d2f0Bits(prep, blob.room, blob.x, padPlayY(blob), world);
+    const hAllow = bits ^ bits & hHit;
+    if (hAllow & 1) {
+      blob.x = blob.x + HOVERPAD_FLY_PX & 255;
+      blob.facing = 1;
+    }
+    if (hAllow & 2) {
+      blob.x = blob.x - HOVERPAD_FLY_PX & 255;
+      blob.facing = -1;
+    }
+    world.seatTick += 1;
+    if (world.seatTick >= ANIM_PERIOD) {
+      world.seatTick = 0;
+      if (hAllow & 1) world.seatPose = Math.max(0, world.seatPose - 1);
+      if (hAllow & 2) world.seatPose = Math.min(4, world.seatPose + 1);
+    }
+    blob.fallIndex = 0;
+    blob.onGround = false;
+  }
+  function applyWalk(prep, blob, input2, pixels, world) {
     if (input2.right && !input2.left) {
       const nx = blob.x + WALK_PX;
       if (!overlapsTerrain(prep, blob.room, nx, blob.y, pixels, world)) blob.x = nx;
@@ -911,6 +1557,16 @@
       blob.walkTick = 0;
       blob.walkFrame = blob.walkFrame + 1 & 3;
     }
+    const onStation = world ? onStationPixel(blob, world) : false;
+    if (onStation) {
+      blob.fallIndex = 0;
+      blob.onGround = true;
+      return;
+    }
+    if (world && world.dd22 === DD22_WALK && tryEnterLift(prep, blob, world)) {
+      tickLift(prep, blob, world);
+      return;
+    }
     if (blob.jumpTicks > 0) {
       const ny = blob.y - TEMP_JUMP_PX;
       if (!overlapsTerrain(prep, blob.room, blob.x, ny, pixels, world)) blob.y = ny;
@@ -923,10 +1579,6 @@
         blob.y = support;
         blob.fallIndex = 0;
         blob.onGround = true;
-        if (input2.up) {
-          blob.jumpTicks = TEMP_JUMP_TICKS;
-          blob.onGround = false;
-        }
       } else {
         blob.onGround = false;
         const idx = Math.min(blob.fallIndex, FALL_TABLE.length - 1);
@@ -943,11 +1595,38 @@
         }
       }
     }
+  }
+  function tick(prep, blob, input2, world) {
+    const pixels = blobInkPixels(poseGraphic(prep, blob, world));
     if (world) {
-      tryBuildPlatform(prep, blob, input2, world);
-      tickBridges(world);
-      tickNasties(prep, blob, world);
-      tickEnergyDrain(world);
+      const dirs = dirBits(input2);
+      if (dirs) world.lastDir = dirs;
+    }
+    if (world?.dd22 === DD22_PAD) tickPadFlight(prep, blob, input2, world);
+    else if (world?.dd22 === DD22_LIFT) tickLift(prep, blob, world);
+    else applyWalk(prep, blob, input2, pixels, world);
+    if (!world) {
+      applyRoomExit(prep, blob, input2.right && !input2.left, input2.left && !input2.right, world);
+      if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
+      return;
+    }
+    const walking = world.dd22 === DD22_WALK;
+    const stationed = walking && onStationPixel(blob, world);
+    if (walking && !stationed) tryBuildPlatform(prep, blob, input2, world);
+    tickBridges(world);
+    if (world.dd22 === DD22_PAD) tickPadFire(prep, blob, !!input2.fire, world);
+    else tickFire(prep, blob, !!input2.fire, world);
+    tickNasties(prep, blob, world);
+    tickEnergyDrain(world);
+    const pickupInput = stationed ? { ...input2, up: false } : input2;
+    tickPickup(prep, blob, pickupInput, world);
+    const boardedBefore = world.dd22 === DD22_PAD;
+    const code = walkSpecialObjects(prep, blob, input2, world);
+    if (world.dd22 === DD22_PAD && !boardedBefore) copyPadFromBlob(world, blob);
+    if (code !== null) {
+      applyTeleport(prep, blob, world, code);
+      if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
+      return;
     }
     applyRoomExit(prep, blob, input2.right && !input2.left, input2.left && !input2.right, world);
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
@@ -958,9 +1637,11 @@
       energy: START_ENERGY,
       platforms: START_PLATFORMS,
       firepower: START_FIREPOWER,
+      lives: START_LIVES,
       slots: Array.from({ length: PLATFORM_SLOTS }, () => null),
       slotIndex: 0,
       buildLatch: false,
+      pickupLatch: false,
       dac0: 0,
       dac: { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 },
       entities: [],
@@ -968,17 +1649,64 @@
       cacheRoom: -1,
       nastyCount: 0,
       spawnGuard: 0,
-      energyDrain: START_ENERGY_DRAIN
+      energyDrain: START_ENERGY_DRAIN,
+      bullet: parkedBullet(),
+      fireDir: 0,
+      aim: 1,
+      collected: new Uint8Array(ITEM_COUNT),
+      a350: new Uint8Array(A350_BYTES).fill(255),
+      extra: null,
+      inventory: [],
+      cheops: false,
+      dd22: DD22_WALK,
+      lastDir: 0,
+      station: { x: 0, y: 0 },
+      pad: null,
+      padShotDir: 0,
+      padShotHits: 0,
+      padShotFrame: 0,
+      seatPose: 2,
+      seatTick: 0,
+      message: "",
+      teleportLatch: false
     };
     enterRoom(prep, world, room);
     return world;
   }
-  function enterRoom(prep, world, room) {
+  function enterRoom(prep, world, room, opts) {
     composeTiles(prep, world.terrain, room);
     for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
     world.slotIndex = 0;
     world.buildLatch = false;
-    enterNasties(prep, world, room);
+    world.pickupLatch = false;
+    parkBullet(world);
+    spawnExtra(prep, world, room);
+    if (opts?.nasties !== false) enterNasties(prep, world, room);
+    syncHoverpad(prep, world, room);
+  }
+  function applyTeleport(prep, blob, world, code) {
+    const ev = evaluateTeleport(code, blob.room);
+    world.teleportLatch = true;
+    if (ev.ok) {
+      blob.room = ev.dest;
+      enterRoom(prep, world, ev.dest);
+      const pad = firstTeleport(prep, ev.dest);
+      if (pad) {
+        blob.x = pad.x;
+        blob.y = gameYToPlay(pad.y);
+        blob.fallIndex = 0;
+        blob.onGround = true;
+      }
+      syncHoverpad(prep, world, blob.room, blob);
+      world.message = TELEPORT_MSG_OK;
+      return { ...ev, message: world.message, reason: TELEPORT_REASON };
+    }
+    blob.x &= 248;
+    blob.y = gameYToPlay((playYToGame(blob.y) + 1 & 248) - 1);
+    enterRoom(prep, world, blob.room, { nasties: false });
+    syncHoverpad(prep, world, blob.room, blob);
+    world.message = TELEPORT_MSG_BAD;
+    return { ...ev, dest: blob.room, message: world.message, reason: TELEPORT_INVALID_REASON };
   }
   function platformCol(x) {
     return (x + PLATFORM_X_BIAS & 248) >> 3;
@@ -1076,7 +1804,9 @@
     paintPlatformAttr(world, slot.col, slot.row, true);
     world.slots[world.slotIndex] = null;
   }
-  function fallSpeed(blob) {
+  function fallSpeed(blob, world) {
+    if (world?.dd22 === DD22_LIFT) return -LIFT_PX;
+    if (world?.dd22 === DD22_PAD) return 0;
     if (blob.jumpTicks > 0) return -TEMP_JUMP_PX;
     if (blob.onGround) return 0;
     const idx = Math.min(Math.max(blob.fallIndex - 1, 0), FALL_TABLE.length - 1);
@@ -1088,9 +1818,9 @@
 
   // src/main.ts
   var DATA_BASE = "../out";
-  var keys = { left: false, right: false, up: false, down: false };
+  var keys = { left: false, right: false, up: false, down: false, fire: false };
   function input() {
-    return { left: keys.left, right: keys.right, up: keys.up, down: keys.down };
+    return { left: keys.left, right: keys.right, up: keys.up, down: keys.down, fire: keys.fire };
   }
   function $(id) {
     const el = document.getElementById(id);
@@ -1128,7 +1858,8 @@
       loadJson("blocks.json"),
       loadJson("sprites.json"),
       loadJson("items.json"),
-      loadJson("actors.json")
+      loadJson("actors.json"),
+      loadJson("block_attrs.json")
     ]);
     const prep = prepare({
       rooms: pack[0],
@@ -1136,10 +1867,14 @@
       blocks: pack[2],
       sprites: pack[3],
       items: pack[4],
-      actors: pack[5]
+      actors: pack[5],
+      blockAttrs: pack[6]
     });
     const start = parseHash() ?? 0;
     const world = createWorld(prep, start);
+    world.readTeleportCode = (ownName) => window.prompt(`YOU HAVE ENTERED TELEPORT
+CODE : ${ownName}
+ENTER TELEPORTAL DESTINATION CODE`, "");
     let blob = spawnBlob(prep, start, world);
     let overlay = false;
     let lastMs = 0;
@@ -1161,10 +1896,21 @@
       $("blob-xy").textContent = `${blob.x}, ${blob.y}`;
       const cell = cellPos(blob);
       $("blob-cell").textContent = `${cell.col}, ${cell.row}`;
-      $("blob-vy").textContent = String(fallSpeed(blob));
+      $("blob-vy").textContent = String(fallSpeed(blob, world));
       $("stat-energy").textContent = String(world.energy);
       $("stat-platforms").textContent = String(world.platforms);
       $("stat-firepower").textContent = String(world.firepower);
+      $("stat-lives").textContent = String(world.lives);
+      $("stat-inv").textContent = world.inventory.length ? world.inventory.map((it) => "$" + it.sprite.toString(16)).join(" ") : "\u2014";
+      $("stat-extra").textContent = world.extra ? "$" + world.extra.sprite.toString(16) : "\u2014";
+      const dd22El = $("stat-dd22");
+      dd22El.textContent = String(world.dd22);
+      const padEl = $("stat-pad");
+      padEl.textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "\u2014";
+      const tpEl = $("stat-teleport");
+      tpEl.textContent = teleportNameForRoom(blob.room) || "\u2014";
+      const msgEl = $("stat-message");
+      msgEl.textContent = world.message || "\u2014";
       gotoEl.value = String(blob.room);
       $("time").textContent = lastMs.toFixed(2) + " ms";
       $("avg").textContent = avgMs.toFixed(2) + " ms";
@@ -1172,7 +1918,7 @@
     }
     function draw() {
       const t0 = performance.now();
-      const anim = animationSet(blob);
+      const anim = animationSet(blob, world);
       renderWorld(prep, world, buf, imageData.data, blob.room, {
         items: true,
         overlay,
@@ -1200,11 +1946,16 @@
       } else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") {
         keys.right = true;
         ev.preventDefault();
-      } else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W" || ev.key === " ") {
+      } else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") {
         keys.up = true;
+        ev.preventDefault();
+      } else if (ev.key === " ") {
         ev.preventDefault();
       } else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") {
         keys.down = true;
+        ev.preventDefault();
+      } else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") {
+        keys.fire = true;
         ev.preventDefault();
       } else if (ev.key === "PageUp") {
         goRoom(moveRoom(blob.room, 0, -1));
@@ -1215,8 +1966,9 @@
     document.addEventListener("keyup", (ev) => {
       if (ev.key === "ArrowLeft" || ev.key === "a" || ev.key === "A") keys.left = false;
       else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") keys.right = false;
-      else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W" || ev.key === " ") keys.up = false;
+      else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") keys.up = false;
       else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") keys.down = false;
+      else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
     });
     $("go").addEventListener("click", () => goRoom(parseInt(gotoEl.value, 10) || 0));
     gotoEl.addEventListener("keydown", (ev) => {
@@ -1230,7 +1982,7 @@
       const id = parseHash();
       if (id !== null && id !== blob.room) goRoom(id);
     });
-    $("status").textContent = "50 Hz \xB7 \u0161ipky / WASD pohyb \xB7 mezern\xEDk skok \xB7 dol\u016F stav\xED plo\u0161inku";
+    $("status").textContent = "50 Hz \xB7 \u0161ipky / WASD pohyb \xB7 nahoru sebrat / nastoupit \xB7 dol\u016F plo\u0161inka \xB7 P/X palba \xB7 Left/Right na teleportu k\xF3d";
     fitScale();
     function frame(now) {
       acc += now - last;

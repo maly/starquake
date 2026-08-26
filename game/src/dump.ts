@@ -1,7 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { GAME_Y_ORIGIN } from "./constants";
 import { tickNasties } from "./entities";
-import { createWorld, spawnBlob, tick } from "./physics";
+import { itemGamePos } from "./items";
+import { evaluateTeleport, firstTeleport, lastStation, teleportNameForRoom } from "./objects";
+import { applyTeleport, createWorld, enterRoom, playYToGame, spawnBlob, tick } from "./physics";
+import { tickFire } from "./projectiles";
 import type { Entity } from "./types";
 import {
   HEIGHT,
@@ -40,6 +44,8 @@ function loadData(dir: string): Prepared {
   };
   const actorsPath = path.join(dir, "actors.json");
   if (fs.existsSync(actorsPath)) pack.actors = JSON.parse(fs.readFileSync(actorsPath, "utf8"));
+  const attrsPath = path.join(dir, "block_attrs.json");
+  if (fs.existsSync(attrsPath)) pack.blockAttrs = JSON.parse(fs.readFileSync(attrsPath, "utf8"));
   return prepare(pack);
 }
 
@@ -124,6 +130,254 @@ if (has("--enemy-trace")) {
     else tick(prep, blob, none, world);
   }
   process.stdout.write(JSON.stringify(out) + "\n");
+  process.exit(0);
+}
+
+if (has("--fire-trace")) {
+  const room = parseInt(arg("--room", "1"), 10);
+  const frames = parseInt(arg("--frames", "40"), 10);
+  const world = createWorld(prep, room);
+  world.entities = [];
+  world.nastyCount = 0;
+  const blob = spawnBlob(prep, room, world);
+  const initPath = arg("--fire-init", "");
+  if (initPath) {
+    const init = JSON.parse(fs.readFileSync(initPath, "utf8")) as {
+      blob?: { x: number; y: number };
+      aim?: number;
+      firepower?: number;
+    };
+    if (init.blob) {
+      blob.x = init.blob.x;
+      blob.y = GAME_Y_ORIGIN - init.blob.y;
+    }
+    if (init.aim) {
+      world.aim = init.aim;
+      blob.facing = init.aim === 2 ? -1 : 1;
+    }
+    if (init.firepower !== undefined) world.firepower = init.firepower;
+  }
+  const out = [];
+  for (let i = 0; i < frames; i++) {
+    tickFire(prep, blob, i === 0, world);
+    out.push({
+      frame: i,
+      x: world.bullet.x,
+      y: world.bullet.y,
+      fireDir: world.fireDir,
+      ptr: world.bullet.ptr,
+      firepower: world.firepower,
+    });
+    if (world.fireDir === 0 && i > 0) break;
+  }
+  process.stdout.write(JSON.stringify(out) + "\n");
+  process.exit(0);
+}
+
+if (has("--hit-test")) {
+  const world = createWorld(prep, 1);
+  const blob = spawnBlob(prep, 1, world);
+  world.entities = [
+    {
+      x: 80,
+      y: 80,
+      ink: 4,
+      set: "alien1",
+      frame: 0,
+      ptr: 0xb448,
+      basePtr: 0xb448,
+      dir: 2,
+      speedX: 2,
+      speedY: 2,
+      period: 1,
+      timer: 1,
+      state: 1,
+      stateTimer: 0,
+      ai: 6,
+      aiPeriod: 0x64,
+      aiCount: 0x64,
+      homeX: 80,
+      homeY: 80,
+    },
+  ];
+  world.nastyCount = 1;
+  world.fireDir = 1;
+  world.bullet.x = 80;
+  world.bullet.y = 80;
+  world.bullet.ptr = 0xe8b4;
+  tickNasties(prep, blob, world);
+  process.stdout.write(
+    JSON.stringify({
+      state: world.entities[0]!.state,
+      ptr: world.entities[0]!.ptr,
+      y: world.entities[0]!.y,
+      fireDir: world.fireDir,
+      bulletY: world.bullet.y,
+    }) + "\n",
+  );
+  process.exit(0);
+}
+
+if (has("--lift-test")) {
+  const room = parseInt(arg("--room", "422"), 10);
+  const frames = parseInt(arg("--frames", "16"), 10);
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  blob.x = parseInt(arg("--x", "72"), 10);
+  blob.y = GAME_Y_ORIGIN - parseInt(arg("--y", "81"), 10);
+  blob.fallIndex = 0;
+  blob.jumpTicks = 0;
+  const none = { left: false, right: false, up: false, down: false, fire: false };
+  const out = [];
+  for (let i = 0; i < frames; i++) {
+    out.push({
+      frame: i,
+      x: blob.x,
+      y: playYToGame(blob.y),
+      playY: blob.y,
+      dd22: world.dd22,
+      walkTick: blob.walkTick,
+    });
+    tick(prep, blob, none, world);
+  }
+  process.stdout.write(JSON.stringify({ room, station: world.station, frames: out }) + "\n");
+  process.exit(0);
+}
+
+if (has("--pad-test")) {
+  const room = parseInt(arg("--room", "15"), 10);
+  const frames = parseInt(arg("--frames", "8"), 10);
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  const station = lastStation(prep, room);
+  if (has("--board") && (station.x || station.y)) {
+    blob.x = station.x;
+    blob.y = GAME_Y_ORIGIN - station.y;
+    world.lastDir = 8;
+  }
+  const board = has("--board");
+  const fire = has("--fire");
+  const afterEnter = {
+    dd22: world.dd22,
+    nastyCount: world.nastyCount,
+    pad: world.pad ? { x: world.pad.x, y: world.pad.y, ptr: world.pad.ptr } : null,
+    station: world.station,
+  };
+  const out = [];
+  for (let i = 0; i < frames; i++) {
+    // Hold Up for the whole --board run so $DD24 bit 3 stays set. Right
+    // without Up on the station pixel is a dismount ($CEAD), which would
+    // park a pad shot before --fire could be observed.
+    const input = {
+      left: false,
+      right: has("--right"),
+      up: board,
+      down: false,
+      fire: fire && i === 1,
+    };
+    tick(prep, blob, input, world);
+    out.push({
+      frame: i,
+      x: blob.x,
+      y: playYToGame(blob.y),
+      dd22: world.dd22,
+      lastDir: world.lastDir,
+      pad: world.pad ? { x: world.pad.x, y: world.pad.y, ptr: world.pad.ptr } : null,
+      nastyCount: world.nastyCount,
+      fireDir: world.fireDir,
+      padShotDir: world.padShotDir,
+      bullet: { x: world.bullet.x, y: world.bullet.y, ptr: world.bullet.ptr },
+      firepower: world.firepower,
+    });
+  }
+  process.stdout.write(
+    JSON.stringify({
+      room,
+      station,
+      stations: prep.stationsByRoom?.[room] ?? [],
+      afterEnter,
+      frames: out,
+    }) + "\n",
+  );
+  process.exit(0);
+}
+
+if (has("--teleport-test")) {
+  const room = parseInt(arg("--room", "343"), 10);
+  const code = arg("--code", "VEROX");
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  const pad = firstTeleport(prep, room);
+  if (pad) {
+    blob.x = pad.x;
+    blob.y = GAME_Y_ORIGIN - pad.y;
+  }
+  const ev = evaluateTeleport(code, room);
+  const before = { room: blob.room, x: blob.x, y: playYToGame(blob.y), energy: world.energy, nastyCount: world.nastyCount };
+  const result = applyTeleport(prep, blob, world, code);
+  process.stdout.write(
+    JSON.stringify({
+      room,
+      code,
+      eval: ev,
+      ownName: teleportNameForRoom(room),
+      pad,
+      destPad: firstTeleport(prep, blob.room),
+      before,
+      result,
+      after: {
+        room: blob.room,
+        x: blob.x,
+        y: playYToGame(blob.y),
+        energy: world.energy,
+        nastyCount: world.nastyCount,
+        message: world.message,
+        platforms: world.slots.some((s) => s !== null),
+      },
+    }) + "\n",
+  );
+  process.exit(0);
+}
+
+if (has("--teleport-eval")) {
+  const room = parseInt(arg("--room", "343"), 10);
+  const code = arg("--code", "VEROX");
+  process.stdout.write(JSON.stringify(evaluateTeleport(code, room)) + "\n");
+  process.exit(0);
+}
+
+if (has("--collect-test")) {
+  const room = parseInt(arg("--room", "168"), 10);
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  const item = (prep.itemsByRoom[room] ?? []).find((it) => it.placed && it.sprite !== 0xff && !world.collected[it.index]);
+  if (!item) {
+    process.stdout.write(JSON.stringify({ error: "no item", room }) + "\n");
+    process.exit(1);
+  }
+  const pos = itemGamePos(item);
+  blob.x = pos.x;
+  blob.y = GAME_Y_ORIGIN - pos.y;
+  tick(prep, blob, { left: false, right: false, up: true, down: false, fire: false }, world);
+  const afterPick = {
+    index: item.index,
+    collected: world.collected[item.index],
+    inventory: world.inventory,
+    energy: world.energy,
+    platforms: world.platforms,
+    firepower: world.firepower,
+  };
+  enterRoom(prep, world, room === 0 ? 1 : 0);
+  enterRoom(prep, world, room);
+  process.stdout.write(
+    JSON.stringify({
+      afterPick,
+      afterReturn: {
+        collected: world.collected[item.index],
+        extra: world.extra,
+      },
+    }) + "\n",
+  );
   process.exit(0);
 }
 

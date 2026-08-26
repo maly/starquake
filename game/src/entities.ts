@@ -2,6 +2,7 @@ import {
   ANNOY_DRAIN_BUMP,
   APPEAR_FRAMES,
   APPEAR_GRAPHIC,
+  BULLET_HIT,
   COLS,
   DEAD_GRAPHIC,
   DIE_FRAMES,
@@ -17,7 +18,11 @@ import {
   GRAFIX_STRIDE,
   HIT_DX,
   HIT_DY,
+  HOVERPAD_INK,
+  HOVERPAD_PTR,
+  HOVERPAD_Y_BIAS,
   KILL_GRAPHIC_HI,
+  NASTY_COUNT_WITH_PAD,
   NASTY_EDGE_D,
   NASTY_EDGE_L,
   NASTY_EDGE_R,
@@ -30,7 +35,9 @@ import {
   ROWS,
   SPAWN_GUARD,
 } from "./constants";
+import { lastStation } from "./objects";
 import type { BlobState } from "./physics";
+import { parkBullet, shotFlying } from "./projectiles";
 import type { DacState, Entity, EntityCache, Prepared, World } from "./types";
 
 function cellAttr(world: World, col: number, row: number): number {
@@ -223,6 +230,66 @@ function applyContact(e: Entity, blob: BlobState, world: World): void {
   world.energyDrain = (world.energyDrain + ANNOY_DRAIN_BUMP) & 0xff;
 }
 
+/** Slot 4 GRAFIX: ptr $AFC8, ink 7, Y = blob/station Y − 8 ($9F64 / $C94D). */
+export function makePad(x: number, blobGameY: number): Entity {
+  const py = (blobGameY - HOVERPAD_Y_BIAS) & 0xff;
+  return {
+    x: x & 0xff,
+    y: py,
+    ink: HOVERPAD_INK,
+    set: "hoverpad",
+    frame: 0,
+    ptr: HOVERPAD_PTR,
+    basePtr: HOVERPAD_PTR,
+    dir: 0,
+    speedX: 0,
+    speedY: 0,
+    period: 1,
+    timer: 1,
+    state: 0,
+    stateTimer: 0,
+    ai: 0,
+    aiPeriod: 0,
+    aiCount: 0,
+    homeX: x & 0xff,
+    homeY: py,
+  };
+}
+
+/** $C94D copy pad from Blob after the vertical step (X lags one tick). */
+export function copyPadFromBlob(world: World, blob: BlobState): void {
+  world.pad = makePad(blob.x, GAME_Y_ORIGIN - blob.y);
+  world.nastyCount = NASTY_COUNT_WITH_PAD;
+}
+
+/** $9F49 station then $9F57 overwrite onto Blob when $DD22=2. */
+export function syncHoverpad(prep: Prepared, world: World, room: number, blob?: BlobState): void {
+  world.station = lastStation(prep, room);
+  if (world.station.x !== 0 || world.station.y !== 0) {
+    world.pad = makePad(world.station.x, world.station.y);
+    world.nastyCount = NASTY_COUNT_WITH_PAD;
+  } else if (world.dd22 !== 2) {
+    world.pad = null;
+  }
+  if (world.dd22 === 2 && blob) copyPadFromBlob(world, blob);
+}
+
+/** $A054 AABB vs $DDBD: |dx|<$0E |dy|<$0E → stars $BEC8, state 2, $C546. */
+function hitByBullet(e: Entity, world: World): void {
+  if (!shotFlying(world)) return;
+  if (e.state === 2) return;
+  if (e.state === 0 && e.stateTimer === 0) return;
+  const dx = Math.abs(e.x - world.bullet.x);
+  const dy = Math.abs(e.y - world.bullet.y);
+  if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
+  e.ptr = DEAD_GRAPHIC;
+  e.set = "stars";
+  e.ink = 7;
+  e.state = 2;
+  e.stateTimer = 0;
+  parkBullet(world);
+}
+
 function bounceH(e: Entity, world: World): void {
   if (e.x < NASTY_EDGE_L) {
     e.dir = (e.dir & 0xfc) | 1;
@@ -398,6 +465,7 @@ function stepMove(e: Entity, world: World): void {
 
 function stepOne(e: Entity, prep: Prepared, blob: BlobState, world: World, slot: number): void {
   if (e.y === 0) return;
+  hitByBullet(e, world);
   applyContact(e, blob, world);
   e.timer = (e.timer - 1) & 0xff;
   if (e.timer !== 0) return;

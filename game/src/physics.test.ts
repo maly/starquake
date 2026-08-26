@@ -1,19 +1,40 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ANIM_PERIOD, BLOB_H, BLOB_W, CELL, COLS, ROWS, WALK_PX, WALK_RIGHT_SETS } from "./constants";
+import {
+  ANIM_PERIOD,
+  BLOB_H,
+  BLOB_W,
+  CELL,
+  COLS,
+  DD22_LIFT,
+  DD22_PAD,
+  DD22_WALK,
+  HOVERPAD_PTR,
+  LIFT_ATTR,
+  LIFT_PX,
+  NASTY_COUNT_WITH_PAD,
+  ROWS,
+  WALK_PX,
+  WALK_RIGHT_SETS,
+} from "./constants";
 import {
   animationSet,
+  attrAt,
   blobInkPixels,
+  blocksBlob,
+  createWorld,
   footColumns,
+  gameYToPlay,
   onFloor,
   overlapsTerrain,
+  playYToGame,
   spawnBlob,
   supportY,
   tick,
   type BlobState,
 } from "./physics";
 import { isSolid, moveRoom } from "./render";
-import type { Graphic, Prepared, Room } from "./types";
+import type { Graphic, Hotspot, Prepared, Room } from "./types";
 
 function grid(draw: (solid: number[][], attr: number[][]) => void): Prepared {
   const solid = Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0));
@@ -120,6 +141,26 @@ describe("collision", () => {
     };
     assert.equal(onFloor(prep, 1, blob.x, blob.y), true);
     for (let i = 0; i < 20; i++) tick(prep, blob, { left: false, right: false, up: false });
+    assert.equal(blob.y, y);
+    assert.equal(blob.onGround, true);
+  });
+
+  it("does not hop on Up — $D09F uses Up for pickup", () => {
+    const prep = floorWorld();
+    const y = 12 * CELL - BLOB_H;
+    const blob: BlobState = {
+      room: 1,
+      x: 16,
+      y,
+      fallIndex: 0,
+      jumpTicks: 0,
+      facing: 1,
+      walkTick: 0,
+      walkFrame: 0,
+      onGround: true,
+    };
+    tick(prep, blob, { left: false, right: false, up: true });
+    assert.equal(blob.jumpTicks, 0);
     assert.equal(blob.y, y);
     assert.equal(blob.onGround, true);
   });
@@ -298,6 +339,187 @@ describe("isSolid", () => {
     assert.equal(isSolid(0x07), false);
     assert.equal(isSolid(0x64), false);
     assert.equal(isSolid(0xe4), true);
+  });
+});
+
+function idleInput() {
+  return { left: false, right: false, up: false, down: false, fire: false };
+}
+
+function withStations(prep: Prepared, room: number, spots: Hotspot[]): Prepared {
+  const stationsByRoom = Array.from({ length: 512 }, () => [] as Hotspot[]);
+  stationsByRoom[room] = spots;
+  return { ...prep, stationsByRoom };
+}
+
+describe("$64 lift $C71C / $C761", () => {
+  function liftShaft(): Prepared {
+    const prep = grid((solid) => {
+      for (let y = 0; y < ROWS; y++) {
+        solid[y]![8] = 1;
+        solid[y]![11] = 1;
+      }
+    });
+    for (const room of [prep.rooms[1]!]) {
+      for (let row = 0; row < ROWS; row++) {
+        for (const col of [9, 10]) {
+          room.attributes[row]![col] = LIFT_ATTR;
+          room.solid[row]![col] = 0;
+        }
+      }
+    }
+    return prep;
+  }
+
+  it("sets dd22=1 and raises game-Y by 2/tick; $64 is not overlay-solid or walk-solid", () => {
+    const prep = liftShaft();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 72;
+    blob.y = gameYToPlay(81);
+    blob.fallIndex = 0;
+    const sample = attrAt(prep, 1, 10, 8, world);
+    assert.equal(sample, LIFT_ATTR);
+    assert.equal(isSolid(sample), false);
+    assert.equal(blocksBlob(sample), false);
+    assert.equal(prep.rooms[1]!.solid[8]![10], 0);
+
+    const none = idleInput();
+    tick(prep, blob, none, world);
+    assert.equal(world.dd22, DD22_LIFT);
+    assert.equal(playYToGame(blob.y), 81 + LIFT_PX);
+    for (let i = 0; i < 6; i++) {
+      const y0 = playYToGame(blob.y);
+      tick(prep, blob, none, world);
+      assert.equal(world.dd22, DD22_LIFT, `tick ${i + 1} dropped the lift flag`);
+      assert.equal(playYToGame(blob.y), y0 + LIFT_PX);
+      assert.equal(blob.x, 72);
+    }
+  });
+
+  /**
+   * Room 249: $04 walls with a 2-row $44 opening (walkable). $D2F0 tests
+   * 3 attr rows when (Y+1)∧7 ≠ 0, so the $04 row below still holds $DD22.
+   * Idle ride continues through the exit; Left/Right on the opening walks off.
+   */
+  it("rides through a $44 side-exit unless Left/Right is held ($D2F0 3 rows)", () => {
+    const prep = grid((solid) => {
+      for (let y = 0; y < ROWS; y++) {
+        solid[y]![12] = 1;
+        solid[y]![15] = 1;
+      }
+    });
+    const room = prep.rooms[1]!;
+    for (let y = 0; y < ROWS; y++) {
+      room.attributes[y]![12] = 0x04;
+      room.attributes[y]![15] = 0x04;
+      room.attributes[y]![13] = LIFT_ATTR;
+      room.attributes[y]![14] = LIFT_ATTR;
+      room.solid[y]![13] = 0;
+      room.solid[y]![14] = 0;
+    }
+    for (const y of [4, 5]) {
+      room.attributes[y]![12] = 0x44;
+      room.attributes[y]![15] = 0x44;
+      room.solid[y]![12] = 0;
+      room.solid[y]![15] = 0;
+    }
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 104;
+    blob.y = 80;
+    blob.fallIndex = 0;
+    const none = idleInput();
+    tick(prep, blob, none, world);
+    assert.equal(world.dd22, DD22_LIFT);
+    for (let i = 0; i < 40 && blob.y > 24; i++) tick(prep, blob, none, world);
+    assert.ok(blob.y <= 24, `idle ride should pass the $44 opening, playY=${blob.y}`);
+    assert.equal(blob.x, 104);
+  });
+
+  it("does not lift when the sample cell is not $64", () => {
+    const prep = grid((solid) => {
+      for (let x = 0; x < COLS; x++) solid[12]![x] = 1;
+    });
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 72;
+    blob.y = gameYToPlay(81);
+    blob.fallIndex = 0;
+    assert.notEqual(attrAt(prep, 1, 10, 8, world), LIFT_ATTR);
+    tick(prep, blob, idleInput(), world);
+    assert.equal(world.dd22, DD22_WALK);
+    assert.notEqual(playYToGame(blob.y), 81 + LIFT_PX);
+  });
+
+  it("walk still blocks on attr < $40", () => {
+    assert.equal(blocksBlob(0x07), true);
+    assert.equal(blocksBlob(0x03), true);
+    assert.equal(blocksBlob(0x47), false);
+    assert.equal(blocksBlob(0x64), false);
+  });
+});
+
+describe("hoverpad $CEAD / $C967", () => {
+  it("boards on exact XY + lastDir bit 3, copies pad Y-8, nastyCount=3, flies +2 X", () => {
+    const station: Hotspot = { x: 72, y: 87 };
+    const prep = withStations(
+      grid(() => {
+        /* air */
+      }),
+      1,
+      [station],
+    );
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = station.x;
+    blob.y = gameYToPlay(station.y);
+    blob.fallIndex = 0;
+    assert.equal(world.nastyCount, NASTY_COUNT_WITH_PAD);
+    assert.equal(world.pad?.ptr, HOVERPAD_PTR);
+    assert.equal(world.pad?.y, station.y - 8);
+
+    tick(prep, blob, { ...idleInput(), up: true }, world);
+    assert.equal(world.dd22, DD22_PAD);
+    assert.equal(blob.x, station.x);
+    assert.equal(playYToGame(blob.y), station.y);
+    assert.equal(world.pad?.ptr, HOVERPAD_PTR);
+    assert.equal(world.pad?.y, playYToGame(blob.y) - 8);
+    assert.equal(world.nastyCount, NASTY_COUNT_WITH_PAD);
+
+    const x0 = blob.x;
+    tick(prep, blob, { ...idleInput(), up: true, right: true }, world);
+    assert.equal(world.dd22, DD22_PAD);
+    assert.equal(blob.x, x0 + 2);
+    assert.equal(world.pad?.y, playYToGame(blob.y) - 8);
+  });
+
+  it("dismounts at the station when lastDir has no Up", () => {
+    const station: Hotspot = { x: 72, y: 87 };
+    const prep = withStations(
+      grid((solid) => {
+        for (let y = 0; y < ROWS; y++) {
+          solid[y]![8] = 1;
+          solid[y]![11] = 1;
+        }
+        for (let x = 0; x < COLS; x++) {
+          solid[6]![x] = 1;
+          solid[9]![x] = 1;
+        }
+      }),
+      1,
+      [station],
+    );
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = station.x;
+    blob.y = gameYToPlay(station.y);
+    tick(prep, blob, { ...idleInput(), up: true }, world);
+    assert.equal(world.dd22, DD22_PAD);
+    tick(prep, blob, { ...idleInput(), right: true }, world);
+    assert.equal(world.dd22, DD22_WALK);
+    assert.equal(blob.x, station.x);
+    assert.equal(playYToGame(blob.y), station.y);
   });
 });
 

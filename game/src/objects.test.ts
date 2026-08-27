@@ -10,7 +10,7 @@ import {
   TELEPORT_TABLE,
 } from "./constants";
 import { evaluateTeleport, firstTeleport, hitKillTerrain, teleportNameForRoom, tickPulses } from "./objects";
-import { applyTeleport, attrAt, blocksBlob, createWorld, playYToGame, spawnBlob } from "./physics";
+import { applyTeleport, attrAt, blocksBlob, createWorld, playYToGame, spawnBlob, tick } from "./physics";
 import { prepare } from "./render";
 import { REPO_ROOT } from "./server";
 import type { GameData, Prepared } from "./types";
@@ -261,5 +261,89 @@ describe("kill terrain $06 AABB $CBBB", () => {
     assert.equal(hitKillTerrain(prep, blob), true, "dy=14 inside");
     blob.y = GAME_Y_ORIGIN - (hy - KILL_AABB);
     assert.equal(hitKillTerrain(prep, blob), false, "dy=15 outside");
+  });
+});
+
+/** $F0 / type $0F pairs: left room (right alcove) ↔ right room (left alcove). */
+const PASSAGE_ROOMS = [
+  41, 42, 51, 52, 61, 62, 121, 122, 154, 155, 157, 158, 192, 193, 194, 195, 236, 237, 241, 242, 361,
+  362,
+] as const;
+
+describe("horizontal passage $0F $D117", () => {
+  it("scanHotspots finds $F0 in 22 rooms including 61 and 236", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const found: number[] = [];
+    for (let id = 0; id < 512; id++) {
+      if ((prep.passagesByRoom?.[id] ?? []).length) found.push(id);
+    }
+    assert.deepEqual(found, [...PASSAGE_ROOMS]);
+    const a61 = prep.passagesByRoom![61]!;
+    assert.equal(a61.length, 1);
+    assert.equal(a61[0]!.x, 200);
+    assert.equal(a61[0]!.y, 0x57);
+    const a236 = prep.passagesByRoom![236]!;
+    assert.equal(a236.length, 1);
+    assert.equal(a236[0]!.x, 200);
+    assert.equal(a236[0]!.y, 0x27);
+  });
+
+  it("room 61 exact XY + Right reloads 62 and snaps to dest $0F", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 61);
+    const blob = spawnBlob(prep, 61, world);
+    blob.x = 200;
+    blob.y = GAME_Y_ORIGIN - 0x57;
+    world.sfx.length = 0;
+    tick(prep, blob, { left: false, right: true, up: false, down: false, fire: false }, world);
+    assert.equal(blob.room, 62);
+    assert.equal(blob.x, 40);
+    assert.equal(playYToGame(blob.y), 0x57);
+    assert.equal(world.d2c4, 0x05);
+    assert.ok(world.sfx.includes(0x04));
+    const dest = attrAt(prep, 62, blob.x >> 3, blob.y >> 3, world);
+    assert.equal(blocksBlob(dest), false, `dest attr=$${dest.toString(16)} walk-solid`);
+  });
+
+  it("room 62 exact XY + Left returns to 61 dest $0F", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 62);
+    const blob = spawnBlob(prep, 62, world);
+    blob.x = 40;
+    blob.y = GAME_Y_ORIGIN - 0x57;
+    tick(prep, blob, { left: true, right: false, up: false, down: false, fire: false }, world);
+    assert.equal(blob.room, 61);
+    assert.equal(blob.x, 200);
+    assert.equal(playYToGame(blob.y), 0x57);
+    assert.equal(world.d2c4, 0x05);
+  });
+
+  it("exact XY without Left/Right stays put", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 61);
+    const blob = spawnBlob(prep, 61, world);
+    blob.x = 200;
+    blob.y = GAME_Y_ORIGIN - 0x57;
+    tick(prep, blob, { left: false, right: false, up: false, down: false, fire: false }, world);
+    assert.equal(blob.room, 61);
+    assert.equal(blob.x, 200);
+    assert.equal(playYToGame(blob.y), 0x57);
+  });
+
+  it("walk that does not land on exact XY does not warp", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 61);
+    const blob = spawnBlob(prep, 61, world);
+    // X=196 + Right → 198, still 2px short of the $0F at 200.
+    blob.x = 196;
+    blob.y = GAME_Y_ORIGIN - 0x57;
+    tick(prep, blob, { left: false, right: true, up: false, down: false, fire: false }, world);
+    assert.equal(blob.room, 61);
+    assert.equal(blob.x, 198);
   });
 });

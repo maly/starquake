@@ -20,6 +20,7 @@ import {
   ITEM_ORIGIN_ROWS,
   KILL_AABB,
   KILL_ATTR_HI,
+  PASSAGE_ATTR_HI,
   PLAY_ORIGIN,
   PULSE_AABB_DX,
   PULSE_AABB_DY,
@@ -73,6 +74,7 @@ export interface HotspotScan {
   extraMarksByRoom: Array<Array<{ col: number; row: number }>>;
   doorsByRoom: Hotspot[][];
   socketsByRoom: SocketHotspot[][];
+  passagesByRoom: Hotspot[][];
 }
 
 function socketRoomId(slot: number): number {
@@ -92,7 +94,7 @@ function socketSlotForRoom(room: number): number {
 /**
  * Replicate $A90F / $AA02 from rooms + blocks + $9740 raw.
  * $C0 → $0C, $D0 → $0D, $60 → $06, $70 → $9635, $80 → $9620, $90 → $96CB,
- * raw $01–$0F → type $00 door, $B0 → type $0B socket.
+ * $F0 → $0F passage, raw $01–$0F → type $00 door, $B0 → type $0B socket.
  * Drawn attrs never hold those nibbles.
  */
 export function scanHotspots(
@@ -106,6 +108,7 @@ export function scanHotspots(
   const pulsesByRoom = emptyPulses();
   const fixedNastiesByRoom = emptyHotspots();
   const doorsByRoom = emptyHotspots();
+  const passagesByRoom = emptyHotspots();
   const socketsByRoom: SocketHotspot[][] = Array.from({ length: ROOM_COUNT }, () => []);
   const extraMarksByRoom: Array<Array<{ col: number; row: number }>> = Array.from(
     { length: ROOM_COUNT },
@@ -120,6 +123,7 @@ export function scanHotspots(
     extraMarksByRoom,
     doorsByRoom,
     socketsByRoom,
+    passagesByRoom,
   };
   if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
   for (const room of rooms) {
@@ -156,7 +160,8 @@ export function scanHotspots(
             else if (hi === CORE_SOCKET_ATTR_HI && sockSlot >= 0) {
               const hs = cellHotspot(col, row);
               socketsByRoom[id]!.push({ x: hs.x, y: hs.y, slot: sockSlot });
-            } else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
+            } else if (hi === PASSAGE_ATTR_HI) passagesByRoom[id]!.push(cellHotspot(col, row));
+            else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
               doorsByRoom[id]!.push(cellHotspot(col, row));
             }
           }
@@ -183,6 +188,12 @@ export function lastStation(prep: Prepared, room: number): Hotspot {
 
 export function firstTeleport(prep: Prepared, room: number): Hotspot | null {
   const list = prep.teleportsByRoom?.[room];
+  return list?.[0] ?? null;
+}
+
+/** First $0F in $96FC order — $A4E5 scans $96FE for type $0F. */
+export function firstPassage(prep: Prepared, room: number): Hotspot | null {
+  const list = prep.passagesByRoom?.[room];
   return list?.[0] ?? null;
 }
 
@@ -400,9 +411,9 @@ export function tryClearSocket(prep: Prepared, blob: BlobState, world: World): b
 }
 
 /**
- * $CB8A types $06 / $00 / $0B / $0C / $0D.
- * $06 AABB; $00 exact + L|R door; $0B AABB + tool `$10`; $0C/$0D as before.
- * Returns `"$06"`, `"$00"` (door handled), a teleport code, or null.
+ * $CB8A types $06 / $00 / $0B / $0C / $0D / $0F.
+ * $06 AABB; $00/$0F exact + L|R; $0B AABB + tool `$10`; $0C/$0D as before.
+ * Returns `"$06"`, `"$00"`, `"$0D"`, `"$0F"`, or null.
  */
 export function walkSpecialObjects(
   prep: Prepared,
@@ -441,6 +452,12 @@ export function walkSpecialObjects(
     if (!exactAt(blob, t.x, t.y)) continue;
     // 5-char keyboard input via overlay (`$D5C8`), not window.prompt.
     return "$0D";
+  }
+
+  const passages = prep.passagesByRoom?.[blob.room] ?? [];
+  for (const p of passages) {
+    if (!exactAt(blob, p.x, p.y)) continue;
+    return "$0F";
   }
   return null;
 }

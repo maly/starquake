@@ -279,6 +279,9 @@ var DOOR_SINGLE_WILDCARD = 14;
 var DOOR_DIGIT_MIN = 9;
 var DOOR_MSG_OK = "ACCESS AUTHORISED";
 var DOOR_MSG_BAD = "ACCESS CODE INVALID";
+var PASSAGE_ATTR_HI = 240;
+var PASSAGE_REASON = 5;
+var PASSAGE_SFX = 4;
 var CORE_ROOM = 199;
 var CORE_NEIGHBOR = 198;
 var CORE_EJECT_X = 240;
@@ -543,6 +546,7 @@ function scanHotspots(rooms, blocks, rawBySub) {
   const pulsesByRoom = emptyPulses();
   const fixedNastiesByRoom = emptyHotspots();
   const doorsByRoom = emptyHotspots();
+  const passagesByRoom = emptyHotspots();
   const socketsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
   const extraMarksByRoom = Array.from(
     { length: ROOM_COUNT },
@@ -556,7 +560,8 @@ function scanHotspots(rooms, blocks, rawBySub) {
     fixedNastiesByRoom,
     extraMarksByRoom,
     doorsByRoom,
-    socketsByRoom
+    socketsByRoom,
+    passagesByRoom
   };
   if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
   for (const room2 of rooms) {
@@ -593,7 +598,8 @@ function scanHotspots(rooms, blocks, rawBySub) {
             else if (hi === CORE_SOCKET_ATTR_HI && sockSlot >= 0) {
               const hs = cellHotspot(col, row);
               socketsByRoom[id].push({ x: hs.x, y: hs.y, slot: sockSlot });
-            } else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
+            } else if (hi === PASSAGE_ATTR_HI) passagesByRoom[id].push(cellHotspot(col, row));
+            else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
               doorsByRoom[id].push(cellHotspot(col, row));
             }
           }
@@ -617,6 +623,10 @@ function lastStation(prep2, room2) {
 }
 function firstTeleport(prep2, room2) {
   const list = prep2.teleportsByRoom?.[room2];
+  return list?.[0] ?? null;
+}
+function firstPassage(prep2, room2) {
+  const list = prep2.passagesByRoom?.[room2];
   return list?.[0] ?? null;
 }
 function teleportNameForRoom(room2) {
@@ -797,6 +807,11 @@ function walkSpecialObjects(prep2, blob, input, world) {
   for (const t of pads) {
     if (!exactAt(blob, t.x, t.y)) continue;
     return "$0D";
+  }
+  const passages = prep2.passagesByRoom?.[blob.room] ?? [];
+  for (const p of passages) {
+    if (!exactAt(blob, p.x, p.y)) continue;
+    return "$0F";
   }
   return null;
 }
@@ -1727,7 +1742,8 @@ function prepare(data) {
     fixedNastiesByRoom,
     extraMarksByRoom,
     doorsByRoom,
-    socketsByRoom
+    socketsByRoom,
+    passagesByRoom
   } = hotspotsFromData(data, rooms, blocks);
   return {
     graphics,
@@ -1744,7 +1760,8 @@ function prepare(data) {
     fixedNastiesByRoom,
     extraMarksByRoom,
     doorsByRoom,
-    socketsByRoom
+    socketsByRoom,
+    passagesByRoom
   };
 }
 function newBuffers() {
@@ -3146,6 +3163,10 @@ function tick(prep2, blob, input, world) {
     world.ui = beginTeleportUi(blob.room, world);
     return;
   }
+  if (code === "$0F") {
+    applyPassage(prep2, blob, world, { left: !!input.left, right: !!input.right });
+    return;
+  }
   if (world.energy === 0) {
     applyDeath(prep2, blob, world, DEATH_A_ENERGY);
     return;
@@ -3324,6 +3345,21 @@ function applySecurityDoor(prep2, blob, world, ok, input) {
     reason: DOOR_REASON,
     message: world.message
   };
+}
+function applyPassage(prep2, blob, world, input) {
+  const next = blob.room + (input.right ? 1 : -1);
+  if (next >= 0 && next < ROOM_COUNT) blob.room = next;
+  requestSfx(world, PASSAGE_SFX);
+  world.d2c4 = PASSAGE_REASON;
+  enterRoom(prep2, world, blob.room, { blob });
+  const pad = firstPassage(prep2, blob.room);
+  if (pad) {
+    blob.x = pad.x;
+    blob.y = gameYToPlay(pad.y);
+  }
+  syncHoverpad(prep2, world, blob.room, blob);
+  saveEntry(world, blob);
+  return { room: blob.room, x: blob.x, y: playYToGame(blob.y), reason: PASSAGE_REASON };
 }
 function platformCol(x) {
   return (x + PLATFORM_X_BIAS & 248) >> 3;
@@ -3854,6 +3890,41 @@ if (has("--door-test")) {
         message: world.message,
         nastyCount: world.nastyCount,
         shifted: blob.x === (before.x + DOOR_SHIFT_X & 255)
+      }
+    }) + "\n"
+  );
+  process.exit(0);
+}
+if (has("--passage-test")) {
+  const room2 = parseInt(arg("--room", "61"), 10);
+  const dir = arg("--dir", "right");
+  const world = createWorld(prep, room2);
+  const blob = spawnBlob(prep, room2, world);
+  const src = firstPassage(prep, room2);
+  if (!src) {
+    process.stdout.write(JSON.stringify({ error: "no $0F", room: room2 }) + "\n");
+    process.exit(1);
+  }
+  blob.x = src.x;
+  blob.y = GAME_Y_ORIGIN - src.y;
+  const right = dir !== "left";
+  const before = { room: blob.room, x: blob.x, y: playYToGame(blob.y), nastyCount: world.nastyCount };
+  const result = applyPassage(prep, blob, world, { left: !right, right });
+  process.stdout.write(
+    JSON.stringify({
+      room: room2,
+      dir,
+      src,
+      dest: firstPassage(prep, blob.room),
+      before,
+      result,
+      after: {
+        room: blob.room,
+        x: blob.x,
+        y: playYToGame(blob.y),
+        d2c4: world.d2c4,
+        sfx: world.sfx,
+        nastyCount: world.nastyCount
       }
     }) + "\n"
   );

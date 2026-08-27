@@ -104,6 +104,8 @@ export interface Prepared {
   extraMarksByRoom?: Array<Array<{ col: number; row: number }>>;
   /** Type $00 security doors from raw $01–$0F (not nibble $80). */
   doorsByRoom?: Hotspot[][];
+  /** Type $0F horizontal passages from nibble $F0. */
+  passagesByRoom?: Hotspot[][];
   /** Type $0B / nibble $B0 sockets; slot indexes into `$95F0`. */
   socketsByRoom?: SocketHotspot[][];
 }

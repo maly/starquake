@@ -20,7 +20,7 @@ import { beginCoreCeremony, deliverCoreParts, matchCoreDeliveries } from "../cor
 import { tickNasties } from "../entities";
 import { applyExtra, itemGamePos, tickPickup } from "../items";
 import { tryClearSocket } from "../objects";
-import { applyDeath, createWorld, spawnBlob, tick } from "../physics";
+import { applyDeath, applyPassage, createWorld, spawnBlob, tick } from "../physics";
 import { tickFire } from "../projectiles";
 import type { Entity, Item, Prepared, Room } from "../types";
 import {
@@ -209,6 +209,18 @@ describe("sfx hooks", () => {
     fail.buffer = "NOPEE";
     finishTeleportInput(fail, 40, world);
     assert.ok(world.sfx.includes(0x0f));
+  });
+
+  it("applyPassage queues $04", () => {
+    const prep = grid();
+    prep.passagesByRoom = Array.from({ length: 512 }, () => []);
+    prep.passagesByRoom[2] = [{ x: 40, y: 80 }];
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    applyPassage(prep, blob, world, { left: false, right: true });
+    assert.ok(world.sfx.includes(0x04));
+    assert.equal(blob.room, 2);
+    assert.equal(blob.x, 40);
   });
 
   it("tryClearSocket success queues $08", () => {

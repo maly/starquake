@@ -225,7 +225,7 @@ Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA=
 | `$0C` | `$CE82` | pad `$CEAD` | implementováno jinde |
 | `$0D` | `$CE82` | teleport `$CEC4` | implementováno jinde |
 | `$0E` | `$DD29==$10` a stejné Y, jinak `$D1A6` | stroj na plošinky; **ne** refill `$D2CE` | mimo rozsah |
-| `$0F` | `$DD23 ∧ $03 ≠ 0`, jinak `$D1A6` | místnost ±1 (`A=$05` RET) | mimo rozsah |
+| `$0F` | `$DD23 ∧ $03 ≠ 0`, jinak `$D1A6` | místnost ±1 (`A=$05` RET) | implementováno |
 | `$02`–`$05`, `$0A`, `$10`–`$13` | `CP $14` C | no-op `$D1A6` | no-op |
 | `$14`+ | `$DD31==$01`, jinak `$D1A6` | inventář `$D1CA`, byte1=`$01` | implementováno |
 | 1. tick Up bez `$14+` | `$D1B3` | vsune prázdný slot `00 00` | mimo rozsah |
@@ -259,11 +259,15 @@ Meze: E/P/F strop `$7F` (`$D469`); dolní mez 0 jen `$D4E9` (ne tato cesta). Ži
 | `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář (staty beze změny); jádrové ID v `$D2DE` |
 | `$FF` | prázdný záznam | ignorovat |
 
-Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport, `$00` security door, `$0B` socket `$B0`, rostlina `$06`. Není: `$0E` stroj na plošinky, `$0F` vodorovný přechod (room±1).
+Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport, `$00` security door, `$0B` socket `$B0`, rostlina `$06`, `$0F` vodorovný přechod (room±1). Není: `$0E` stroj na plošinky.
 
 ## Security doors (`$00`)
 
 Raw `$9740` `$01`–`$0F` (hi nibble 0) → typ `$00` v `$96FC`. **Není** nibble `$80` (to je `$9F05` pevný spawn). Subs `$25`/`$26` (raw `$04`/`$06`). Exact XY + Left\|Right: otevře se, když inventář drží **tři digit-sprity** kódu (multiset, `$D693`) **nebo** univerzální `$0F` (případně jedno `$0E`). **Bez promptu** — požadované sprity ukáže panel vieweru. Seed kódu `$D2C6=$7B78` ⊕ room.lo ⊕ `BC=$110B` → 3× `$09`–`$0D`. Úspěch: X ±`$30` (bit0 Right), Y snap, `$D2C4=$03`, reload bez respawnu vetřelců. Žádný persistentní „opened“. Zeď = `$D2F0` `attr<$40`. Místnosti: 176, 187, 200, 210, 265, 352, 362, 429. Rozbor: [`notes/security-doors.md`](notes/security-doors.md).
+
+## Tajné průchody (`$0F`)
+
+Nibble `$F0` v `$9740` (`raw=$F5` podbloky 43/44) → typ `$0F` v `$96FC`. Vypadá jako slepá chodba: zeď `$05`/`$03` zůstává, hotspot je `$47` ve výklenku. Exact XY + Left\|Right (`$D11B`). Bit0 Right → `$D2C8++`, jinak `--`. Zvuk `$04`. `A=$05` → `$A52A` / `$A426`. `$A4DF` v nové místnosti najde typ `$0F` a snapne XY. Vetřelci se spawnují (`$A51C` skip jen při `$03`). Chybný směr do místnosti bez `$0F` nechá XY (ROM by četl odpad za `$96FC`). 22 místností, 11 párů: 41↔42, 51↔52, 61↔62, 121↔122, 154↔155, 157↔158, 192↔193, 194↔195, 236↔237, 241↔242, 361↔362. Příklad `#61` (200, `$57`) Right → `#62` (40, `$57`).
 
 ## Jádro (`$C7`) / `$C6` / `$B0`
 
@@ -303,13 +307,13 @@ ROM `$A523`: `$C5BD` (chůze/zdviž/pad → palba → východ `$C8F4` nebo `$CB5
 3. palba Blob `$C85A` / pad `$CA15`
 4. úbytek energie `$CB58`
 5. sběr extra / `$94E8`
-6. objekty `$06` / `$00` / `$0B` / `$0C` / `$0D` (door/teleport skip zbytku)
+6. objekty `$06` / `$00` / `$0B` / `$0C` / `$0D` / `$0F` (door/teleport/passage skip zbytku)
 7. `energy==0` → `applyDeath(A=2)`; smrt / game over končí tick
 8. puls `$70` + AABB
 9. vetřelci `$A01B` (kontakt může `applyDeath`)
 10. východ z místnosti (park střely v `enterRoom`; doručení `$A6C1` při vstupu do `$C7`)
 
-Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Drain je před vetřelci, takže obtěžující bump `$0A` v tomtéž ticku neprojde wrap `$78`.
+Platný teleport / `$0F` v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Drain je před vetřelci, takže obtěžující bump `$0A` v tomtéž ticku neprojde wrap `$78`.
 
 ## Dočasné hodnoty
 
@@ -413,7 +417,7 @@ Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839
 | `$01` | `00 7F FE 00 01` | extra energie `$11`–`$13` |
 | `$02` | `C5 C4 03 01 C1` | extra plošinky `$14` |
 | `$03` | `01 7F 7F 01 41` | extra palba `$15`/`$16`; díl jádra `$A715` |
-| `$04` | `01 14 FF 01 41` | místnost ±1 `$0F` (mimo engine) |
+| `$04` | `01 14 FF 01 41` | místnost ±1 `$0F` |
 | `$05` | `28 22 01 7F FF` | v tabulce, žádný CALL |
 | `$06` | `32 38 FE 05 C3` | v tabulce, žádný CALL |
 | `$07` | `F0 F1 28 01 DE` | teleport overlay |
@@ -451,6 +455,7 @@ Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839
 | `feedTeleportKey` přijatý znak | `$11` |
 | `finishTeleportInput` OK | `$10` pak `$09` |
 | `finishTeleportInput` fail | `$0F` |
+| `applyPassage` | `$04` |
 | `tryClearSocket` true | `$08` |
 | `matchCoreDeliveries` za díl | `$03` |
 | `beginCoreCeremony` | `$14`/`$15` z `dac0∧1` |

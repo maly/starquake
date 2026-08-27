@@ -187,6 +187,10 @@ async function boot(): Promise<void> {
     $("stat-dd22").textContent = String(world.dd22);
     $("stat-pad").textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "—";
     $("stat-teleport").textContent = teleportNameForRoom(blob.room) || "—";
+    const passage = prep.passagesByRoom?.[blob.room]?.[0];
+    $("stat-passage").textContent = passage
+      ? `${passage.x},${passage.y}  L→${blob.room - 1}  R→${blob.room + 1}`
+      : "—";
     const doorEl = $("stat-door");
     const doors = prep.doorsByRoom?.[blob.room] ?? [];
     if (doors.length) {

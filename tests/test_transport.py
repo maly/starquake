@@ -156,3 +156,20 @@ def test_pad_board_fly_fire() -> None:
         flying = nxt["padShotDir"] != 0 or abs(nxt["bullet"]["x"] - shot["bullet"]["x"]) == PAD_SHOT_PX
     assert flying, shot
     assert shot["fireDir"] == 0 or shot["padShotDir"] != 0
+
+
+def test_passage_61_right_to_62() -> None:
+    payload = _run_dump("--passage-test", "--room", "61", "--dir", "right")
+    assert payload["after"]["room"] == 62, payload
+    assert payload["after"]["x"] == 40, payload
+    assert payload["after"]["y"] == 0x57, payload
+    assert payload["after"]["d2c4"] == 0x05, payload
+    assert 0x04 in payload["after"]["sfx"], payload
+
+
+def test_passage_62_left_to_61() -> None:
+    payload = _run_dump("--passage-test", "--room", "62", "--dir", "left")
+    assert payload["after"]["room"] == 61, payload
+    assert payload["after"]["x"] == 200, payload
+    assert payload["after"]["y"] == 0x57, payload
+    assert payload["after"]["d2c4"] == 0x05, payload

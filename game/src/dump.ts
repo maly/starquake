@@ -19,11 +19,13 @@ import { itemGamePos } from "./items";
 import {
   expectedDoorCode,
   evaluateTeleport,
+  firstPassage,
   firstTeleport,
   lastStation,
   teleportNameForRoom,
 } from "./objects";
 import {
+  applyPassage,
   applyTeleport,
   createWorld,
   enterRoom,
@@ -517,6 +519,42 @@ if (has("--door-test")) {
         message: world.message,
         nastyCount: world.nastyCount,
         shifted: blob.x === ((before.x + DOOR_SHIFT_X) & 0xff),
+      },
+    }) + "\n",
+  );
+  process.exit(0);
+}
+
+if (has("--passage-test")) {
+  const room = parseInt(arg("--room", "61"), 10);
+  const dir = arg("--dir", "right");
+  const world = createWorld(prep, room);
+  const blob = spawnBlob(prep, room, world);
+  const src = firstPassage(prep, room);
+  if (!src) {
+    process.stdout.write(JSON.stringify({ error: "no $0F", room }) + "\n");
+    process.exit(1);
+  }
+  blob.x = src.x;
+  blob.y = GAME_Y_ORIGIN - src.y;
+  const right = dir !== "left";
+  const before = { room: blob.room, x: blob.x, y: playYToGame(blob.y), nastyCount: world.nastyCount };
+  const result = applyPassage(prep, blob, world, { left: !right, right });
+  process.stdout.write(
+    JSON.stringify({
+      room,
+      dir,
+      src,
+      dest: firstPassage(prep, blob.room),
+      before,
+      result,
+      after: {
+        room: blob.room,
+        x: blob.x,
+        y: playYToGame(blob.y),
+        d2c4: world.d2c4,
+        sfx: world.sfx,
+        nastyCount: world.nastyCount,
       },
     }) + "\n",
   );

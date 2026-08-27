@@ -66,6 +66,8 @@ import {
   DOOR_MSG_OK,
   DOOR_REASON,
   DOOR_SHIFT_X,
+  PASSAGE_REASON,
+  PASSAGE_SFX,
   SCORE_FIRST_VISIT,
   TELEPORT_INVALID_REASON,
   TELEPORT_MSG_BAD,
@@ -82,6 +84,7 @@ import { copyPadFromBlob, enterNasties, syncHoverpad, tickEnergyDrain, tickNasti
 import { spawnExtra, tickPickup } from "./items";
 import {
   evaluateTeleport,
+  firstPassage,
   firstTeleport,
   makePulses,
   onStationPixel,
@@ -670,8 +673,8 @@ function applyWalk(
 }
 
 /**
- * Walk/lift/pad → platforms → fire → drain → pickup → $0C/$0D/$06 → energy 0 →
- * $70 pulse → nasties → room exit. Teleport and death skip the rest of the tick.
+ * Walk/lift/pad → platforms → fire → drain → pickup → $0C/$0D/$0F/$06 → energy 0 →
+ * $70 pulse → nasties → room exit. Teleport, passage and death skip the rest of the tick.
  */
 export function tick(prep: Prepared, blob: BlobState, input: Input, world?: World): void {
   if (world?.gameOver) return;
@@ -745,6 +748,10 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
   if (code === "$0D") {
     world.teleportLatch = true;
     world.ui = beginTeleportUi(blob.room, world);
+    return;
+  }
+  if (code === "$0F") {
+    applyPassage(prep, blob, world, { left: !!input.left, right: !!input.right });
     return;
   }
 
@@ -971,6 +978,38 @@ export function applySecurityDoor(
     reason: DOOR_REASON,
     message: world.message,
   };
+}
+
+export interface PassageResult {
+  room: number;
+  x: number;
+  y: number;
+  reason: number;
+}
+
+/**
+ * `$D117`: bit0 Right → `$D2C8++` else `--`; sfx `$04`; `$D2C4=$05`;
+ * `$A4DF` snaps XY to the dest room's type `$0F`. Nasties respawn (`$A51C` is `$03` only).
+ */
+export function applyPassage(
+  prep: Prepared,
+  blob: BlobState,
+  world: World,
+  input: { left: boolean; right: boolean },
+): PassageResult {
+  const next = blob.room + (input.right ? 1 : -1);
+  if (next >= 0 && next < ROOM_COUNT) blob.room = next;
+  requestSfx(world, PASSAGE_SFX);
+  world.d2c4 = PASSAGE_REASON;
+  enterRoom(prep, world, blob.room, { blob });
+  const pad = firstPassage(prep, blob.room);
+  if (pad) {
+    blob.x = pad.x;
+    blob.y = gameYToPlay(pad.y);
+  }
+  syncHoverpad(prep, world, blob.room, blob);
+  saveEntry(world, blob);
+  return { room: blob.room, x: blob.x, y: playYToGame(blob.y), reason: PASSAGE_REASON };
 }
 
 export function platformCol(x: number): number {

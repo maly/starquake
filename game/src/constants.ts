@@ -468,6 +468,15 @@ export const DOOR_MSG_TITLE = "SECURITY  DOOR";
 export const DOOR_MSG_OK = "ACCESS AUTHORISED";
 export const DOOR_MSG_BAD = "ACCESS CODE INVALID";
 
+/** $96FC type $0F from nibble $F0. Exact XY + L|R → room ±1, $D2C4=$05. */
+export const PASSAGE_TYPE = 0x0f;
+export const PASSAGE_ATTR_HI = 0xf0;
+export const PASSAGE_INPUT_MASK = 0x03;
+/** $D136 LD A,$05 / $A52A. $A51C skips $9C47 only for $03, so 5 respawns. */
+export const PASSAGE_REASON = 0x05;
+/** $D131 LD A,$04 / CALL $D7C0. */
+export const PASSAGE_SFX = 0x04;
+
 /** Room $C7 core / neighbour $C6. */
 export const CORE_ROOM = 0xc7;
 export const CORE_NEIGHBOR = 0xc6;

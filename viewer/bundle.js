@@ -590,6 +590,9 @@
   var DOOR_DIGIT_MIN = 9;
   var DOOR_MSG_OK = "ACCESS AUTHORISED";
   var DOOR_MSG_BAD = "ACCESS CODE INVALID";
+  var PASSAGE_ATTR_HI = 240;
+  var PASSAGE_REASON = 5;
+  var PASSAGE_SFX = 4;
   var CORE_ROOM = 199;
   var CORE_NEIGHBOR = 198;
   var CORE_EJECT_X = 240;
@@ -847,6 +850,7 @@
     const pulsesByRoom = emptyPulses();
     const fixedNastiesByRoom = emptyHotspots();
     const doorsByRoom = emptyHotspots();
+    const passagesByRoom = emptyHotspots();
     const socketsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
     const extraMarksByRoom = Array.from(
       { length: ROOM_COUNT },
@@ -860,7 +864,8 @@
       fixedNastiesByRoom,
       extraMarksByRoom,
       doorsByRoom,
-      socketsByRoom
+      socketsByRoom,
+      passagesByRoom
     };
     if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
     for (const room of rooms) {
@@ -897,7 +902,8 @@
               else if (hi === CORE_SOCKET_ATTR_HI && sockSlot >= 0) {
                 const hs = cellHotspot(col, row);
                 socketsByRoom[id].push({ x: hs.x, y: hs.y, slot: sockSlot });
-              } else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
+              } else if (hi === PASSAGE_ATTR_HI) passagesByRoom[id].push(cellHotspot(col, row));
+              else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
                 doorsByRoom[id].push(cellHotspot(col, row));
               }
             }
@@ -921,6 +927,10 @@
   }
   function firstTeleport(prep, room) {
     const list = prep.teleportsByRoom?.[room];
+    return list?.[0] ?? null;
+  }
+  function firstPassage(prep, room) {
+    const list = prep.passagesByRoom?.[room];
     return list?.[0] ?? null;
   }
   function teleportNameForRoom(room) {
@@ -1101,6 +1111,11 @@
     for (const t of pads) {
       if (!exactAt(blob, t.x, t.y)) continue;
       return "$0D";
+    }
+    const passages = prep.passagesByRoom?.[blob.room] ?? [];
+    for (const p of passages) {
+      if (!exactAt(blob, p.x, p.y)) continue;
+      return "$0F";
     }
     return null;
   }
@@ -2031,7 +2046,8 @@
       fixedNastiesByRoom,
       extraMarksByRoom,
       doorsByRoom,
-      socketsByRoom
+      socketsByRoom,
+      passagesByRoom
     } = hotspotsFromData(data, rooms, blocks);
     return {
       graphics,
@@ -2048,7 +2064,8 @@
       fixedNastiesByRoom,
       extraMarksByRoom,
       doorsByRoom,
-      socketsByRoom
+      socketsByRoom,
+      passagesByRoom
     };
   }
   function newBuffers() {
@@ -3603,6 +3620,10 @@
       world.ui = beginTeleportUi(blob.room, world);
       return;
     }
+    if (code === "$0F") {
+      applyPassage(prep, blob, world, { left: !!input2.left, right: !!input2.right });
+      return;
+    }
     if (world.energy === 0) {
       applyDeath(prep, blob, world, DEATH_A_ENERGY);
       return;
@@ -3781,6 +3802,21 @@
       reason: DOOR_REASON,
       message: world.message
     };
+  }
+  function applyPassage(prep, blob, world, input2) {
+    const next = blob.room + (input2.right ? 1 : -1);
+    if (next >= 0 && next < ROOM_COUNT) blob.room = next;
+    requestSfx(world, PASSAGE_SFX);
+    world.d2c4 = PASSAGE_REASON;
+    enterRoom(prep, world, blob.room, { blob });
+    const pad = firstPassage(prep, blob.room);
+    if (pad) {
+      blob.x = pad.x;
+      blob.y = gameYToPlay(pad.y);
+    }
+    syncHoverpad(prep, world, blob.room, blob);
+    saveEntry(world, blob);
+    return { room: blob.room, x: blob.x, y: playYToGame(blob.y), reason: PASSAGE_REASON };
   }
   function platformCol(x) {
     return (x + PLATFORM_X_BIAS & 248) >> 3;
@@ -4346,6 +4382,8 @@
       $("stat-dd22").textContent = String(world.dd22);
       $("stat-pad").textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "\u2014";
       $("stat-teleport").textContent = teleportNameForRoom(blob.room) || "\u2014";
+      const passage = prep.passagesByRoom?.[blob.room]?.[0];
+      $("stat-passage").textContent = passage ? `${passage.x},${passage.y}  L\u2192${blob.room - 1}  R\u2192${blob.room + 1}` : "\u2014";
       const doorEl = $("stat-door");
       const doors = prep.doorsByRoom?.[blob.room] ?? [];
       if (doors.length) {

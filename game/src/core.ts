@@ -14,6 +14,7 @@ import {
   GAME_Y_ORIGIN,
   SCORE_CORE_DELIVER,
 } from "./constants";
+import { requestSfx } from "./audio/effects";
 import { spawnCoreGuardians } from "./entities";
 import { composeEndResult, addScore } from "./score";
 import type { BlobState } from "./physics";
@@ -59,6 +60,7 @@ export function matchCoreDeliveries(world: World): number {
         world.corePairs = (world.corePairs + 1) & 0xff;
       }
       delivered += 1;
+      requestSfx(world, 0x03);
     }
   }
   return delivered;
@@ -75,6 +77,7 @@ export function beginCoreCeremony(world: World): void {
   spawnCoreGuardians(world);
   world.corePhase = "ceremony";
   world.coreTicks = 0;
+  requestSfx(world, 0x14 + (world.dac.dac0 & 1));
 }
 
 export function ejectToCoreNeighbor(blob: BlobState, world: World, enter: (room: number) => void): void {
@@ -103,6 +106,7 @@ export function deliverCoreParts(
   if (world.corePhase === "ceremony") return "ceremony";
   matchCoreDeliveries(world);
   if (world.corePairs >= CORE_VICTORY_PAIRS) {
+    if (!world.gameOver) requestSfx(world, 0x11);
     world.blobHidden = false;
     world.corePhase = null;
     composeEndResult(world, true, CORES_COMPLETE_MSG);

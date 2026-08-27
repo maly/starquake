@@ -92,6 +92,15 @@ import {
 import { parkBullet, parkedBullet, tickFire, tickPadFire } from "./projectiles";
 import { composeTiles, moveRoom, newBuffers } from "./render";
 import {
+  beginDoorUi,
+  beginTeleportUi,
+  idleUi,
+  isUiBlocking,
+  syncWorldMessage,
+  tickDoorUi,
+  tickTeleportUi,
+} from "./ui/overlay";
+import {
   a390Unvisited,
   addScore,
   clearA390Bit,
@@ -99,6 +108,7 @@ import {
   freshA390,
   zeroScore,
 } from "./score";
+import { requestSfx, SFX_STEP_INIT } from "./audio/effects";
 import type { Entity, Graphic, Prepared, World } from "./types";
 
 export interface Input {
@@ -470,6 +480,8 @@ export function applyDeath(prep: Prepared, blob: BlobState, world: World, a: num
   world.blobInk = BLOB_INK;
   parkBullet(world);
   parkDeathSlots(world);
+  requestSfx(world, 0x13);
+  if (((a & 0xff) & 7) === 2) requestSfx(world, 0x0f);
 }
 
 function applyRoomExit(
@@ -609,6 +621,10 @@ function applyWalk(
   if (blob.walkTick >= ANIM_PERIOD) {
     blob.walkTick = 0;
     blob.walkFrame = (blob.walkFrame + 1) & 3;
+    if (world && world.dd22 === DD22_WALK) {
+      world.sfxStep ^= 0x01;
+      requestSfx(world, world.sfxStep);
+    }
   }
 
   const onStation = world ? onStationPixel(blob, world) : false;
@@ -674,6 +690,12 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
     return;
   }
 
+  if (world && isUiBlocking(world.ui)) {
+    world.frames = (world.frames + 1) >>> 0;
+    tickOverlay(prep, blob, world);
+    return;
+  }
+
   if (world) world.frames = (world.frames + 1) >>> 0;
 
   const pixels = blobInkPixels(poseGraphic(prep, blob, world));
@@ -714,13 +736,15 @@ export function tick(prep: Prepared, blob: BlobState, input: Input, world?: Worl
     applyDeath(prep, blob, world, DEATH_A_OBJ06);
     return;
   }
-  if (code === "$00:ok" || code === "$00:bad") {
-    applySecurityDoor(prep, blob, world, code === "$00:ok", input);
+  if (code === "$00") {
+    world.teleportLatch = true;
+    world.ui = beginDoorUi(world, blob.room, !!input.right);
+    syncWorldMessage(world, world.ui);
     return;
   }
-  if (code !== null) {
-    applyTeleport(prep, blob, world, code);
-    if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
+  if (code === "$0D") {
+    world.teleportLatch = true;
+    world.ui = beginTeleportUi(blob.room, world);
     return;
   }
 
@@ -784,6 +808,7 @@ export function createWorld(prep: Prepared, room: number): World {
     seatTick: 0,
     message: "",
     teleportLatch: false,
+    ui: idleUi(),
     gameOver: false,
     victory: false,
     endResult: null,
@@ -805,6 +830,8 @@ export function createWorld(prep: Prepared, room: number): World {
     blobHidden: false,
     entry: { x: NEW_GAME_X, y: NEW_GAME_Y, dd22: DD22_WALK },
     pulses: [],
+    sfx: [],
+    sfxStep: SFX_STEP_INIT,
   };
   enterRoom(prep, world, room);
   return world;
@@ -833,7 +860,7 @@ export function enterRoom(prep: Prepared, world: World, room: number, opts?: Ent
     world.visitedCount += 1;
   }
   spawnExtra(prep, world, room);
-  if (opts?.nasties !== false) enterNasties(prep, world, room);
+  if (opts?.nasties !== false) enterNasties(prep, world, room, opts?.blob);
   world.pulses = makePulses(prep.pulsesByRoom?.[room], world.dac.dac0);
   syncHoverpad(prep, world, room, opts?.blob);
   if (opts?.blob && room === CORE_ROOM && opts.blob.room === CORE_ROOM) {
@@ -846,6 +873,31 @@ export function enterRoom(prep: Prepared, world: World, room: number, opts?: Ent
 export interface TeleportResult extends TeleportEval {
   message: string;
   reason: number;
+}
+
+/** Advance door / teleport overlay; apply result when the FSM finishes. */
+export function tickOverlay(prep: Prepared, blob: BlobState, world: World): void {
+  const ui = world.ui;
+  if (ui.kind === "door") {
+    if (tickDoorUi(ui, world)) {
+      syncWorldMessage(world, ui);
+      applySecurityDoor(prep, blob, world, ui.ok, { left: !ui.openRight, right: ui.openRight });
+      world.ui = idleUi();
+    } else {
+      syncWorldMessage(world, ui);
+    }
+    return;
+  }
+  if (ui.kind === "teleport") {
+    if (tickTeleportUi(ui, blob.room, world)) {
+      syncWorldMessage(world, ui);
+      applyTeleport(prep, blob, world, ui.buffer);
+      if (blob.room < 0 || blob.room >= ROOM_COUNT) {
+        blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
+      }
+      world.ui = idleUi();
+    }
+  }
 }
 
 /**

@@ -146,14 +146,93 @@ describe("$A66C pulse slot round-robin", () => {
     const prep = loadPrep();
     if (!prep) return;
     const world = createWorld(prep, 13);
-    world.pulses = [{ col: 10, row: 12, period: 8, timer: 8, flag: 0 }];
+    world.pulses = [
+      {
+        col: 10,
+        row: 12,
+        period: 8,
+        timer: 8,
+        flag: 0,
+        xorInk: new Uint8Array(16),
+        sparkAttr: 0x47,
+        lastAnim: null,
+      },
+    ];
     const blob = spawnBlob(prep, 13, world);
     blob.x = 0;
     blob.y = 0;
     for (let i = 0; i < 8; i++) tickPulses(blob, world);
     assert.equal(world.pulses[0]!.flag, 0, "must not toggle on the first 8 frames (that was 1:1 with 50 Hz)");
+    assert.ok(world.pulses[0]!.xorInk.every((b) => b === 0), "no ink before flag on");
     for (let i = 0; i < 28; i++) tickPulses(blob, world);
     assert.equal(world.pulses[0]!.flag, 1, "DEC to $FF after 9 slot visits × 4 frames");
+    assert.ok(world.pulses[0]!.xorInk.every((b) => b === 0), "toggle clears ink; anim blinks later");
+  });
+
+  it("two anim visits with the same layer keep a single L7 frame (no XOR blink-off)", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 13);
+    // timer 3→2 (&3=2→L7) then 2→1 (&3=1→L7): still exactly L7, not cleared.
+    const p = {
+      col: 10,
+      row: 12,
+      period: 8,
+      timer: 3,
+      flag: 1,
+      xorInk: new Uint8Array(16),
+      sparkAttr: 0x44,
+      lastAnim: null as number | null,
+    };
+    world.pulses = [p];
+    const blob = spawnBlob(prep, 13, world);
+    blob.x = 0;
+    blob.y = 0;
+    world.pulseIndex = 3;
+    tickPulses(blob, world); // 3→2, L7
+    assert.equal(p.timer, 2);
+    assert.equal(p.lastAnim, 7);
+    assert.equal(p.xorInk[0], 0x08);
+    world.pulseIndex = 3;
+    tickPulses(blob, world); // 2→1, still L7 assigned
+    assert.equal(p.timer, 1);
+    assert.equal(p.lastAnim, 7);
+    assert.equal(p.xorInk[0], 0x08);
+    assert.equal(p.xorInk[1], 0x1c);
+  });
+
+  it("switching anim layer replaces instead of stacking L6⊕L7", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 13);
+    // 8→7: L6; 7→6: L7 — must not leave L6⊕L7 in xorInk
+    const p = {
+      col: 10,
+      row: 12,
+      period: 8,
+      timer: 8,
+      flag: 1,
+      xorInk: new Uint8Array(16),
+      sparkAttr: 0x44,
+      lastAnim: null as number | null,
+    };
+    world.pulses = [p];
+    const blob = spawnBlob(prep, 13, world);
+    blob.x = 0;
+    blob.y = 0;
+    world.pulseIndex = 3;
+    tickPulses(blob, world); // →7, L6
+    const l6 = Uint8Array.from(p.xorInk);
+    assert.equal(p.lastAnim, 6);
+    world.pulseIndex = 3;
+    tickPulses(blob, world); // →6, L7 replace
+    // Pure L7 first cell (not L6⊕L7)
+    assert.equal(p.lastAnim, 7);
+    assert.equal(p.xorInk[0], 0x08);
+    assert.equal(p.xorInk[1], 0x1c);
+    assert.notDeepEqual([...p.xorInk], [...l6]);
+    // And never the XOR-stack of both layers
+    assert.notEqual(p.xorInk[0], l6[0]! ^ 0x08);
   });
 });
 

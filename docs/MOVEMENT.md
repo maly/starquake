@@ -323,7 +323,7 @@ Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Dra
 2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne. `$64` je v overlay i chůzi nepevná.
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
-5. **Zvuk `$D7C0`.** Doors/core/end jen ID větví; beeper ne.
+5. **Zvuk `$D7C0`.** Beeper je v `game/src/audio/` (viz sekce níže). Zbývá `$A41B` / `$6600` / digit-roll.
 6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá. Pad vždy `$AFC8` (snímky 1–3 se neindexují).
 7. **Extra spawn `$AAB6` po `$A80A`.** Markery jsou raw nibble `$90` (`$96CB`), ne nakreslený attr. Engine seed `$7530+id×12` + 20× `$DAC6`, ne celý řetězec při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
 8. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah. Extra `$17`/`$18` jsou v enginu (`$CCCC` / přetečení `$CCBC`).
@@ -342,7 +342,7 @@ Platný teleport v kroku 6 hned volá `$A426` a zbytek ticku se přeskočí. Dra
 
 ## Energie / smrt / terén `$06` / `$70` / smrtící vetřelci
 
-`$C350 JR $C35E`. Engine `applyDeath(A)` spustí animaci: 45 snímků ink XOR `$05` (`$C377 B=$2D`), čtyři `$BEC8` obláčky 80 snímků (`$C43F B=$50`, `$A01B`), 50 HALT (`$C451 B=$32`), teprve pak respawn. Zvuk `$D7C0` se nehraje. Blikání ROM jen u A∧7=2; engine bliká u všech smrtí, ať je to vidět.
+`$C350 JR $C35E`. Engine `applyDeath(A)` spustí animaci: 45 snímků ink XOR `$05` (`$C377 B=$2D`), čtyři `$BEC8` obláčky 80 snímků (`$C43F B=$50`, `$A01B`), 50 HALT (`$C451 B=$32`), teprve pak respawn. `$D7C0`: vždy `$13`, navíc `$0F` když `(A∧7)==2`. Blikání ROM jen u A∧7=2; engine bliká u všech smrtí, ať je to vidět.
 
 | veličina | hodnota | adresa |
 |---|---|---|
@@ -399,4 +399,63 @@ stateDiagram-v2
 
 Checkpoint: `enterRoom` / `spawnBlob` / východ / teleport uloží Blob XY (game) + `$DD22` do `world.entry`. `$06` a `$11` po smrti vrací na vstup do místnosti. Nula energie a běžný vetřelec zarovnají místo smrti a pad (`$DD22`) nechají.
 
-Nedořešené v této sekci: zvuk `$D7C0`; `$C7` při respawnu; statistika AI 5 carry/chase. ROM bliká jen A∧7=2. Puls `$DB88`: XOR L=`$05` + `$A6BD`[timer∧3] když flag≠0; engine kreslí každý snímek znovu (ne persist XOR obrazovky). `$A66C` 1 ze 4 slotů / tick (`$9634` wrap `$04`); DEC timer, `$FF` → reload + XOR flag.
+Nedořešené v této sekci: `$C7` při respawnu; statistika AI 5 carry/chase. ROM bliká jen A∧7=2. Puls `$DB88`: XOR L=`$05` + `$A6BD`[timer∧3] když flag≠0; engine kreslí každý snímek znovu (ne persist XOR obrazovky). `$A66C` 1 ze 4 slotů / tick (`$9634` wrap `$04`); DEC timer, `$FF` → reload + XOR flag.
+
+## Zvuk `$D7C0`
+
+Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839` (H0, H1, L, X, F). 24 indexů `0`…`$17`. Engine syntetizuje stejnou smyčku do PCM (44100 Hz) a hraje přes Web Audio; 50 Hz tick se neblokuje. Fronta `world.sfx`. Index `$17` (L=0) se nehraje.
+
+**F:** bity 0–4 = vnější kola (`0` ⇒ 256); bit 6 modulace L zbývajícím A'; bit 5 znaménko (`−` / `+`); bit 7 `D := ((D≫1)−H)∧$3F`. `D = (H ∧ B) XOR X`. Počet `OUT` na H = ⌊H/L⌋+1. Perioda continue: **112+45D** T (bit7=0) nebo **134+45D** T (bit7=1), CPU 3,5 MHz. Výstup obdélník, toggle XOR `$10`.
+
+| A | H0 H1 L X F | událost |
+|---|---|---|
+| `$00` | `3F 30 01 00 81` | extra `$18` život |
+| `$01` | `00 7F FE 00 01` | extra energie `$11`–`$13` |
+| `$02` | `C5 C4 03 01 C1` | extra plošinky `$14` |
+| `$03` | `01 7F 7F 01 41` | extra palba `$15`/`$16`; díl jádra `$A715` |
+| `$04` | `01 14 FF 01 41` | místnost ±1 `$0F` (mimo engine) |
+| `$05` | `28 22 01 7F FF` | v tabulce, žádný CALL |
+| `$06` | `32 38 FE 05 C3` | v tabulce, žádný CALL |
+| `$07` | `F0 F1 28 01 DE` | teleport overlay |
+| `$08` | `1E 00 01 01 C3` | dveře start; socket `$0B` |
+| `$09` | `8C 80 01 7F C3` | teleport OK |
+| `$0A` | `00 22 01 7F DF` | dveře minihra OK |
+| `$0B` | `22 00 28 7F DF` | Cheops overlay (mimo) |
+| `$0C` | `20 00 14 00 81` | sběr `$94E8` |
+| `$0D` | `C8 C9 FE 05 03` | (nepoužito in-game) |
+| `$0E` | `00 0A FE 0F 07` | (nepoužito in-game) |
+| `$0F` | `00 03 04 17 FF` | fail dveře/teleport; smrt energie |
+| `$10` | `1E 00 07 00 41` | teleport OK (před `$09`) |
+| `$11` | `14 0A FE 00 6A` | znak teleportu; výhra `$A7BF` |
+| `$12` | `40 00 FF 01 81` | kill střelou |
+| `$13` | `FF FE FF FF C1` | každá smrt |
+| `$14` | `0A 01 FF 00 01` | krok / ceremony (`dac0∧1=0`) |
+| `$15` | `04 00 FF 14 01` | krok / ceremony (`dac0∧1=1`) |
+| `$16` | `07 0A FF 00 01` | v tabulce, žádný CALL |
+| `$17` | `00 00 00 00 00` | hang, nehrát |
+
+### In-game hooky
+
+| engine | A |
+|---|---|
+| `applyWalk` wrap `ANIM_PERIOD`, jen `$DD22=0` | `$14`/`$15` XOR `$C6FF` |
+| `applyDeath` vždy | `$13` |
+| `applyDeath` `(A∧7)==2` | navíc `$0F` |
+| `hitByBullet` | `$12` |
+| `collectTableItem` unshift | `$0C` |
+| `applyExtra` (ne Cheops `$19`) | 1. B páru `$CCBC` |
+| `beginDoorUi` | `$08` |
+| `tickDoorUi` intro→result OK | `$0A` pak `$0F` |
+| `tickDoorUi` intro→result fail | `$0F` |
+| `beginTeleportUi` | `$07` |
+| `feedTeleportKey` přijatý znak | `$11` |
+| `finishTeleportInput` OK | `$10` pak `$09` |
+| `finishTeleportInput` fail | `$0F` |
+| `tryClearSocket` true | `$08` |
+| `matchCoreDeliveries` za díl | `$03` |
+| `beginCoreCeremony` | `$14`/`$15` z `dac0∧1` |
+| výhra `corePairs==5` | `$11` jednou |
+
+Pozadí = `viewer/bgm.mp3` (smyčka, vlastní gain). Melodie `$6600` se nehraje.
+
+**Nedořešené:** `$A41B` palba/pád/plošinka; `$6600` melodie (skip); digit-roll `$D679`; IM1 jitter; MP3 dodá zadavatel (`viewer/bgm.mp3`).

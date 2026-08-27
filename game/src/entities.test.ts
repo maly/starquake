@@ -16,7 +16,7 @@ import {
   ROWS,
   START_ENERGY,
 } from "./constants";
-import { cloneEntity, entityVisible, spawnOne, tickEnergyDrain, tickNasties } from "./entities";
+import { cloneEntity, enterNasties, entityVisible, spawnOne, tickEnergyDrain, tickNasties } from "./entities";
 import { createWorld, enterRoom, spawnBlob } from "./physics";
 import type { Entity, Prepared, Room } from "./types";
 
@@ -111,6 +111,35 @@ describe("nasties $A01B", () => {
     const e = spawnOne(prep, 1, world, 1);
     assert.equal(e.basePtr, BADALIEN2_PTR);
     assert.notEqual(e.basePtr, BADALIEN1_PTR);
+  });
+
+  it("room $C6 (198) has no random aliens", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    enterNasties(prep, world, 0xc6);
+    assert.equal(world.nastyCount, 0);
+    assert.equal(world.entities.length, 0);
+  });
+
+  it("lethal home spawn stays away from Blob (gameplay materialize gap)", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 80;
+    blob.y = 40;
+    world.dac = { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 };
+    const e = spawnOne(prep, 1, world, 1, blob);
+    assert.equal(e.basePtr, BADALIEN2_PTR);
+    if (e.homeY !== 0) {
+      const by = 143 - blob.y;
+      const dx = e.homeX - blob.x;
+      const dy = e.homeY - by;
+      assert.ok(dx * dx + dy * dy >= 0x40 * 0x40, `home too close: ${e.homeX},${e.homeY} vs blob`);
+    }
   });
 
   it("$D2F0 uses 3 attr rows when (Y+1)∧7≠0 so a wall on the third row bounces", () => {

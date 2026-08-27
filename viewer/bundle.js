@@ -1,12 +1,357 @@
 "use strict";
 (() => {
+  // src/audio/effects.ts
+  var SFX_TABLE = [
+    [63, 48, 1, 0, 129],
+    [0, 127, 254, 0, 1],
+    [197, 196, 3, 1, 193],
+    [1, 127, 127, 1, 65],
+    [1, 20, 255, 1, 65],
+    [40, 34, 1, 127, 255],
+    [50, 56, 254, 5, 195],
+    [240, 241, 40, 1, 222],
+    [30, 0, 1, 1, 195],
+    [140, 128, 1, 127, 195],
+    [0, 34, 1, 127, 223],
+    [34, 0, 40, 127, 223],
+    [32, 0, 20, 0, 129],
+    [200, 201, 254, 5, 3],
+    [0, 10, 254, 15, 7],
+    [0, 3, 4, 23, 255],
+    [30, 0, 7, 0, 65],
+    [20, 10, 254, 0, 106],
+    [64, 0, 255, 1, 129],
+    [255, 254, 255, 255, 193],
+    [10, 1, 255, 0, 1],
+    [4, 0, 255, 20, 1],
+    [7, 10, 255, 0, 1],
+    [0, 0, 0, 0, 0]
+  ];
+  var SFX_STEP_INIT = 20;
+  var SFX_HANG = 23;
+  function requestSfx(world, a) {
+    if (!Number.isInteger(a) || a < 0 || a > 23 || a === SFX_HANG) return;
+    world.sfx.push(a);
+  }
+
+  // src/audio/synth.ts
+  var SFX_CPU_HZ = 35e5;
+  var SFX_SAMPLE_RATE = 44100;
+  var DELAY_T = 45;
+  var PERIOD_BIT7_0 = 112;
+  var PERIOD_BIT7_1 = 134;
+  var PCM_LEVEL = 12e3;
+  var MAX_OUT = 1e6;
+  var simCache = /* @__PURE__ */ new Map();
+  function periodT(d, bit7) {
+    const base = bit7 ? PERIOD_BIT7_1 : PERIOD_BIT7_0;
+    const delay = d === 0 ? 256 : d;
+    return base + DELAY_T * delay;
+  }
+  function simulateSfx(index) {
+    const hit = simCache.get(index);
+    if (hit) return hit;
+    const rec = SFX_TABLE[index];
+    if (!rec || index === SFX_HANG) {
+      const empty = { nOut: 0, pcm: new Int16Array(0) };
+      simCache.set(index, empty);
+      return empty;
+    }
+    const [h0, h1, l0, x, f] = rec;
+    if (l0 === 0 && (f & 64) === 0) {
+      const empty = { nOut: 0, pcm: new Int16Array(0) };
+      simCache.set(index, empty);
+      return empty;
+    }
+    const bit6 = (f & 64) !== 0;
+    const bit5 = (f & 32) !== 0;
+    const bit7 = (f & 128) !== 0;
+    const nMask = f & 31;
+    const rounds = nMask === 0 ? 256 : nMask;
+    const tStates = [];
+    const signs = [];
+    for (let i = 0; i < rounds; i++) {
+      const aPrime = nMask - i & 255;
+      let l = l0;
+      if (bit6) {
+        l = bit5 ? l - aPrime & 255 : l + aPrime & 255;
+        if (l === 0) l = 1;
+      }
+      if (l === 0) break;
+      let h = h0;
+      let b = h;
+      let speaker = 0;
+      let steps = 0;
+      for (; ; ) {
+        let d = h & b ^ x;
+        if (bit7) d = (d >> 1) - h & 255 & 63;
+        tStates.push(periodT(d, bit7));
+        signs.push(speaker ? PCM_LEVEL : -PCM_LEVEL);
+        speaker ^= 1;
+        if (tStates.length >= MAX_OUT) break;
+        const carry = b < l;
+        b = b - l & 255;
+        if (!carry) continue;
+        if (h === h1) break;
+        h = h < h1 ? h + 1 & 255 : h - 1 & 255;
+        b = h;
+        steps += 1;
+        if (steps > 512) break;
+      }
+      if (tStates.length >= MAX_OUT) break;
+    }
+    let cursorT = 0;
+    let sampleIdx = 0;
+    const samples = [];
+    for (let i = 0; i < tStates.length; i++) {
+      cursorT += tStates[i];
+      const end = Math.round(cursorT * SFX_SAMPLE_RATE / SFX_CPU_HZ);
+      const amp = signs[i];
+      while (sampleIdx < end) {
+        samples.push(amp);
+        sampleIdx += 1;
+      }
+    }
+    const sim = { nOut: tStates.length, pcm: Int16Array.from(samples) };
+    simCache.set(index, sim);
+    return sim;
+  }
+  function sfxPcm(index) {
+    return simulateSfx(index).pcm;
+  }
+
+  // src/audio/player.ts
+  var LS_MUTED = "starquake.audio.muted";
+  var LS_BGM_MUTED = "starquake.audio.bgmMuted";
+  var LS_SFX_GAIN = "starquake.audio.sfxGain";
+  var LS_BGM_GAIN = "starquake.audio.bgmGain";
+  var BGM_URL = "bgm.mp3";
+  function clamp01(n) {
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(1, Math.max(0, n));
+  }
+  function readBool(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      if (v === null) return fallback;
+      return v === "1" || v === "true";
+    } catch {
+      return fallback;
+    }
+  }
+  function readNum(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      if (v === null) return fallback;
+      const n = Number(v);
+      return Number.isFinite(n) ? clamp01(n) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  var muted = readBool(LS_MUTED, false);
+  var bgmMuted = readBool(LS_BGM_MUTED, false);
+  var sfxGainValue = readNum(LS_SFX_GAIN, 0.75);
+  var bgmGainValue = readNum(LS_BGM_GAIN, 0.4);
+  var ctx = null;
+  var sfxGain = null;
+  var bgmGain = null;
+  var bgmEl = null;
+  var bgmSource = null;
+  var unlocked = false;
+  var nextSfxAt = 0;
+  var resumeWait = null;
+  var PENDING_MAX = 32;
+  var pending = [];
+  var bufferCache = /* @__PURE__ */ new Map();
+  function persist() {
+    try {
+      localStorage.setItem(LS_MUTED, muted ? "1" : "0");
+      localStorage.setItem(LS_BGM_MUTED, bgmMuted ? "1" : "0");
+      localStorage.setItem(LS_SFX_GAIN, String(sfxGainValue));
+      localStorage.setItem(LS_BGM_GAIN, String(bgmGainValue));
+    } catch {
+    }
+  }
+  function audioContextCtor() {
+    if (typeof AudioContext !== "undefined") return AudioContext;
+    const w = globalThis;
+    return w.webkitAudioContext ?? null;
+  }
+  function applyGains() {
+    if (sfxGain) sfxGain.gain.value = muted ? 0 : sfxGainValue;
+    if (bgmGain) bgmGain.gain.value = muted || bgmMuted ? 0 : bgmGainValue;
+    if (!bgmEl) return;
+    if (muted || bgmMuted || !unlocked) {
+      bgmEl.pause();
+      return;
+    }
+    const p = bgmEl.play();
+    if (p && typeof p.catch === "function") p.catch(() => void 0);
+  }
+  function setupBgm(ac) {
+    if (bgmEl) return;
+    const el = new Audio(BGM_URL);
+    el.loop = true;
+    el.preload = "auto";
+    el.addEventListener("error", () => {
+      console.warn("starquake: bgm.mp3 missing or unreadable; BGM silent");
+    });
+    bgmEl = el;
+    try {
+      bgmSource = ac.createMediaElementSource(el);
+      bgmSource.connect(bgmGain ?? ac.destination);
+    } catch {
+      console.warn("starquake: cannot attach bgm.mp3 to AudioContext; BGM silent");
+    }
+  }
+  function ensureCtx() {
+    if (ctx) return ctx;
+    const Ctor = audioContextCtor();
+    if (!Ctor) return null;
+    const ac = new Ctor({ sampleRate: SFX_SAMPLE_RATE });
+    sfxGain = ac.createGain();
+    bgmGain = ac.createGain();
+    sfxGain.connect(ac.destination);
+    bgmGain.connect(ac.destination);
+    setupBgm(ac);
+    ctx = ac;
+    applyGains();
+    return ac;
+  }
+  function bufferFor(ac, id) {
+    const hit = bufferCache.get(id);
+    if (hit) return hit;
+    const pcm = sfxPcm(id);
+    if (pcm.length === 0) return null;
+    const buf = ac.createBuffer(1, pcm.length, SFX_SAMPLE_RATE);
+    const ch = buf.getChannelData(0);
+    const scale = 1 / 32768;
+    for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] * scale;
+    bufferCache.set(id, buf);
+    return buf;
+  }
+  function enqueueSfx(id) {
+    if (pending.length >= PENDING_MAX) pending.shift();
+    pending.push(id);
+  }
+  function startSfx(ac, id) {
+    if (muted) return;
+    const buf = bufferFor(ac, id);
+    if (!buf || !sfxGain) return;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    src.connect(sfxGain);
+    const t = Math.max(ac.currentTime, nextSfxAt);
+    src.start(t);
+    nextSfxAt = t + buf.duration;
+  }
+  function flushPending() {
+    const ac = ctx;
+    if (!ac || ac.state === "suspended") return;
+    const ids = pending.splice(0, pending.length);
+    for (const id of ids) startSfx(ac, id);
+  }
+  function kickResume(ac) {
+    if (ac.state !== "suspended") {
+      flushPending();
+      return;
+    }
+    if (resumeWait) return;
+    const p = ac.resume();
+    resumeWait = Promise.resolve(p).then(
+      () => {
+        resumeWait = null;
+        flushPending();
+        applyGains();
+      },
+      () => {
+        resumeWait = null;
+      }
+    );
+  }
+  function unlock() {
+    unlocked = true;
+    const ac = ensureCtx();
+    if (ac) kickResume(ac);
+    applyGains();
+  }
+  function playSfx(id) {
+    if (!Number.isInteger(id) || id < 0 || id > 23 || id === SFX_HANG) return;
+    if (muted) return;
+    if (!unlocked || !ctx || ctx.state === "suspended") {
+      enqueueSfx(id);
+      return;
+    }
+    startSfx(ctx, id);
+  }
+  function drainSfx(world) {
+    for (const id of world.sfx) playSfx(id);
+    world.sfx.length = 0;
+  }
+  function setMuted(value) {
+    muted = value;
+    persist();
+    applyGains();
+  }
+  function setBgmMuted(value) {
+    bgmMuted = value;
+    persist();
+    applyGains();
+  }
+  function setSfxGain(value) {
+    sfxGainValue = clamp01(value);
+    persist();
+    applyGains();
+  }
+  function setBgmGain(value) {
+    bgmGainValue = clamp01(value);
+    persist();
+    applyGains();
+  }
+  function bindCheck(id, checked, onChange) {
+    const el = document.getElementById(id);
+    if (!(el instanceof HTMLInputElement)) return;
+    el.checked = checked;
+    el.addEventListener("change", () => onChange(el.checked));
+  }
+  function bindRange(id, value, onChange) {
+    const el = document.getElementById(id);
+    if (!(el instanceof HTMLInputElement)) return;
+    el.value = String(Math.round(value * 100));
+    el.addEventListener("input", () => onChange(Number(el.value) / 100));
+  }
+  function wireAudioUi() {
+    bindCheck("audio-sfx", !muted, (on) => {
+      unlock();
+      setMuted(!on);
+    });
+    bindCheck("audio-bgm", !bgmMuted, (on) => {
+      unlock();
+      setBgmMuted(!on);
+    });
+    bindRange("audio-sfx-gain", sfxGainValue, (v) => {
+      unlock();
+      setSfxGain(v);
+    });
+    bindRange("audio-bgm-gain", bgmGainValue, (v) => {
+      unlock();
+      setBgmGain(v);
+    });
+  }
+
   // src/constants.ts
   var COLS = 32;
   var ROWS = 18;
   var CELL = 8;
   var WIDTH = COLS * CELL;
   var HEIGHT = ROWS * CELL;
+  var SCREEN_W = 256;
+  var SCREEN_H = 192;
   var PLAY_ORIGIN = 6;
+  var PLAY_Y0 = PLAY_ORIGIN * CELL;
+  var DISPLAY_W = SCREEN_W * 2;
+  var DISPLAY_H = SCREEN_H * 2;
   var MAP_COLS = 16;
   var MAP_ROWS = 32;
   var ROOM_COUNT = MAP_COLS * MAP_ROWS;
@@ -52,6 +397,7 @@
   var GRAPHIC_LO_C8 = 200;
   var HIT_DX = 14;
   var HIT_DY = 11;
+  var MIN_LETHAL_SPAWN_DIST = 64;
   var DEATH_A_TILE = 0;
   var DEATH_A_LETHAL = 1;
   var DEATH_A_ENERGY = 2;
@@ -77,7 +423,6 @@
   var PULSE_PERIOD_MASK = 12;
   var PULSE_PERIOD_BASE = 8;
   var PULSE_SLOTS = 4;
-  var PULSE_TOGGLE_LAYER = 5;
   var PULSE_ANIM_LAYERS = [6, 7, 7, 6];
   var PULSE_ANIM_ATTR_BASE = 68;
   var PULSE_LAYERS = {
@@ -606,6 +951,15 @@
     }
     return false;
   }
+  function writePulseInk(ink, layer) {
+    const cells = PULSE_LAYERS[layer];
+    if (!cells) return;
+    for (let i = 0; i < 2; i++) {
+      const bytes = cells[i];
+      const base = i * 8;
+      for (let py = 0; py < 8; py++) ink[base + py] = bytes[py];
+    }
+  }
   function tickPulses(blob, world) {
     let i = world.pulseIndex + 1 & 255;
     if (i >= PULSE_SLOTS) i = 0;
@@ -616,6 +970,18 @@
       if (slot.timer === 255) {
         slot.timer = slot.period;
         slot.flag ^= 1;
+        slot.xorInk.fill(0);
+        slot.lastAnim = null;
+        slot.sparkAttr = 71;
+      } else if (slot.flag !== 0) {
+        const anim = PULSE_ANIM_LAYERS[slot.timer & 3];
+        slot.xorInk.fill(0);
+        writePulseInk(slot.xorInk, anim);
+        slot.lastAnim = anim;
+        slot.sparkAttr = PULSE_ANIM_ATTR_BASE + (world.dac.dac0 & 3) & 255;
+      } else {
+        slot.xorInk.fill(0);
+        slot.lastAnim = null;
       }
     }
     const { x, y } = blobGame(blob);
@@ -635,7 +1001,10 @@
       row: p.row,
       period,
       timer: period,
-      flag: 0
+      flag: 0,
+      xorInk: new Uint8Array(16),
+      sparkAttr: 71,
+      lastAnim: null
     }));
   }
   function onStationPixel(blob, world) {
@@ -702,6 +1071,7 @@
       const flag = world.socketFlags[s.slot] ?? 0;
       if ((flag & 127) === 0) return false;
       world.socketFlags[s.slot] = flag & 128;
+      requestSfx(world, 8);
       return true;
     }
     return false;
@@ -725,15 +1095,12 @@
     const doors = prep.doorsByRoom?.[blob.room] ?? [];
     for (const d of doors) {
       if (!exactAt(blob, d.x, d.y)) continue;
-      return doorKeysAccepted(world, blob.room) ? "$00:ok" : "$00:bad";
+      return "$00";
     }
     const pads = prep.teleportsByRoom?.[blob.room] ?? [];
     for (const t of pads) {
       if (!exactAt(blob, t.x, t.y)) continue;
-      const own = teleportNameForRoom(blob.room);
-      if (!world.readTeleportCode) return null;
-      const typed = world.readTeleportCode(own);
-      return typed ?? "";
+      return "$0D";
     }
     return null;
   }
@@ -882,6 +1249,31 @@
     }
     return true;
   }
+  function farFromBlob(x, y, blob) {
+    if (!blob) return true;
+    const by = GAME_Y_ORIGIN - blob.y;
+    const dx = x - blob.x;
+    const dy = y - by;
+    return dx * dx + dy * dy >= MIN_LETHAL_SPAWN_DIST * MIN_LETHAL_SPAWN_DIST;
+  }
+  function nudgeAwayFromBlob(e, blob) {
+    const by = GAME_Y_ORIGIN - blob.y;
+    let dx = e.x - blob.x;
+    let dy = e.y - by;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) {
+      dx = MIN_LETHAL_SPAWN_DIST;
+      dy = 0;
+    } else {
+      const scale = MIN_LETHAL_SPAWN_DIST / len;
+      dx *= scale;
+      dy *= scale;
+    }
+    e.x = Math.max(NASTY_EDGE_L, Math.min(NASTY_EDGE_R - 1, Math.round(blob.x + dx))) & 255;
+    e.y = Math.max(NASTY_EDGE_U, Math.min(NASTY_EDGE_D - 1, Math.round(by + dy))) & 255;
+    e.homeX = e.x;
+    e.homeY = e.y;
+  }
   function rotateDac0(world, times) {
     let a = world.dac.dac0 & 255;
     for (let i = 0; i < times; i++) a = (a << 1 | a >> 7) & 255;
@@ -914,10 +1306,11 @@
       homeY: 15
     };
   }
-  function spawnOne(prep, room, world, slot) {
+  function spawnOne(prep, room, world, slot, blob) {
     dacStep(world.dac);
     const kind = z80SubAdd(world.dac.dac0 >> 8 & 255, 15, 17);
     const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
+    const lethal = ptr >> 8 < KILL_GRAPHIC_HI;
     const e = makeEntity(ptr);
     e.ink = world.dac.dac0 >> 5 & 7;
     if (e.ink === 0) e.ink = z80SubAdd(world.dac.dac0 & 255, 5, 7) & 7 || 2;
@@ -945,11 +1338,11 @@
         x = z80SubAdd(a, 23, 27) << 3 & 255;
         y = dac1 & 1 ? 17 : 141;
       }
-      if (spawnCellOk(world, x, y)) {
-        e.homeX = x;
-        e.homeY = y;
-        return e;
-      }
+      if (!spawnCellOk(world, x, y)) continue;
+      if (lethal && !farFromBlob(x, y, blob)) continue;
+      e.homeX = x;
+      e.homeY = y;
+      return e;
     }
     e.y = 0;
     e.homeY = 0;
@@ -974,11 +1367,11 @@
       e.ai = FIXED_NASTY_AI;
     }
   }
-  function spawnNasties(prep, room, world) {
+  function spawnNasties(prep, room, world, blob) {
     world.dac = seedDac(room);
     dacStep(world.dac);
     world.entities = [];
-    for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep, room, world, i + 1));
+    for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep, room, world, i + 1, blob));
     world.nastyCount = NASTY_SLOTS;
     world.spawnGuard = SPAWN_GUARD;
     applyFixedNasties(prep, room, world);
@@ -1036,12 +1429,19 @@
     world.spawnGuard = 0;
     world.cacheRoom = CORE_ROOM;
   }
-  function enterNasties(prep, world, room) {
+  function enterNasties(prep, world, room, blob) {
     if (room === CORE_ROOM) {
       spawnCoreGuardians(world);
       return;
     }
-    if (room === CORE_NEIGHBOR) world.entityCache = null;
+    if (room === CORE_NEIGHBOR) {
+      world.entityCache = null;
+      world.entities = [];
+      world.nastyCount = 0;
+      world.spawnGuard = 0;
+      world.cacheRoom = room;
+      return;
+    }
     const outgoing = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
     const incoming = world.entityCache;
     world.entityCache = outgoing;
@@ -1049,7 +1449,7 @@
       world.entities = incoming.entities.map(cloneEntity);
       world.nastyCount = NASTY_SLOTS;
     } else {
-      spawnNasties(prep, room, world);
+      spawnNasties(prep, room, world, blob);
     }
     world.cacheRoom = room;
   }
@@ -1116,6 +1516,7 @@
     const dy = Math.abs(e.y - world.bullet.y);
     if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
     addScore(world, killScorePoints(e.basePtr || e.ptr));
+    requestSfx(world, 18);
     e.ptr = DEAD_GRAPHIC;
     e.set = "stars";
     e.ink = 7;
@@ -1259,7 +1660,7 @@
     }
     return false;
   }
-  function appearOrDie(e) {
+  function appearOrDie(e, blob) {
     if (e.state === 2) {
       e.ptr = DEAD_GRAPHIC;
       e.set = "stars";
@@ -1281,6 +1682,9 @@
       e.set = "corepieces1";
     }
     if (was === APPEAR_FRAMES) {
+      if (e.basePtr >> 8 < KILL_GRAPHIC_HI && blob && !farFromBlob(e.x, e.y, blob)) {
+        nudgeAwayFromBlob(e, blob);
+      }
       e.state = 1;
       e.stateTimer = 0;
       e.ptr = e.basePtr;
@@ -1305,7 +1709,7 @@
     e.timer = e.timer - 1 & 255;
     if (e.timer !== 0) return null;
     e.timer = e.period;
-    if (appearOrDie(e) && e.y === 0) return null;
+    if (appearOrDie(e, blob) && e.y === 0) return null;
     const abort = think(e, blob, world, slot);
     stepMove(e, world);
     if (abort) return { kind: "abort" };
@@ -1370,6 +1774,7 @@
           world.corePairs = world.corePairs + 1 & 255;
         }
         delivered += 1;
+        requestSfx(world, 3);
       }
     }
     return delivered;
@@ -1381,6 +1786,7 @@
     spawnCoreGuardians(world);
     world.corePhase = "ceremony";
     world.coreTicks = 0;
+    requestSfx(world, 20 + (world.dac.dac0 & 1));
   }
   function ejectToCoreNeighbor(blob, world, enter) {
     world.corePhase = null;
@@ -1398,6 +1804,7 @@
     if (world.corePhase === "ceremony") return "ceremony";
     matchCoreDeliveries(world);
     if (world.corePairs >= CORE_VICTORY_PAIRS) {
+      if (!world.gameOver) requestSfx(world, 17);
       world.blobHidden = false;
       world.corePhase = null;
       composeEndResult(world, true, CORES_COMPLETE_MSG);
@@ -1478,9 +1885,17 @@
     else if (off === 2) world.platforms = world.platforms + add & 255;
     else if (off === 3) world.firepower = world.firepower + add & 255;
     capEnergyPlatformsFire(world);
+    requestSfx(world, off);
   }
   function extraPos(col, row) {
     return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
+  }
+  function itemOccupiesMark(prep, room, col, row, world) {
+    for (const it of prep.itemsByRoom[room] ?? []) {
+      if (world.collected[it.index]) continue;
+      if ((it.col & 31) === (col & 31) && (it.row & 127) === (row & 127)) return true;
+    }
+    return false;
   }
   function spawnExtra(prep, world, room) {
     world.extra = null;
@@ -1488,12 +1903,14 @@
     if (!a350Allows(world.a350, room)) return;
     const marks = prep.extraMarksByRoom?.[room] ?? [];
     if (marks.length < 2) return;
+    const free = marks.filter((m) => !itemOccupiesMark(prep, room, m.col, m.row, world));
+    const pool = free.length > 0 ? free : marks;
     world.dac = seedDac(room);
     for (let i = 0; i < EXTRA_DAC_ROLLS; i++) dacStep(world.dac);
     if ((world.dac.dac0 & 255) < EXTRA_MIN_DAC) return;
     dacStep(world.dac);
-    let slot = (world.dac.dac0 & 127) % marks.length;
-    const mark = marks[slot];
+    let slot = (world.dac.dac0 & 127) % pool.length;
+    const mark = pool[slot];
     dacStep(world.dac);
     let kind = world.dac.dac0 & 255;
     while (kind >= 9) kind -= 9;
@@ -1529,6 +1946,7 @@
       world.collected[it.index] = 1;
       world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits });
       if (world.inventory.length > 4) world.inventory.pop();
+      requestSfx(world, 12);
       return;
     }
   }
@@ -1743,35 +2161,35 @@
       const c = i % 3;
       const need = CORE_D2DE_INIT[i];
       const live = world.d2de[i] ?? need;
-      const pending = (live & 128) !== 0;
+      const pending2 = (live & 128) !== 0;
       const sprite = need & 127;
       let ink = CORE_PANEL_INK_DONE;
-      if (pending) {
+      if (pending2) {
         ink = blinkOn ? CORE_PANEL_INK_PENDING : (world.frames + i & 3) + 2;
       }
       blitSprite(prep, buf, sprite, col0 + c * CORE_PANEL_STEP, row0 + r * CORE_PANEL_STEP, ink & 7 | 64);
     }
   }
-  function xorPulseLayer(buf, col, playRow, layer, attr) {
-    const cells = PULSE_LAYERS[layer];
-    if (!cells) return;
-    for (let i = 0; i < 2; i++) {
-      const cx = col + i;
-      if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
-      const bytes = cells[i];
-      const dst = (playRow * COLS + cx) * CELL;
-      for (let py = 0; py < CELL; py++) buf.data[dst + py] ^= bytes[py];
-      buf.attr[playRow * COLS + cx] = attr;
-    }
-  }
-  function blitPulses(buf, pulses, dac0) {
-    const attr = PULSE_ANIM_ATTR_BASE + (dac0 & 3) & 255;
+  function blitPulses(buf, pulses, _dac0) {
     for (const p of pulses) {
-      if (p.flag === 0) continue;
+      const ink = p.xorInk;
+      if (!ink) continue;
+      let any = false;
+      for (let i = 0; i < 16; i++) if (ink[i]) {
+        any = true;
+        break;
+      }
+      if (!any) continue;
       const playRow = p.row - PLAY_ORIGIN;
-      xorPulseLayer(buf, p.col, playRow, PULSE_TOGGLE_LAYER, attr);
-      const anim = PULSE_ANIM_LAYERS[p.timer & 3];
-      xorPulseLayer(buf, p.col, playRow, anim, attr);
+      const attr = p.sparkAttr & 255;
+      for (let i = 0; i < 2; i++) {
+        const cx = p.col + i;
+        if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
+        const dst = (playRow * COLS + cx) * CELL;
+        const base = i * 8;
+        for (let py = 0; py < CELL; py++) buf.data[dst + py] = ink[base + py];
+        buf.attr[playRow * COLS + cx] = attr;
+      }
     }
   }
   function packGrafix(frame) {
@@ -1909,6 +2327,813 @@
       if (frame) stampGrafix(rgba, frame, opts.blob.x, opts.blob.y, opts.blob.ink ?? 7);
     }
     return rgba;
+  }
+
+  // src/ui/font-data.ts
+  var FONT_ADD4 = Uint8Array.from([
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    128,
+    0,
+    128,
+    128,
+    0,
+    128,
+    0,
+    0,
+    192,
+    0,
+    192,
+    192,
+    0,
+    192,
+    0,
+    0,
+    224,
+    0,
+    224,
+    224,
+    0,
+    224,
+    0,
+    0,
+    240,
+    0,
+    240,
+    240,
+    0,
+    240,
+    0,
+    0,
+    248,
+    0,
+    248,
+    248,
+    0,
+    248,
+    0,
+    0,
+    252,
+    0,
+    252,
+    252,
+    0,
+    252,
+    0,
+    0,
+    254,
+    0,
+    254,
+    254,
+    0,
+    254,
+    0,
+    0,
+    255,
+    0,
+    254,
+    254,
+    0,
+    255,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    28,
+    0,
+    127,
+    93,
+    53,
+    119,
+    0,
+    0,
+    0,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    12,
+    124,
+    0,
+    0,
+    255,
+    255,
+    255,
+    255,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    127,
+    127,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    48,
+    48,
+    0,
+    99,
+    99,
+    6,
+    60,
+    120,
+    123,
+    123,
+    0,
+    126,
+    110,
+    110,
+    111,
+    111,
+    111,
+    127,
+    0,
+    60,
+    28,
+    28,
+    62,
+    62,
+    62,
+    62,
+    0,
+    127,
+    103,
+    7,
+    127,
+    96,
+    127,
+    127,
+    0,
+    126,
+    14,
+    14,
+    127,
+    15,
+    127,
+    127,
+    0,
+    110,
+    110,
+    127,
+    127,
+    15,
+    15,
+    15,
+    0,
+    126,
+    102,
+    96,
+    127,
+    15,
+    127,
+    127,
+    0,
+    126,
+    102,
+    96,
+    127,
+    111,
+    111,
+    127,
+    0,
+    126,
+    110,
+    14,
+    15,
+    15,
+    15,
+    15,
+    0,
+    126,
+    110,
+    111,
+    127,
+    111,
+    111,
+    127,
+    0,
+    127,
+    111,
+    111,
+    127,
+    15,
+    15,
+    15,
+    0,
+    0,
+    24,
+    24,
+    0,
+    24,
+    24,
+    0,
+    0,
+    8,
+    24,
+    63,
+    127,
+    63,
+    24,
+    8,
+    0,
+    8,
+    12,
+    126,
+    127,
+    126,
+    12,
+    8,
+    0,
+    28,
+    28,
+    28,
+    127,
+    62,
+    28,
+    8,
+    0,
+    8,
+    28,
+    62,
+    127,
+    28,
+    28,
+    28,
+    0,
+    127,
+    97,
+    103,
+    65,
+    71,
+    71,
+    127,
+    0,
+    126,
+    127,
+    127,
+    126,
+    120,
+    120,
+    120,
+    0,
+    63,
+    59,
+    59,
+    127,
+    123,
+    123,
+    123,
+    0,
+    127,
+    123,
+    123,
+    126,
+    123,
+    123,
+    127,
+    0,
+    127,
+    123,
+    120,
+    120,
+    120,
+    123,
+    127,
+    0,
+    127,
+    123,
+    59,
+    59,
+    59,
+    123,
+    127,
+    0,
+    126,
+    112,
+    126,
+    120,
+    120,
+    127,
+    127,
+    0,
+    126,
+    112,
+    126,
+    120,
+    120,
+    120,
+    120,
+    0,
+    127,
+    115,
+    112,
+    119,
+    115,
+    115,
+    127,
+    0,
+    123,
+    123,
+    123,
+    127,
+    123,
+    123,
+    123,
+    0,
+    63,
+    30,
+    30,
+    30,
+    30,
+    30,
+    63,
+    0,
+    31,
+    15,
+    15,
+    15,
+    15,
+    111,
+    127,
+    0,
+    123,
+    123,
+    122,
+    126,
+    123,
+    123,
+    123,
+    0,
+    120,
+    120,
+    120,
+    120,
+    120,
+    120,
+    127,
+    0,
+    127,
+    127,
+    117,
+    117,
+    117,
+    117,
+    117,
+    0,
+    123,
+    123,
+    123,
+    127,
+    119,
+    115,
+    115,
+    0,
+    127,
+    123,
+    123,
+    123,
+    123,
+    123,
+    127,
+    0,
+    127,
+    123,
+    123,
+    127,
+    120,
+    120,
+    120,
+    0,
+    126,
+    118,
+    118,
+    118,
+    126,
+    119,
+    127,
+    0,
+    126,
+    118,
+    118,
+    127,
+    123,
+    123,
+    123,
+    0,
+    126,
+    118,
+    112,
+    127,
+    3,
+    127,
+    127,
+    0,
+    127,
+    28,
+    28,
+    28,
+    28,
+    28,
+    28,
+    0,
+    123,
+    123,
+    123,
+    123,
+    123,
+    127,
+    127,
+    0,
+    123,
+    123,
+    123,
+    123,
+    126,
+    124,
+    120,
+    0,
+    117,
+    117,
+    117,
+    117,
+    117,
+    127,
+    127,
+    0,
+    123,
+    123,
+    123,
+    62,
+    127,
+    123,
+    123,
+    0,
+    123,
+    123,
+    123,
+    30,
+    30,
+    30,
+    30,
+    0,
+    63,
+    51,
+    3,
+    127,
+    120,
+    127,
+    127,
+    0,
+    127,
+    87,
+    117,
+    0,
+    111,
+    58,
+    106,
+    0,
+    0,
+    0,
+    111,
+    123,
+    107,
+    0,
+    0,
+    0,
+    0,
+    126,
+    87,
+    0,
+    46,
+    60,
+    0
+  ]);
+  var FONT_FIRST = 32;
+  var FONT_COUNT = 62;
+
+  // src/ui/screen.ts
+  var SCREEN_COLS = 32;
+  var SCREEN_ROWS = 24;
+  var SCREEN_W2 = SCREEN_COLS * CELL;
+  var SCREEN_H2 = SCREEN_ROWS * CELL;
+  var PLAY_ROW0 = 6;
+  var PLAY_Y02 = PLAY_ROW0 * CELL;
+  var DISPLAY_W2 = SCREEN_W2 * 2;
+  var DISPLAY_H2 = SCREEN_H2 * 2;
+  function newScreenBuffers() {
+    return {
+      data: new Uint8Array(SCREEN_COLS * SCREEN_ROWS * CELL),
+      attr: new Uint8Array(SCREEN_COLS * SCREEN_ROWS)
+    };
+  }
+  function clearScreen(buf, attr = 0) {
+    buf.data.fill(0);
+    buf.attr.fill(attr);
+  }
+  function clearPlayfield(buf) {
+    for (let row = PLAY_ROW0; row < SCREEN_ROWS; row++) {
+      const base = row * SCREEN_COLS;
+      for (let col = 0; col < SCREEN_COLS; col++) {
+        const idx = base + col;
+        buf.attr[idx] = CLEAR_ATTR;
+        const dst = idx * CELL;
+        for (let py = 0; py < CELL; py++) buf.data[dst + py] = 0;
+      }
+    }
+  }
+  function pastePlayfield(screen, play) {
+    for (let row = 0; row < ROWS; row++) {
+      const sBase = (row + PLAY_ROW0) * SCREEN_COLS;
+      const pBase = row * COLS;
+      for (let col = 0; col < COLS; col++) {
+        screen.attr[sBase + col] = play.attr[pBase + col];
+        const sDst = (sBase + col) * CELL;
+        const pDst = (pBase + col) * CELL;
+        for (let py = 0; py < CELL; py++) screen.data[sDst + py] = play.data[pDst + py];
+      }
+    }
+  }
+  function cellIndex(row, col) {
+    return row * SCREEN_COLS + col;
+  }
+
+  // src/ui/print.ts
+  function newPrintState() {
+    return {
+      row: 0,
+      col: 0,
+      ink: 7,
+      paper: 0,
+      bright: 0,
+      flash: 0,
+      over: 0,
+      transparentInk: false
+    };
+  }
+  function glyphBytes(code) {
+    const idx = code - FONT_FIRST;
+    if (idx < 0 || idx >= FONT_COUNT) return null;
+    return FONT_ADD4.subarray(idx * 8, idx * 8 + 8);
+  }
+  function writeAttr(buf, row, col, st) {
+    const idx = cellIndex(row, col);
+    let ink = st.ink & 7;
+    if (st.transparentInk) ink = buf.attr[idx] & 7;
+    const attr = (st.flash & 1) << 7 | (st.bright & 1) << 6 | (st.paper & 7) << 3 | ink;
+    if (st.over) {
+      return;
+    }
+    buf.attr[idx] = attr;
+  }
+  function plotChar(buf, st, code) {
+    const g = glyphBytes(code);
+    if (!g) {
+      st.col = st.col + 1 & 31;
+      return;
+    }
+    const { row, col } = st;
+    if (row >= 0 && row < SCREEN_ROWS && col >= 0 && col < SCREEN_COLS) {
+      const dst = cellIndex(row, col) * CELL;
+      if (st.over) {
+        for (let py = 0; py < CELL; py++) buf.data[dst + py] ^= g[py];
+      } else {
+        for (let py = 0; py < CELL; py++) buf.data[dst + py] = g[py];
+      }
+      writeAttr(buf, row, col, st);
+    }
+    st.col = st.col + 1 & 31;
+  }
+  function printMessage(buf, st, bytes, start = 0) {
+    let i = start;
+    while (i < bytes.length) {
+      const b = bytes[i] & 255;
+      i += 1;
+      if (b === 255) break;
+      if (b === 16) {
+        const n = bytes[i] & 255;
+        i += 1;
+        st.transparentInk = n === 8;
+        if (n <= 7) st.ink = n;
+        continue;
+      }
+      if (b === 17) {
+        st.paper = bytes[i] & 7;
+        i += 1;
+        continue;
+      }
+      if (b === 18) {
+        st.flash = bytes[i] & 1;
+        i += 1;
+        continue;
+      }
+      if (b === 19) {
+        st.bright = bytes[i] & 1;
+        i += 1;
+        continue;
+      }
+      if (b === 21) {
+        st.over = bytes[i] & 1;
+        i += 1;
+        continue;
+      }
+      if (b === 22) {
+        st.row = bytes[i] & 255;
+        st.col = bytes[i + 1] & 255;
+        i += 2;
+        continue;
+      }
+      if (b === 8) {
+        st.col = st.col - 1 & 31;
+        continue;
+      }
+      if (b >= 32) plotChar(buf, st, b);
+    }
+    return i - start;
+  }
+
+  // src/ui/overlay.ts
+  var MSG_SECURITY_DOOR = "SECURITY  DOOR";
+  var MSG_ACCESS_CODE = "ACCESS  CODE";
+  var MSG_ACCESS_OK = "ACCESS AUTHORISED";
+  var MSG_ACCESS_BAD = "ACCESS CODE INVALID";
+  var MSG_ENTERED = "YOU HAVE ENTERED";
+  var MSG_TELEPORT = "TELEPORT";
+  var MSG_CODE_PREFIX = "CODE : ";
+  var MSG_ENTER_TP = "ENTER TELEPORTAL";
+  var MSG_DEST_CODE = "DESTINATION CODE";
+  var MSG_DASHES = "- - - - -";
+  var MSG_TP_OK = "NOW TELEPORTING";
+  var MSG_TP_BAD = "CODE NOT RECOGNISED";
+  function idleUi() {
+    return { kind: "none" };
+  }
+  function printAt(buf, row, col, text, ink = 7) {
+    const bytes = [22, row, col, 16, ink, 19, 1, ...[...text].map((c) => c.charCodeAt(0)), 255];
+    printMessage(buf, newPrintState(), bytes);
+  }
+  function beginDoorUi(world, room, openRight) {
+    const ok = doorKeysAccepted(world, room);
+    requestSfx(world, 8);
+    return {
+      kind: "door",
+      phase: "intro",
+      ok,
+      openRight,
+      ticks: 0,
+      digits: expectedDoorCode(room)
+    };
+  }
+  function beginTeleportUi(room, world) {
+    if (world) requestSfx(world, 7);
+    return {
+      kind: "teleport",
+      phase: "prompt",
+      ownName: teleportNameForRoom(room) || "?????",
+      buffer: "",
+      waitingRelease: true,
+      ok: false,
+      dest: room,
+      ticks: 0
+    };
+  }
+  function drawDoorOverlay(buf, ui) {
+    clearPlayfield(buf);
+    printAt(buf, 8, 9, MSG_SECURITY_DOOR);
+    printAt(buf, 15, 10, MSG_ACCESS_CODE);
+    if (ui.phase === "result" || ui.phase === "done") {
+      if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
+      else printAt(buf, 21, 6, MSG_ACCESS_BAD);
+    }
+  }
+  function drawTeleportOverlay(buf, ui) {
+    clearPlayfield(buf);
+    printAt(buf, 8, 4, MSG_ENTERED);
+    printAt(buf, 10, 8, MSG_TELEPORT);
+    printAt(buf, 12, 6, MSG_CODE_PREFIX + ui.ownName.slice(0, TELEPORT_NAME_LEN));
+    printAt(buf, 14, 8, MSG_ENTER_TP);
+    printAt(buf, 16, 8, MSG_DEST_CODE);
+    if (ui.phase === "prompt" || ui.phase === "input") {
+      printAt(buf, 19, 12, MSG_DASHES);
+      let col = 12;
+      for (let i = 0; i < ui.buffer.length; i++) {
+        printAt(buf, 19, col, ui.buffer[i] + " ");
+        col += 2;
+      }
+    }
+    if (ui.phase === "result" || ui.phase === "done") {
+      if (ui.ok) printAt(buf, 21, 9, MSG_TP_OK);
+      else printAt(buf, 21, 6, MSG_TP_BAD);
+    }
+  }
+  function drawUiOverlay(buf, ui) {
+    if (ui.kind === "door") drawDoorOverlay(buf, ui);
+    else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui);
+  }
+  function tickDoorUi(ui, world) {
+    ui.ticks += 1;
+    if (ui.phase === "intro" && ui.ticks >= 25) {
+      ui.phase = "result";
+      ui.ticks = 0;
+      if (world) {
+        if (ui.ok) {
+          requestSfx(world, 10);
+          requestSfx(world, 15);
+        } else {
+          requestSfx(world, 15);
+        }
+      }
+    } else if (ui.phase === "result" && ui.ticks >= 40) {
+      ui.phase = "done";
+      return true;
+    }
+    return ui.phase === "done";
+  }
+  function mapTeleportKey(key) {
+    if (key === " ") return " ";
+    if (key.length === 1) {
+      const ch = key.toUpperCase();
+      const code = ch.charCodeAt(0);
+      if (code >= 48 && code <= 57) return ch;
+      if (code >= 65 && code <= 90) return ch;
+    }
+    return null;
+  }
+  function feedTeleportKey(ui, key, down, world) {
+    if (ui.phase !== "input" && ui.phase !== "prompt") return;
+    if (ui.phase === "prompt") ui.phase = "input";
+    if (!down) {
+      ui.waitingRelease = false;
+      return;
+    }
+    if (ui.waitingRelease) return;
+    if (ui.buffer.length >= TELEPORT_NAME_LEN) return;
+    const ch = mapTeleportKey(key);
+    if (!ch) return;
+    ui.buffer += ch;
+    ui.waitingRelease = true;
+    if (world) requestSfx(world, 17);
+  }
+  function finishTeleportInput(ui, room, world) {
+    const ev = evaluateTeleport(ui.buffer, room);
+    ui.ok = ev.ok;
+    ui.dest = ev.dest;
+    ui.phase = "result";
+    ui.ticks = 0;
+    if (world) {
+      if (ui.ok) {
+        requestSfx(world, 16);
+        requestSfx(world, 9);
+      } else {
+        requestSfx(world, 15);
+      }
+    }
+  }
+  function tickTeleportUi(ui, room, world) {
+    if (ui.phase === "prompt") {
+      ui.phase = "input";
+      ui.waitingRelease = true;
+    }
+    if (ui.phase === "input" && ui.buffer.length >= TELEPORT_NAME_LEN) {
+      finishTeleportInput(ui, room, world);
+    }
+    if (ui.phase === "result") {
+      ui.ticks += 1;
+      if (ui.ticks >= 40) {
+        ui.phase = "done";
+        return true;
+      }
+    }
+    return ui.phase === "done";
+  }
+  function syncWorldMessage(world, ui) {
+    if (ui.kind === "door") {
+      world.message = ui.ok ? DOOR_MSG_OK : DOOR_MSG_BAD;
+    } else if (ui.kind === "teleport" && (ui.phase === "result" || ui.phase === "done")) {
+      world.message = ui.ok ? TELEPORT_MSG_OK : TELEPORT_MSG_BAD;
+    }
+  }
+  function isUiBlocking(ui) {
+    return ui.kind !== "none";
   }
 
   // src/physics.ts
@@ -2156,6 +3381,8 @@
     world.blobInk = BLOB_INK;
     parkBullet(world);
     parkDeathSlots(world);
+    requestSfx(world, 19);
+    if ((a & 255 & 7) === 2) requestSfx(world, 15);
   }
   function applyRoomExit(prep, blob, movingRight, movingLeft, world) {
     const boarded = world?.dd22 === DD22_PAD;
@@ -2269,6 +3496,10 @@
     if (blob.walkTick >= ANIM_PERIOD) {
       blob.walkTick = 0;
       blob.walkFrame = blob.walkFrame + 1 & 3;
+      if (world && world.dd22 === DD22_WALK) {
+        world.sfxStep ^= 1;
+        requestSfx(world, world.sfxStep);
+      }
     }
     const onStation = world ? onStationPixel(blob, world) : false;
     if (onStation) {
@@ -2325,6 +3556,11 @@
       );
       return;
     }
+    if (world && isUiBlocking(world.ui)) {
+      world.frames = world.frames + 1 >>> 0;
+      tickOverlay(prep, blob, world);
+      return;
+    }
     if (world) world.frames = world.frames + 1 >>> 0;
     const pixels = blobInkPixels(poseGraphic(prep, blob, world));
     if (world) {
@@ -2356,13 +3592,15 @@
       applyDeath(prep, blob, world, DEATH_A_OBJ06);
       return;
     }
-    if (code === "$00:ok" || code === "$00:bad") {
-      applySecurityDoor(prep, blob, world, code === "$00:ok", input2);
+    if (code === "$00") {
+      world.teleportLatch = true;
+      world.ui = beginDoorUi(world, blob.room, !!input2.right);
+      syncWorldMessage(world, world.ui);
       return;
     }
-    if (code !== null) {
-      applyTeleport(prep, blob, world, code);
-      if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
+    if (code === "$0D") {
+      world.teleportLatch = true;
+      world.ui = beginTeleportUi(blob.room, world);
       return;
     }
     if (world.energy === 0) {
@@ -2421,6 +3659,7 @@
       seatTick: 0,
       message: "",
       teleportLatch: false,
+      ui: idleUi(),
       gameOver: false,
       victory: false,
       endResult: null,
@@ -2441,7 +3680,9 @@
       blobInk: 7,
       blobHidden: false,
       entry: { x: NEW_GAME_X, y: NEW_GAME_Y, dd22: DD22_WALK },
-      pulses: []
+      pulses: [],
+      sfx: [],
+      sfxStep: SFX_STEP_INIT
     };
     enterRoom(prep, world, room);
     return world;
@@ -2460,13 +3701,36 @@
       world.visitedCount += 1;
     }
     spawnExtra(prep, world, room);
-    if (opts?.nasties !== false) enterNasties(prep, world, room);
+    if (opts?.nasties !== false) enterNasties(prep, world, room, opts?.blob);
     world.pulses = makePulses(prep.pulsesByRoom?.[room], world.dac.dac0);
     syncHoverpad(prep, world, room, opts?.blob);
     if (opts?.blob && room === CORE_ROOM && opts.blob.room === CORE_ROOM) {
       deliverCoreParts(prep, opts.blob, world, (next) => {
         enterRoom(prep, world, next, { blob: opts.blob });
       });
+    }
+  }
+  function tickOverlay(prep, blob, world) {
+    const ui = world.ui;
+    if (ui.kind === "door") {
+      if (tickDoorUi(ui, world)) {
+        syncWorldMessage(world, ui);
+        applySecurityDoor(prep, blob, world, ui.ok, { left: !ui.openRight, right: ui.openRight });
+        world.ui = idleUi();
+      } else {
+        syncWorldMessage(world, ui);
+      }
+      return;
+    }
+    if (ui.kind === "teleport") {
+      if (tickTeleportUi(ui, blob.room, world)) {
+        syncWorldMessage(world, ui);
+        applyTeleport(prep, blob, world, ui.buffer);
+        if (blob.room < 0 || blob.room >= ROOM_COUNT) {
+          blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
+        }
+        world.ui = idleUi();
+      }
     }
   }
   function applyTeleport(prep, blob, world, code) {
@@ -2626,6 +3890,335 @@
     return { col: blob.x >> 3, row: blob.y >> 3 };
   }
 
+  // src/ui/bars.ts
+  function clampStat(val) {
+    const v = val & 255;
+    return v > STAT_CAP ? STAT_CAP : v;
+  }
+  function barGlyphs(val) {
+    const v = clampStat(val);
+    if (v === STAT_CAP) return [40, 40, 40, 40];
+    const rol3 = (v << 3 | v >> 5) & 255;
+    const full = rol3 & 3;
+    const partial = (v >> 2 & 7) + 32;
+    const out = [];
+    for (let i = 0; i < full; i++) out.push(40);
+    out.push(partial);
+    while (out.length < 4) out.push(32);
+    return out.slice(0, 4);
+  }
+
+  // src/ui/udg-chrome.ts
+  var UDG_CHROME = {
+    145: { id: 145, rows: 6, cols: 3, cells: [
+      { row: 0, col: 0, attr: 70, data: [0, 23, 59, 107, 61, 77, 114, 124] },
+      { row: 0, col: 1, attr: 70, data: [0, 255, 98, 250, 250, 178, 255, 0] },
+      { row: 0, col: 2, attr: 66, data: [0, 0, 255, 199, 223, 255, 0, 0] },
+      { row: 1, col: 0, attr: 70, data: [94, 126, 122, 94, 90, 66, 126, 66] },
+      { row: 2, col: 0, attr: 66, data: [60, 36, 52, 52, 60, 60, 60, 60] },
+      { row: 3, col: 0, attr: 66, data: [60, 60, 60, 60, 44, 44, 36, 60] },
+      { row: 4, col: 0, attr: 70, data: [66, 126, 66, 90, 94, 126, 122, 94] },
+      { row: 5, col: 0, attr: 70, data: [124, 114, 77, 61, 107, 59, 23, 0] },
+      { row: 5, col: 1, attr: 70, data: [0, 255, 178, 250, 250, 98, 255, 0] },
+      { row: 5, col: 2, attr: 66, data: [0, 0, 255, 199, 223, 255, 0, 0] }
+    ] },
+    146: { id: 146, rows: 6, cols: 3, cells: [
+      { row: 0, col: 0, attr: 66, data: [0, 0, 255, 251, 227, 255, 0, 0] },
+      { row: 0, col: 1, attr: 70, data: [0, 255, 70, 95, 95, 75, 255, 0] },
+      { row: 0, col: 2, attr: 70, data: [0, 232, 220, 214, 188, 178, 78, 62] },
+      { row: 1, col: 2, attr: 70, data: [122, 94, 126, 122, 90, 66, 126, 66] },
+      { row: 2, col: 2, attr: 66, data: [60, 36, 52, 52, 60, 60, 60, 60] },
+      { row: 3, col: 2, attr: 66, data: [60, 60, 60, 60, 44, 44, 36, 60] },
+      { row: 4, col: 2, attr: 70, data: [66, 126, 66, 90, 122, 126, 94, 122] },
+      { row: 5, col: 0, attr: 66, data: [0, 0, 255, 251, 227, 255, 0, 0] },
+      { row: 5, col: 1, attr: 70, data: [0, 255, 77, 95, 95, 70, 255, 0] },
+      { row: 5, col: 2, attr: 70, data: [62, 78, 178, 188, 214, 220, 232, 0] }
+    ] },
+    147: { id: 147, rows: 1, cols: 6, cells: [
+      { row: 0, col: 0, attr: 66, data: [0, 0, 255, 255, 255, 255, 0, 0] },
+      { row: 0, col: 1, attr: 66, data: [0, 0, 255, 255, 255, 255, 0, 0] },
+      { row: 0, col: 2, attr: 66, data: [0, 0, 254, 246, 198, 254, 0, 0] },
+      { row: 0, col: 3, attr: 66, data: [0, 0, 255, 199, 223, 255, 0, 0] },
+      { row: 0, col: 4, attr: 66, data: [0, 0, 255, 255, 255, 255, 0, 0] },
+      { row: 0, col: 5, attr: 66, data: [0, 0, 255, 255, 255, 255, 0, 0] }
+    ] },
+    148: { id: 148, rows: 5, cols: 8, cells: [
+      { row: 1, col: 0, attr: 5, data: [0, 127, 127, 127, 112, 119, 119, 118] },
+      { row: 1, col: 1, attr: 5, data: [255, 255, 255, 255, 0, 255, 255, 0] },
+      { row: 1, col: 2, attr: 5, data: [255, 255, 255, 255, 0, 255, 255, 0] },
+      { row: 1, col: 3, attr: 5, data: [255, 255, 255, 255, 0, 255, 255, 0] },
+      { row: 1, col: 4, attr: 5, data: [255, 255, 255, 255, 0, 255, 255, 0] },
+      { row: 1, col: 5, attr: 5, data: [255, 255, 255, 255, 0, 255, 255, 0] },
+      { row: 1, col: 6, attr: 5, data: [255, 255, 255, 255, 0, 255, 255, 0] },
+      { row: 1, col: 7, attr: 5, data: [255, 255, 255, 255, 15, 207, 207, 79] },
+      { row: 2, col: 0, attr: 5, data: [246, 246, 246, 246, 246, 246, 246, 246] },
+      { row: 2, col: 7, attr: 5, data: [79, 79, 79, 79, 79, 79, 79, 79] },
+      { row: 3, col: 0, attr: 5, data: [246, 247, 240, 240, 255, 255, 255, 255] },
+      { row: 3, col: 1, attr: 5, data: [0, 255, 0, 0, 255, 255, 239, 239] },
+      { row: 3, col: 2, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 3, col: 3, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 3, col: 4, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 3, col: 5, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 3, col: 6, attr: 5, data: [0, 255, 0, 0, 255, 255, 247, 247] },
+      { row: 3, col: 7, attr: 5, data: [79, 207, 15, 15, 255, 255, 255, 255] },
+      { row: 4, col: 0, attr: 5, data: [127, 127, 127, 127, 127, 127, 127, 0] },
+      { row: 4, col: 1, attr: 5, data: [239, 239, 225, 255, 255, 255, 255, 255] },
+      { row: 4, col: 2, attr: 13, data: [195, 195, 195, 195, 195, 255, 255, 255] },
+      { row: 4, col: 3, attr: 13, data: [255, 15, 12, 12, 12, 255, 255, 255] },
+      { row: 4, col: 4, attr: 13, data: [255, 255, 63, 48, 48, 255, 255, 255] },
+      { row: 4, col: 5, attr: 13, data: [255, 255, 255, 255, 195, 255, 255, 255] },
+      { row: 4, col: 6, attr: 5, data: [247, 247, 7, 255, 255, 255, 255, 255] },
+      { row: 4, col: 7, attr: 5, data: [255, 255, 255, 255, 255, 255, 255, 255] }
+    ] },
+    149: { id: 149, rows: 5, cols: 8, cells: [
+      { row: 1, col: 0, attr: 5, data: [238, 238, 238, 238, 238, 238, 238, 238] },
+      { row: 1, col: 1, attr: 71, data: [0, 0, 7, 27, 13, 60, 88, 96] },
+      { row: 1, col: 2, attr: 71, data: [208, 216, 64, 104, 172, 220, 126, 254] },
+      { row: 1, col: 3, attr: 5, data: [78, 78, 78, 78, 78, 78, 78, 78] },
+      { row: 1, col: 4, attr: 67, data: [0, 127, 119, 99, 119, 127, 127, 0] },
+      { row: 1, col: 5, attr: 67, data: [0, 252, 4, 118, 6, 4, 252, 0] },
+      { row: 2, col: 0, attr: 5, data: [238, 238, 238, 238, 238, 238, 238, 238] },
+      { row: 2, col: 1, attr: 71, data: [113, 123, 63, 63, 223, 231, 120, 60] },
+      { row: 2, col: 2, attr: 71, data: [254, 254, 156, 96, 190, 14, 252, 248] },
+      { row: 2, col: 3, attr: 5, data: [78, 78, 78, 78, 78, 78, 78, 78] },
+      { row: 2, col: 4, attr: 7, data: [0, 120, 123, 3, 12, 5, 26, 0] },
+      { row: 2, col: 5, attr: 7, data: [0, 30, 222, 192, 48, 160, 88, 0] },
+      { row: 3, col: 0, attr: 5, data: [238, 238, 238, 238, 238, 238, 238, 238] },
+      { row: 3, col: 3, attr: 5, data: [78, 78, 78, 78, 78, 78, 78, 78] },
+      { row: 3, col: 4, attr: 71, data: [0, 4, 14, 155, 113, 32, 0, 0] },
+      { row: 3, col: 5, attr: 71, data: [0, 24, 60, 126, 206, 134, 0, 0] },
+      { row: 4, col: 0, attr: 5, data: [238, 239, 224, 224, 255, 255, 255, 255] },
+      { row: 4, col: 1, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 2, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 3, attr: 5, data: [78, 207, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 4, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 5, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 6, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 7, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] }
+    ] },
+    150: { id: 150, rows: 5, cols: 8, cells: [
+      { row: 1, col: 2, attr: 5, data: [78, 78, 78, 78, 78, 78, 78, 78] },
+      { row: 2, col: 2, attr: 5, data: [78, 78, 78, 78, 78, 78, 78, 78] },
+      { row: 3, col: 2, attr: 5, data: [78, 79, 64, 64, 79, 79, 79, 79] },
+      { row: 3, col: 3, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 3, col: 4, attr: 5, data: [0, 255, 0, 0, 255, 224, 231, 255] },
+      { row: 3, col: 5, attr: 5, data: [0, 255, 0, 0, 255, 7, 231, 231] },
+      { row: 3, col: 6, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 3, col: 7, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 0, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 1, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 4, col: 2, attr: 5, data: [79, 207, 15, 15, 255, 255, 255, 255] },
+      { row: 4, col: 3, attr: 5, data: [255, 255, 255, 255, 255, 255, 255, 255] },
+      { row: 4, col: 4, attr: 5, data: [239, 199, 131, 1, 1, 1, 255, 255] },
+      { row: 4, col: 5, attr: 5, data: [231, 231, 227, 227, 255, 255, 255, 255] },
+      { row: 4, col: 6, attr: 5, data: [255, 255, 102, 102, 255, 255, 255, 255] },
+      { row: 4, col: 7, attr: 5, data: [255, 255, 48, 48, 255, 255, 255, 255] }
+    ] },
+    151: { id: 151, rows: 5, cols: 4, cells: [
+      { row: 1, col: 3, attr: 5, data: [0, 78, 78, 78, 78, 78, 78, 78] },
+      { row: 2, col: 3, attr: 5, data: [79, 79, 79, 79, 79, 79, 79, 79] },
+      { row: 3, col: 0, attr: 5, data: [0, 255, 0, 0, 255, 192, 207, 207] },
+      { row: 3, col: 1, attr: 5, data: [0, 255, 0, 0, 255, 15, 207, 255] },
+      { row: 3, col: 2, attr: 5, data: [0, 255, 0, 0, 255, 255, 255, 255] },
+      { row: 3, col: 3, attr: 5, data: [79, 207, 15, 15, 255, 255, 255, 255] },
+      { row: 4, col: 0, attr: 5, data: [207, 207, 143, 143, 255, 255, 255, 255] },
+      { row: 4, col: 1, attr: 5, data: [1, 1, 1, 131, 199, 239, 255, 255] },
+      { row: 4, col: 2, attr: 5, data: [255, 255, 255, 255, 255, 255, 255, 255] },
+      { row: 4, col: 3, attr: 5, data: [254, 254, 254, 254, 254, 254, 254, 0] }
+    ] }
+  };
+
+  // src/ui/chrome.ts
+  function blitChromeUdg(buf, id, row, col) {
+    const udg = UDG_CHROME[id];
+    if (!udg) return;
+    for (const cell of udg.cells) {
+      const cy = row + cell.row;
+      const cx = col + cell.col;
+      if (cy < 0 || cy >= 24 || cx < 0 || cx >= SCREEN_COLS) continue;
+      const idx = cellIndex(cy, cx);
+      buf.attr[idx] = cell.attr & 255;
+      const dst = idx * CELL;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py] = cell.data[py];
+    }
+  }
+  function drawChrome(buf) {
+    blitChromeUdg(buf, 145, 0, 1);
+    let c = 1 + 3;
+    for (let e = 5; e > 0; e--) {
+      blitChromeUdg(buf, 147, 0, c);
+      blitChromeUdg(buf, 147, 5, c);
+      c += 4;
+      if (e === 4 || e === 3) c += 1;
+    }
+    c += 2;
+    blitChromeUdg(buf, 146, 0, c);
+    blitChromeUdg(buf, 148, 0, 2);
+    blitChromeUdg(buf, 149, 0, 10);
+    blitChromeUdg(buf, 150, 0, 18);
+    blitChromeUdg(buf, 151, 0, 26);
+  }
+  function printBytes(buf, bytes, st) {
+    printMessage(buf, st ?? newPrintState(), bytes);
+  }
+  function drawScore(buf, digits, st) {
+    const text = digits.slice(0, SCORE_DIGITS).map((d) => String((d | 0) % 10)).join("").padStart(SCORE_DIGITS, "0");
+    printBytes(buf, [22, 2, 3, 19, 1, 16, 7, ...[...text].map((ch) => ch.charCodeAt(0)), 255], st);
+  }
+  function drawLives(buf, lives, st) {
+    const text = String(lives & 255).padStart(2, "0").slice(-2);
+    printBytes(buf, [22, 3, 11, 16, 6, ...[...text].map((ch) => ch.charCodeAt(0)), 255], st);
+  }
+  function drawBars(buf, energy, platforms, firepower, st) {
+    const ps = st ?? newPrintState();
+    printBytes(
+      buf,
+      [
+        22,
+        1,
+        16,
+        16,
+        2,
+        32,
+        16,
+        4,
+        32,
+        32,
+        32,
+        22,
+        2,
+        16,
+        16,
+        7,
+        32,
+        32,
+        32,
+        32,
+        22,
+        3,
+        16,
+        16,
+        6,
+        32,
+        32,
+        32,
+        32,
+        16,
+        8,
+        255
+      ],
+      ps
+    );
+    const values = [clampStat(energy), clampStat(platforms), clampStat(firepower)];
+    const rows = [1, 2, 3];
+    const ordered = [values[0], values[1], values[2]];
+    for (let i = 0; i < 3; i++) {
+      const glyphs = barGlyphs(ordered[i]);
+      const row = rows[i];
+      const msg = [22, row, 16];
+      for (const g of glyphs) msg.push(g);
+      msg.push(255);
+      printBytes(buf, msg, ps);
+    }
+  }
+  function drawInventory(buf, prep, world, st) {
+    printBytes(
+      buf,
+      [
+        22,
+        1,
+        21,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        22,
+        2,
+        21,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        32,
+        255
+      ],
+      st
+    );
+    if (!prep) return;
+    const cols = [21, 23, 25, 27];
+    for (let i = 0; i < world.inventory.length && i < 4; i++) {
+      const it = world.inventory[i];
+      const sprite = prep.sprites[it.sprite];
+      if (!sprite) continue;
+      const attr = (it.attr & 7 | 64) & 255;
+      const col0 = cols[i];
+      const row0 = 1;
+      for (const cell of sprite.cells) {
+        const cy = row0 + cell.row;
+        const cx = col0 + cell.col;
+        if (cy < 0 || cy >= 24 || cx < 0 || cx >= SCREEN_COLS) continue;
+        const idx = cellIndex(cy, cx);
+        const dst = idx * CELL;
+        for (let py = 0; py < CELL; py++) buf.data[dst + py] ^= cell.data[py];
+        buf.attr[idx] = attr;
+      }
+    }
+  }
+  function drawStatus(buf, world, prep = null) {
+    const st = newPrintState();
+    drawScore(buf, world.scoreDigits, st);
+    drawLives(buf, world.lives, st);
+    drawBars(buf, world.energy, world.platforms, world.firepower, st);
+    drawInventory(buf, prep, world, st);
+  }
+  function clampWorldStats(world) {
+    world.energy = clampStat(world.energy);
+    world.platforms = clampStat(world.platforms);
+    world.firepower = clampStat(world.firepower);
+  }
+
+  // src/ui/compose.ts
+  function paperInk2(attr) {
+    const table = attr & 64 ? BRIGHT : SPECTRUM;
+    return [table[attr >> 3 & 7], table[attr & 7]];
+  }
+  function rasterizeScreen(buf, rgba) {
+    let p = 0;
+    for (let cy = 0; cy < SCREEN_ROWS; cy++) {
+      for (let py = 0; py < CELL; py++) {
+        for (let cx = 0; cx < SCREEN_COLS; cx++) {
+          const idx = cy * SCREEN_COLS + cx;
+          const [paper, ink] = paperInk2(buf.attr[idx]);
+          const bits = buf.data[idx * CELL + py];
+          for (let px = 0; px < CELL; px++) {
+            const on = bits & 128 >> px;
+            rgba[p] = on ? ink[0] : paper[0];
+            rgba[p + 1] = on ? ink[1] : paper[1];
+            rgba[p + 2] = on ? ink[2] : paper[2];
+            rgba[p + 3] = 255;
+            p += 4;
+          }
+        }
+      }
+    }
+    return rgba;
+  }
+  function blitPlayfieldRgba(screen, play, playY0, playH, width) {
+    const rowBytes = width * 4;
+    for (let y = 0; y < playH; y++) {
+      const src = y * rowBytes;
+      const dst = (y + playY0) * rowBytes;
+      screen.set(play.subarray(src, src + rowBytes), dst);
+    }
+  }
+
   // src/main.ts
   var DATA_BASE = "../out";
   var keys = { left: false, right: false, up: false, down: false, fire: false };
@@ -2651,16 +4244,29 @@
     const n = parseInt(h, 10);
     return Number.isNaN(n) ? null : clampRoom(n);
   }
+  function applyDevToggle() {
+    const q = new URLSearchParams(location.search);
+    const off = q.get("dev") === "0";
+    document.body.classList.toggle("dev-off", off);
+    document.body.classList.toggle("dev-on", !off);
+  }
   async function boot() {
+    applyDevToggle();
     const canvas = $("screen");
     const rawCtx = canvas.getContext("2d", { alpha: false });
     if (!rawCtx) throw new Error("canvas");
-    const ctx = rawCtx;
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
-    ctx.imageSmoothingEnabled = false;
-    const imageData = ctx.createImageData(WIDTH, HEIGHT);
-    const buf = newBuffers();
+    const ctx2 = rawCtx;
+    canvas.width = SCREEN_W;
+    canvas.height = SCREEN_H;
+    ctx2.imageSmoothingEnabled = false;
+    canvas.style.width = DISPLAY_W + "px";
+    canvas.style.height = DISPLAY_H + "px";
+    const imageData = ctx2.createImageData(SCREEN_W, SCREEN_H);
+    const screenRgba = imageData.data;
+    const playRgba = new Uint8ClampedArray(WIDTH * HEIGHT * 4);
+    const playBuf = newBuffers();
+    const screenBuf = newScreenBuffers();
+    const hudScratch = newScreenBuffers();
     const stage = $("stage");
     const overlayEl = $("overlay");
     const gotoEl = $("goto");
@@ -2685,17 +4291,7 @@
     });
     const start = parseHash() ?? 0;
     const world = createWorld(prep, start);
-    world.readTeleportCode = (ownName) => {
-      const typed = window.prompt(
-        `YOU HAVE ENTERED TELEPORT
-CODE : ${ownName}
-ENTER TELEPORTAL DESTINATION CODE`,
-        ""
-      );
-      keys.left = false;
-      keys.right = false;
-      return typed;
-    };
+    wireAudioUi();
     let blob = spawnBlob(prep, start, world);
     if (blob.room === start) enterRoom(prep, world, start, { blob });
     let overlay = false;
@@ -2705,6 +4301,12 @@ ENTER TELEPORTAL DESTINATION CODE`,
     let frames = 0;
     let acc = 0;
     let last = performance.now();
+    let chromeRoom = -1;
+    function rebuildChrome() {
+      clearScreen(hudScratch, 0);
+      drawChrome(hudScratch);
+      chromeRoom = blob.room;
+    }
     function showEndOverlay() {
       if (endShown || !world.endResult) return;
       endShown = true;
@@ -2721,12 +4323,6 @@ ENTER TELEPORTAL DESTINATION CODE`,
         <div><dt>CORES REPLACED</dt><dd>${er.coresReplaced}</dd></div>
       </dl></div>`;
       document.body.appendChild(panel);
-    }
-    function fitScale() {
-      const scale = Math.max(1, Math.floor(Math.min(stage.clientWidth / WIDTH, stage.clientHeight / HEIGHT)));
-      canvas.style.width = WIDTH * scale + "px";
-      canvas.style.height = HEIGHT * scale + "px";
-      $("scale").textContent = "\xD7" + scale;
     }
     function updatePanel() {
       $("room-id").textContent = String(blob.room);
@@ -2747,39 +4343,49 @@ ENTER TELEPORTAL DESTINATION CODE`,
       $("stat-extra").textContent = world.extra ? "$" + world.extra.sprite.toString(16) + " @ " + world.extra.col + "," + world.extra.row : "\u2014";
       const on = world.pulses.filter((p) => p.flag !== 0);
       $("stat-pulse").textContent = on.length ? on.map((p) => p.col + "," + p.row).join(" ") : world.pulses.length ? "off" : "\u2014";
-      const dd22El = $("stat-dd22");
-      dd22El.textContent = String(world.dd22);
-      const padEl = $("stat-pad");
-      padEl.textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "\u2014";
-      const tpEl = $("stat-teleport");
-      tpEl.textContent = teleportNameForRoom(blob.room) || "\u2014";
+      $("stat-dd22").textContent = String(world.dd22);
+      $("stat-pad").textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "\u2014";
+      $("stat-teleport").textContent = teleportNameForRoom(blob.room) || "\u2014";
       const doorEl = $("stat-door");
       const doors = prep.doorsByRoom?.[blob.room] ?? [];
       if (doors.length) {
         const need = expectedDoorCode(blob.room);
-        const keys2 = need.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
+        const keyTxt = need.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
         const hasUni = world.inventory.some((it) => it.sprite === 15);
-        doorEl.textContent = hasUni ? `${keys2} (m\xE1\u0161 $0F)` : keys2;
+        doorEl.textContent = hasUni ? `${keyTxt} (m\xE1\u0161 $0F)` : keyTxt;
       } else {
         doorEl.textContent = "\u2014";
       }
-      const msgEl = $("stat-message");
-      msgEl.textContent = world.message || "\u2014";
+      $("stat-message").textContent = world.message || "\u2014";
       gotoEl.value = String(blob.room);
       $("time").textContent = lastMs.toFixed(2) + " ms";
       $("avg").textContent = avgMs.toFixed(2) + " ms";
       $("fps").textContent = avgMs > 0 ? (1e3 / avgMs).toFixed(0) : "\u2014";
+      $("scale").textContent = "\xD72";
       if (world.gameOver) showEndOverlay();
     }
     function draw() {
       const t0 = performance.now();
-      const anim = animationSet(blob, world);
-      renderWorld(prep, world, buf, imageData.data, blob.room, {
-        items: true,
-        overlay,
-        blob: world.blobHidden ? null : { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame, ink: world.blobInk }
-      });
-      ctx.putImageData(imageData, 0, 0);
+      clampWorldStats(world);
+      if (chromeRoom !== blob.room) rebuildChrome();
+      screenBuf.data.set(hudScratch.data);
+      screenBuf.attr.set(hudScratch.attr);
+      drawStatus(screenBuf, world, prep);
+      if (isUiBlocking(world.ui)) {
+        drawUiOverlay(screenBuf, world.ui);
+        rasterizeScreen(screenBuf, screenRgba);
+      } else {
+        const anim = animationSet(blob, world);
+        renderWorld(prep, world, playBuf, playRgba, blob.room, {
+          items: true,
+          overlay,
+          blob: world.blobHidden ? null : { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame, ink: world.blobInk }
+        });
+        pastePlayfield(screenBuf, playBuf);
+        rasterizeScreen(screenBuf, screenRgba);
+        blitPlayfieldRgba(screenRgba, playRgba, PLAY_Y02, HEIGHT, WIDTH);
+      }
+      ctx2.putImageData(imageData, 0, 0);
       const dt = performance.now() - t0;
       lastMs = dt;
       frames += 1;
@@ -2790,27 +4396,35 @@ ENTER TELEPORTAL DESTINATION CODE`,
       const room = clampRoom(id);
       blob = spawnBlob(prep, room, world);
       enterRoom(prep, world, room, { blob });
+      chromeRoom = -1;
       const hash = "#" + blob.room;
       if (location.hash !== hash) history.replaceState(null, "", hash);
     }
     document.addEventListener("keydown", (ev) => {
+      unlock();
       if (ev.target instanceof HTMLInputElement) return;
-      if (ev.key === "ArrowLeft" || ev.key === "a" || ev.key === "A") {
+      if (world.ui.kind === "teleport") {
+        feedTeleportKey(world.ui, ev.key, true, world);
+        if (ev.key.length === 1 || ev.key === " ") ev.preventDefault();
+        return;
+      }
+      if (isUiBlocking(world.ui)) {
+        ev.preventDefault();
+        return;
+      }
+      if (ev.key === "o" || ev.key === "O") {
         keys.left = true;
         ev.preventDefault();
-      } else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") {
+      } else if (ev.key === "p" || ev.key === "P") {
         keys.right = true;
         ev.preventDefault();
-      } else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") {
+      } else if (ev.key === "q" || ev.key === "Q") {
         keys.up = true;
         ev.preventDefault();
-      } else if (ev.key === " ") {
-        keys.fire = true;
-        ev.preventDefault();
-      } else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") {
+      } else if (ev.key === "a" || ev.key === "A") {
         keys.down = true;
         ev.preventDefault();
-      } else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") {
+      } else if (ev.key === " ") {
         keys.fire = true;
         ev.preventDefault();
       } else if (ev.key === "PageUp") {
@@ -2820,12 +4434,17 @@ ENTER TELEPORTAL DESTINATION CODE`,
       }
     });
     document.addEventListener("keyup", (ev) => {
-      if (ev.key === "ArrowLeft" || ev.key === "a" || ev.key === "A") keys.left = false;
-      else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") keys.right = false;
-      else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") keys.up = false;
-      else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") keys.down = false;
-      else if (ev.key === " " || ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
+      if (world.ui.kind === "teleport") {
+        feedTeleportKey(world.ui, ev.key, false, world);
+      }
+      if (ev.key === "o" || ev.key === "O") keys.left = false;
+      else if (ev.key === "p" || ev.key === "P") keys.right = false;
+      else if (ev.key === "q" || ev.key === "Q") keys.up = false;
+      else if (ev.key === "a" || ev.key === "A") keys.down = false;
+      else if (ev.key === " ") keys.fire = false;
     });
+    document.addEventListener("pointerdown", () => unlock());
+    document.addEventListener("click", () => unlock());
     $("go").addEventListener("click", () => goRoom(parseInt(gotoEl.value, 10) || 0));
     gotoEl.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter") goRoom(parseInt(gotoEl.value, 10) || 0);
@@ -2833,13 +4452,12 @@ ENTER TELEPORTAL DESTINATION CODE`,
     overlayEl.addEventListener("change", () => {
       overlay = overlayEl.checked;
     });
-    window.addEventListener("resize", fitScale);
     window.addEventListener("hashchange", () => {
       const id = parseHash();
       if (id !== null && id !== blob.room) goRoom(id);
     });
-    $("status").textContent = "50 Hz \xB7 \u0161ipky / WASD \xB7 Up sb\u011Br/pad \xB7 Down plo\u0161inka \xB7 mezern\xEDk palba \xB7 Left/Right teleport/dve\u0159e \xB7 j\xE1dro #199";
-    fitScale();
+    $("status").textContent = "50 Hz \xB7 HUD+playfield 256\xD7192 \xB7 Q/A/O/P + mezern\xEDk \xB7 teleport 5 znak\u016F \xB7 dve\u0159e invent\xE1\u0159 \xB7 ?dev=0";
+    void stage;
     function frame(now) {
       acc += now - last;
       last = now;
@@ -2847,7 +4465,9 @@ ENTER TELEPORTAL DESTINATION CODE`,
       while (acc >= TICK_MS) {
         const prev = blob.room;
         tick(prep, blob, input(), world);
+        drainSfx(world);
         if (blob.room !== prev) {
+          chromeRoom = -1;
           const hash = "#" + blob.room;
           if (location.hash !== hash) history.replaceState(null, "", hash);
         }
@@ -2856,6 +4476,7 @@ ENTER TELEPORTAL DESTINATION CODE`,
       draw();
       requestAnimationFrame(frame);
     }
+    rebuildChrome();
     requestAnimationFrame(frame);
   }
   void boot().catch((err) => {

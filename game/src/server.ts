@@ -16,6 +16,7 @@ const MIME: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
   ".ico": "image/x-icon",
+  ".mp3": "audio/mpeg",
 };
 
 function contentType(file: string): string {

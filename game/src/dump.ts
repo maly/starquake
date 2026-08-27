@@ -499,7 +499,9 @@ if (has("--door-test")) {
   }
   const before = { x: blob.x, y: playYToGame(blob.y), room: blob.room, nastyCount: world.nastyCount };
   const input = { left: false, right: true, up: false, down: false, fire: false };
+  // Door overlay FSM: intro (~25) + result (~40) then applySecurityDoor.
   tick(prep, blob, input, world);
+  for (let i = 0; i < 80 && world.ui.kind !== "none"; i++) tick(prep, blob, input, world);
   process.stdout.write(
     JSON.stringify({
       room,

@@ -2,9 +2,15 @@
 export const COLS = 32;
 export const ROWS = 18;
 export const CELL = 8;
+/** Playfield pixel size (physics / PNG compare). Full Spectrum is 256×192. */
 export const WIDTH = COLS * CELL;
 export const HEIGHT = ROWS * CELL;
+export const SCREEN_W = 256;
+export const SCREEN_H = 192;
 export const PLAY_ORIGIN = 6;
+export const PLAY_Y0 = PLAY_ORIGIN * CELL;
+export const DISPLAY_W = SCREEN_W * 2;
+export const DISPLAY_H = SCREEN_H * 2;
 export const MAP_COLS = 16;
 export const MAP_ROWS = 32;
 export const ROOM_COUNT = MAP_COLS * MAP_ROWS;
@@ -126,6 +132,8 @@ export const GRAPHIC_LO_C8 = 0xc8;
 /** $A305 AABB on $DD1D/$DD1E: |dx| < $0E, |dy| < $0B. */
 export const HIT_DX = 0x0e;
 export const HIT_DY = 0x0b;
+/** Gameplay: lethal materialize (appear→live / home) stays at least this far from Blob. */
+export const MIN_LETHAL_SPAWN_DIST = 0x40;
 
 /** $C350 register A ($A535 / $A33B / $CE7D / $A568 / $A33F). */
 export const DEATH_A_TILE = 0x00;
@@ -455,7 +463,8 @@ export const DOOR_KEY_SPRITE = 0x0f;
 export const DOOR_SINGLE_WILDCARD = 0x0e;
 export const DOOR_DIGIT_MIN = 0x09;
 export const DOOR_DIGIT_MAX = 0x0d;
-export const DOOR_MSG_TITLE = "SECURITY DOOR";
+/** ROM title uses two spaces (`SECURITY  DOOR`); short form kept for panel matchers. */
+export const DOOR_MSG_TITLE = "SECURITY  DOOR";
 export const DOOR_MSG_OK = "ACCESS AUTHORISED";
 export const DOOR_MSG_BAD = "ACCESS CODE INVALID";
 

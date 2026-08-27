@@ -31,6 +31,7 @@ import {
   HOVERPAD_Y_BIAS,
   KIND_BADALIEN2,
   KILL_GRAPHIC_HI,
+  MIN_LETHAL_SPAWN_DIST,
   NASTY_COUNT_WITH_PAD,
   NASTY_EDGE_D,
   NASTY_EDGE_L,
@@ -54,6 +55,7 @@ import {
 } from "./constants";
 import { lastStation } from "./objects";
 import type { BlobState } from "./physics";
+import { requestSfx } from "./audio/effects";
 import { parkBullet, shotFlying } from "./projectiles";
 import { addScore, killScorePoints } from "./score";
 import type { DacState, Entity, EntityCache, Prepared, World } from "./types";
@@ -145,6 +147,33 @@ function spawnCellOk(world: World, x: number, y: number): boolean {
   return true;
 }
 
+function farFromBlob(x: number, y: number, blob: BlobState | undefined): boolean {
+  if (!blob) return true;
+  const by = GAME_Y_ORIGIN - blob.y;
+  const dx = x - blob.x;
+  const dy = y - by;
+  return dx * dx + dy * dy >= MIN_LETHAL_SPAWN_DIST * MIN_LETHAL_SPAWN_DIST;
+}
+
+function nudgeAwayFromBlob(e: Entity, blob: BlobState): void {
+  const by = GAME_Y_ORIGIN - blob.y;
+  let dx = e.x - blob.x;
+  let dy = e.y - by;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) {
+    dx = MIN_LETHAL_SPAWN_DIST;
+    dy = 0;
+  } else {
+    const scale = MIN_LETHAL_SPAWN_DIST / len;
+    dx *= scale;
+    dy *= scale;
+  }
+  e.x = Math.max(NASTY_EDGE_L, Math.min(NASTY_EDGE_R - 1, Math.round(blob.x + dx))) & 0xff;
+  e.y = Math.max(NASTY_EDGE_U, Math.min(NASTY_EDGE_D - 1, Math.round(by + dy))) & 0xff;
+  e.homeX = e.x;
+  e.homeY = e.y;
+}
+
 function rotateDac0(world: World, times: number): number {
   let a = world.dac.dac0 & 0xff;
   for (let i = 0; i < times; i++) a = ((a << 1) | (a >> 7)) & 0xff;
@@ -181,10 +210,17 @@ function makeEntity(ptr: number): Entity {
 }
 
 /** $9DC2 fill of one slot, using $DAC6. Kind is $DAC1 SUB $0F ADD $11 → 2…16. */
-export function spawnOne(prep: Prepared, room: number, world: World, slot: number): Entity {
+export function spawnOne(
+  prep: Prepared,
+  room: number,
+  world: World,
+  slot: number,
+  blob?: BlobState,
+): Entity {
   dacStep(world.dac);
   const kind = z80SubAdd((world.dac.dac0 >> 8) & 0xff, 0x0f, 0x11);
   const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
+  const lethal = (ptr >> 8) < KILL_GRAPHIC_HI;
   const e = makeEntity(ptr);
   e.ink = (world.dac.dac0 >> 5) & 7;
   if (e.ink === 0) e.ink = (z80SubAdd(world.dac.dac0 & 0xff, 5, 7) & 7) || 2;
@@ -212,11 +248,12 @@ export function spawnOne(prep: Prepared, room: number, world: World, slot: numbe
       x = (z80SubAdd(a, 0x17, 0x1b) << 3) & 0xff;
       y = dac1 & 1 ? 0x11 : 0x8d;
     }
-    if (spawnCellOk(world, x, y)) {
-      e.homeX = x;
-      e.homeY = y;
-      return e;
-    }
+    if (!spawnCellOk(world, x, y)) continue;
+    // Lethal (esp. AI-5 badalien2) must not materialize on top of Blob.
+    if (lethal && !farFromBlob(x, y, blob)) continue;
+    e.homeX = x;
+    e.homeY = y;
+    return e;
   }
   e.y = 0;
   e.homeY = 0;
@@ -244,11 +281,11 @@ function applyFixedNasties(prep: Prepared, room: number, world: World): void {
   }
 }
 
-export function spawnNasties(prep: Prepared, room: number, world: World): void {
+export function spawnNasties(prep: Prepared, room: number, world: World, blob?: BlobState): void {
   world.dac = seedDac(room);
   dacStep(world.dac);
   world.entities = [];
-  for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep, room, world, i + 1));
+  for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep, room, world, i + 1, blob));
   world.nastyCount = NASTY_SLOTS;
   world.spawnGuard = SPAWN_GUARD;
   applyFixedNasties(prep, room, world);
@@ -313,14 +350,24 @@ export function spawnCoreGuardians(world: World): void {
   world.spawnGuard = 0;
   world.cacheRoom = CORE_ROOM;
 }
-export function enterNasties(prep: Prepared, world: World, room: number): void {
+export function enterNasties(prep: Prepared, world: World, room: number, blob?: BlobState): void {
   /** `$9C57`: core room uses `$9F78` guardians, not random spawn. */
   if (room === CORE_ROOM) {
     spawnCoreGuardians(world);
     return;
   }
-  /** `$9C5C`: entering `$C6` zeros `$959C` before the swap → force respawn. */
-  if (room === CORE_NEIGHBOR) world.entityCache = null;
+  /**
+   * `$9C5C` neighbour `$C6` (198): wipe `$959C` and do not run random nasties.
+   * Core eject corridor — no aliens drawn or simulated here.
+   */
+  if (room === CORE_NEIGHBOR) {
+    world.entityCache = null;
+    world.entities = [];
+    world.nastyCount = 0;
+    world.spawnGuard = 0;
+    world.cacheRoom = room;
+    return;
+  }
   const outgoing: EntityCache = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
   const incoming = world.entityCache;
   world.entityCache = outgoing;
@@ -328,7 +375,7 @@ export function enterNasties(prep: Prepared, world: World, room: number): void {
     world.entities = incoming.entities.map(cloneEntity);
     world.nastyCount = NASTY_SLOTS;
   } else {
-    spawnNasties(prep, room, world);
+    spawnNasties(prep, room, world, blob);
   }
   world.cacheRoom = room;
 }
@@ -407,6 +454,7 @@ function hitByBullet(e: Entity, world: World): void {
   const dy = Math.abs(e.y - world.bullet.y);
   if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
   addScore(world, killScorePoints(e.basePtr || e.ptr));
+  requestSfx(world, 0x12);
   e.ptr = DEAD_GRAPHIC;
   e.set = "stars";
   e.ink = 7;
@@ -559,7 +607,7 @@ function think(e: Entity, blob: BlobState, world: World, slot: number): boolean 
   return false;
 }
 
-function appearOrDie(e: Entity): boolean {
+function appearOrDie(e: Entity, blob?: BlobState): boolean {
   if (e.state === 2) {
     e.ptr = DEAD_GRAPHIC;
     e.set = "stars";
@@ -581,6 +629,9 @@ function appearOrDie(e: Entity): boolean {
     e.set = "corepieces1";
   }
   if (was === APPEAR_FRAMES) {
+    if ((e.basePtr >> 8) < KILL_GRAPHIC_HI && blob && !farFromBlob(e.x, e.y, blob)) {
+      nudgeAwayFromBlob(e, blob);
+    }
     e.state = 1;
     e.stateTimer = 0;
     e.ptr = e.basePtr;
@@ -609,7 +660,7 @@ function stepOne(e: Entity, prep: Prepared, blob: BlobState, world: World, slot:
   e.timer = (e.timer - 1) & 0xff;
   if (e.timer !== 0) return null;
   e.timer = e.period;
-  if (appearOrDie(e) && e.y === 0) return null;
+  if (appearOrDie(e, blob) && e.y === 0) return null;
   const abort = think(e, blob, world, slot);
   stepMove(e, world);
   if (abort) return { kind: "abort" };

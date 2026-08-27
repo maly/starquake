@@ -59,7 +59,11 @@ describe("security doors $00", () => {
     blob.x = left.x;
     blob.y = GAME_Y_ORIGIN - left.y;
     world.inventory = [{ sprite: DOOR_KEY_SPRITE, attr: 3 }];
-    tick(prep, blob, { left: false, right: true, up: false, down: false, fire: false }, world);
+    const open = { left: false, right: true, up: false, down: false, fire: false };
+    tick(prep, blob, open, world);
+    assert.equal(world.ui.kind, "door");
+    for (let i = 0; i < 80; i++) tick(prep, blob, open, world);
+    assert.equal(world.ui.kind, "none");
     assert.equal(blob.x, (left.x + DOOR_SHIFT_X) & 0xff);
     assert.equal(world.d2c4, DOOR_REASON);
     assert.match(world.message, /AUTHORISED/i);
@@ -91,7 +95,9 @@ describe("security doors $00", () => {
     blob.x = 128;
     blob.y = GAME_Y_ORIGIN - 63;
     world.inventory = [];
-    tick(prep, blob, { left: false, right: true, up: false, down: false, fire: false }, world);
+    const open = { left: false, right: true, up: false, down: false, fire: false };
+    tick(prep, blob, open, world);
+    for (let i = 0; i < 80; i++) tick(prep, blob, open, world);
     assert.equal(blob.x, 128);
     assert.equal(world.d2c4, DOOR_REASON);
     assert.match(world.message, /INVALID/i);
@@ -107,7 +113,9 @@ describe("security doors $00", () => {
     blob.x = 128;
     blob.y = GAME_Y_ORIGIN - 63;
     world.inventory = need.map((sprite) => ({ sprite, attr: 3 }));
-    tick(prep, blob, { left: false, right: true, up: false, down: false, fire: false }, world);
+    const open = { left: false, right: true, up: false, down: false, fire: false };
+    tick(prep, blob, open, world);
+    for (let i = 0; i < 80; i++) tick(prep, blob, open, world);
     assert.equal(blob.x, (128 + DOOR_SHIFT_X) & 0xff);
     assert.match(world.message, /AUTHORISED/i);
   });
@@ -225,19 +233,18 @@ describe("core delivery $A6C1 / victory", () => {
     assert.equal(blob.x, 0xf0);
   });
 
-  it("wipes $959C-style entity cache when re-entering $C6", () => {
+  it("room $C6 (198) has no aliens ($9C5C corridor)", () => {
     const prep = loadPrep();
     if (!prep) return;
     const world = createWorld(prep, CORE_NEIGHBOR);
     const blob = spawnBlob(prep, CORE_NEIGHBOR, world);
-    const marker = world.entities[0]!;
-    marker.x = 1;
-    marker.y = 1;
+    assert.equal(world.nastyCount, 0);
+    assert.equal(world.entities.length, 0);
     enterRoom(prep, world, 0, { blob });
+    assert.ok(world.nastyCount > 0);
     enterRoom(prep, world, CORE_NEIGHBOR, { blob });
-    // Wipe on $C6 enter prevents restoring the marked slot.
-    assert.notEqual(world.entities[0]!.x, 1);
-    assert.notEqual(world.entities[0]!.y, 1);
+    assert.equal(world.nastyCount, 0);
+    assert.equal(world.entities.length, 0);
   });
 });
 

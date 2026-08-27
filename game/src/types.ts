@@ -64,6 +64,15 @@ export interface Pulse extends PulseDef {
   period: number;
   timer: number;
   flag: number;
+  /**
+   * Current spark bitmap (2 cells × 8 bytes) for one `$DC55` anim layer.
+   * Replaced each anim tick; blitted onto fresh tiles via OR.
+   */
+  xorInk: Uint8Array;
+  /** Last `$DB88` attribute (anim `$44+dac` or toggle `$47`). */
+  sparkAttr: number;
+  /** Last anim layer copied into xorInk (`$A6BD` value), or null. */
+  lastAnim: number | null;
 }
 
 /** $D2DC / $D2C5 snapshot taken at the last room entry. Y is game-Y ($DD1E). */
@@ -235,14 +244,15 @@ export interface World {
   seatPose: number;
   /** $DD28 while boarded. */
   seatTick: number;
-  /** Last teleport overlay line. */
+  /** Last teleport / door overlay line. */
   message: string;
   /** After a code prompt, ignore Left/Right until they are released. */
   teleportLatch: boolean;
-  /** Viewer supplies a blocking 5-char prompt; dump/tests call applyTeleport. */
-  readTeleportCode?: (ownName: string) => string | null;
-  /** Door access-code prompt; dump/tests can inject digits. */
-  readDoorCode?: (expected: number[]) => string | null;
+  /**
+   * In-game overlay FSM (door inventory minigame / teleport 5-char input).
+   * `kind: "none"` when idle. Dump/tests may still call applyTeleport directly.
+   */
+  ui: import("./ui/overlay").UiState;
   /** $C461 / $6730 — further ticks return immediately. */
   gameOver: boolean;
   /** Victory path set `$A7CF`; same EndResult shape as lives=0. */
@@ -282,6 +292,10 @@ export interface World {
   entry: RoomEntry;
   /** Live $9635 pulses for the current room. */
   pulses: Pulse[];
+  /** Queued `$D7C0` indexes A; browser drains after tick. */
+  sfx: number[];
+  /** `$C6FF` walk XOR state; snapshot `$14`, XOR `$01` → `$14`/`$15`. */
+  sfxStep: number;
 }
 
 export interface RenderOpts {

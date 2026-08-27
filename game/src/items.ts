@@ -13,6 +13,7 @@ import {
   ROOM_SKIP,
   STAT_CAP,
 } from "./constants";
+import { requestSfx } from "./audio/effects";
 import { dacStep, seedDac } from "./entities";
 import type { BlobState } from "./physics";
 import type { Item, Prepared, World } from "./types";
@@ -96,6 +97,7 @@ export function applyExtra(world: World, sprite: number): void {
   else if (off === 2) world.platforms = (world.platforms + add) & 0xff;
   else if (off === 3) world.firepower = (world.firepower + add) & 0xff;
   capEnergyPlatformsFire(world);
+  requestSfx(world, off);
 }
 
 function extraPos(col: number, row: number): { x: number; y: number } {
@@ -107,18 +109,29 @@ function extraPos(col: number, row: number): { x: number; y: number } {
  * (rooms+blocks+block_attrs raw), not drawn attr $90 — that nibble never lands
  * in the Spectrum grid. $DAC6 after $A80A is not fully replayed.
  */
+function itemOccupiesMark(prep: Prepared, room: number, col: number, row: number, world: World): boolean {
+  for (const it of prep.itemsByRoom[room] ?? []) {
+    if (world.collected[it.index]) continue;
+    if ((it.col & 0x1f) === (col & 0x1f) && (it.row & 0x7f) === (row & 0x7f)) return true;
+  }
+  return false;
+}
+
 export function spawnExtra(prep: Prepared, world: World, room: number): void {
   world.extra = null;
   if (room === ROOM_SKIP) return;
   if (!a350Allows(world.a350, room)) return;
   const marks = prep.extraMarksByRoom?.[room] ?? [];
   if (marks.length < 2) return;
+  // Prefer marks without a live $94E8 item — same cell XOR of item+extra looks garbled (#416).
+  const free = marks.filter((m) => !itemOccupiesMark(prep, room, m.col, m.row, world));
+  const pool = free.length > 0 ? free : marks;
   world.dac = seedDac(room);
   for (let i = 0; i < EXTRA_DAC_ROLLS; i++) dacStep(world.dac);
   if ((world.dac.dac0 & 0xff) < EXTRA_MIN_DAC) return;
   dacStep(world.dac);
-  let slot = (world.dac.dac0 & 0x7f) % marks.length;
-  const mark = marks[slot]!;
+  let slot = (world.dac.dac0 & 0x7f) % pool.length;
+  const mark = pool[slot]!;
   dacStep(world.dac);
   let kind = world.dac.dac0 & 0xff;
   while (kind >= 9) kind -= 9;
@@ -155,6 +168,7 @@ function collectTableItem(prep: Prepared, blob: BlobState, world: World): void {
     world.collected[it.index] = 1;
     world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits });
     if (world.inventory.length > 4) world.inventory.pop();
+    requestSfx(world, 0x0c);
     return;
   }
 }

@@ -9,12 +9,30 @@
   <body>
     <header class="top">
       <h1>Starquake</h1>
-      <p class="tag">BLOB · 50 Hz · 256×144</p>
+      <p class="tag">BLOB · 50 Hz · 256×192 · CSS ×2</p>
     </header>
 
     <div class="layout">
       <section id="stage" class="stage" aria-label="Hrací plocha">
-        <canvas id="screen" width="256" height="144">Canvas 2D není k dispozici.</canvas>
+        <canvas id="screen" width="256" height="192">Canvas 2D není k dispozici.</canvas>
+        <div class="audio-strip" id="audio-strip">
+          <label class="audio-check">
+            <input id="audio-sfx" type="checkbox" checked />
+            Zvuk
+          </label>
+          <label class="audio-check">
+            <input id="audio-bgm" type="checkbox" checked />
+            Hudba
+          </label>
+          <label class="audio-gain">
+            Efekty
+            <input id="audio-sfx-gain" type="range" min="0" max="100" value="75" />
+          </label>
+          <label class="audio-gain">
+            Hudba
+            <input id="audio-bgm-gain" type="range" min="0" max="100" value="40" />
+          </label>
+        </div>
       </section>
 
       <aside class="panel" aria-label="Vývojářský panel">
@@ -139,16 +157,16 @@
         </dl>
 
         <p class="keys">
-          Šipky nebo WASD pohybují BLOBem, šipka nahoru / W sebere předmět
-          ($D09F) a na stanici vznášedla nastoupí ($CEAD). Šipka dolů / S staví
-          plošinku ($C79F). Mezerník střílí ($C85A / na padu $CA15). Left/Right
-          na teleportu zadá 5písmenný kód; na security door access code (nebo
-          klíč <code>$0F</code>). Jádro <code>#199</code> / <code>$C7</code>.
-          PageUp / PageDown mění místnost.
+          Q nahoru (sběr $D09F / nástup na pad $CEAD), A dolů (plošinka $C79F),
+          O vlevo, P vpravo, mezerník palba ($C85A / na padu $CA15). O/P na
+          teleportu spustí zadání 5 znaků; security door bere inventář
+          ($D5FD / klíč <code>$0F</code>). Jádro <code>#199</code>. Dev panel:
+          default zapnutý, <code>?dev=0</code> vypne. PageUp / PageDown mění
+          místnost.
         </p>
       </aside>
     </div>
 
-    <script src="bundle.js"></script>
+    <script src="bundle.js?v=sfx-2"></script>
   </body>
 </html>

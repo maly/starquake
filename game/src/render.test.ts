@@ -92,29 +92,34 @@ describe("GRAFIX draw", () => {
 });
 
 describe("$A66C pulse $DB88", () => {
-  const pulse = (flag: number, timer = 8): Pulse => ({
+  const pulse = (flag: number, timer = 8, ink?: number[]): Pulse => ({
     col: 4,
     row: 8,
     period: 8,
     timer,
     flag,
+    xorInk: Uint8Array.from(ink ?? new Array(16).fill(0)),
+    sparkAttr: 0x44,
+    lastAnim: null,
   });
 
-  it("does not draw when flag is 0", () => {
+  it("does not draw when xorInk is empty", () => {
     const buf = newBuffers();
-    blitPulses(buf, [pulse(0)], 0);
+    blitPulses(buf, [pulse(1, 8)], 0);
     assert.ok(buf.data.every((b) => b === 0));
   });
 
-  it("XORs $DC55 L=5 with anim L=6 when flag is 1 (timer∧3=0)", () => {
+  it("writes current xorInk into spark cells (replaces, does not OR-stack)", () => {
     const buf = newBuffers();
-    blitPulses(buf, [pulse(1, 8)], 0);
     const playRow = 8 - 6;
     const dst = (playRow * 32 + 4) * 8;
-    assert.equal(buf.data[dst], 0x02 ^ 0x02);
-    assert.equal(buf.data[dst + 1], 0x02 ^ 0x12);
-    assert.equal(buf.data[dst + 2], 0x47 ^ 0x56);
+    buf.data[dst] = 0xff; // leftover bits must be erased
+    const ink = [
+      0x02, 0x12, 0x56, 0x5e, 0x56, 0x16, 0x16, 0x04, 0x88, 0xdc, 0xd0, 0x50, 0x8c, 0xd8, 0xd8, 0x50,
+    ];
+    blitPulses(buf, [pulse(1, 8, ink)], 0);
+    assert.equal(buf.data[dst], 0x02);
+    assert.equal(buf.data[dst + 1], 0x12);
     assert.equal(buf.attr[playRow * 32 + 4] & 0x47, 0x44);
-    assert.equal(buf.attr[playRow * 32 + 5] & 0x47, 0x44);
   });
 });

@@ -54,19 +54,49 @@ h1 {
 
 .stage {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0.65rem;
   min-width: 0;
   min-height: 0;
   padding: 1rem;
   background: #000;
 }
 
+.audio-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem 1rem;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-family: var(--sans);
+}
+
+.audio-check,
+.audio-gain {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+}
+
+.audio-check input,
+.audio-gain input[type="range"] {
+  margin: 0;
+}
+
+.audio-gain input[type="range"] {
+  width: 88px;
+}
+
 #screen {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
-  width: 768px;
-  height: 432px;
+  width: 512px;
+  height: 384px;
   background: #000;
   box-shadow: 0 0 0 1px #2a261f;
 }
@@ -77,6 +107,14 @@ h1 {
   padding: 1rem;
   overflow: auto;
   font-size: 0.88rem;
+}
+
+body.dev-off .panel {
+  display: none;
+}
+
+body.dev-off .layout {
+  grid-template-columns: 1fr;
 }
 
 .status {

@@ -16,10 +16,6 @@ import {
   MAP_COLS,
   MAP_ROWS,
   PLAY_ORIGIN,
-  PULSE_ANIM_ATTR_BASE,
-  PULSE_ANIM_LAYERS,
-  PULSE_LAYERS,
-  PULSE_TOGGLE_LAYER,
   ROOM_COUNT,
   ROOM_SKIP,
   ROWS,
@@ -271,31 +267,30 @@ export function blitCorePanel(prep: Prepared, buf: Buffers, world: World, roomId
   }
 }
 
-function xorPulseLayer(buf: Buffers, col: number, playRow: number, layer: number, attr: number): void {
-  const cells = PULSE_LAYERS[layer];
-  if (!cells) return;
-  for (let i = 0; i < 2; i++) {
-    const cx = col + i;
-    if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
-    const bytes = cells[i]!;
-    const dst = (playRow * COLS + cx) * CELL;
-    for (let py = 0; py < CELL; py++) buf.data[dst + py]! ^= bytes[py]!;
-    buf.attr[playRow * COLS + cx] = attr;
-  }
-}
-
 /**
- * $A66C / $DB88: when $9635 flag ≠ 0, XOR L=$05 and anim L=$A6BD[timer∧3]
- * at (col,row) and (col+1,row). Attr $44+($DAC0∧3). Flag 0 draws nothing.
+ * Blit current spark frame onto playfield cells.
+ * Buňky jiskry se nejdřív vynulují (smaže předchozí frame), pak se zapíše jen `xorInk`.
  */
-export function blitPulses(buf: Buffers, pulses: Pulse[], dac0: number): void {
-  const attr = (PULSE_ANIM_ATTR_BASE + (dac0 & 3)) & 0xff;
+export function blitPulses(buf: Buffers, pulses: Pulse[], _dac0: number): void {
   for (const p of pulses) {
-    if (p.flag === 0) continue;
+    const ink = p.xorInk;
+    if (!ink) continue;
+    let any = false;
+    for (let i = 0; i < 16; i++) if (ink[i]) {
+      any = true;
+      break;
+    }
+    if (!any) continue;
     const playRow = p.row - PLAY_ORIGIN;
-    xorPulseLayer(buf, p.col, playRow, PULSE_TOGGLE_LAYER, attr);
-    const anim = PULSE_ANIM_LAYERS[p.timer & 3]!;
-    xorPulseLayer(buf, p.col, playRow, anim, attr);
+    const attr = p.sparkAttr & 0xff;
+    for (let i = 0; i < 2; i++) {
+      const cx = p.col + i;
+      if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
+      const dst = (playRow * COLS + cx) * CELL;
+      const base = i * 8;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py] = ink[base + py]!;
+      buf.attr[playRow * COLS + cx] = attr;
+    }
   }
 }
 
@@ -502,6 +497,8 @@ export function renderWorld(
       const frame = graphicForPtr(prep, e.ptr) ?? prep.actorsBySet.get(e.set)?.[e.frame];
       if (frame) stampGrafix(rgba, frame, e.x, GAME_Y_ORIGIN - e.y, e.ink);
     }
+    // Pad entity: on station while walking ($9F49); on Blob while boarded ($C94D).
+    // Empty stations when boarded happen because the pad left the dock, not by hiding it.
     if (world.pad && entityVisible(world.pad)) {
       const frame = graphicForPtr(prep, world.pad.ptr) ?? prep.actorsBySet.get(world.pad.set)?.[world.pad.frame];
       if (frame) stampGrafix(rgba, frame, world.pad.x, GAME_Y_ORIGIN - world.pad.y, world.pad.ink);

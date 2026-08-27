@@ -298,6 +298,30 @@ describe("extra $A350 / $CC9A", () => {
     assert.equal(world.extra, null);
   });
 
+  it("room 416 does not stack extra on the $94E8 item cell", () => {
+    const dir = path.join(REPO_ROOT, "out");
+    if (!existsSync(path.join(dir, "rooms.json"))) return;
+    const read = (name: string) => JSON.parse(readFileSync(path.join(dir, name), "utf8"));
+    const pack: GameData = {
+      rooms: read("rooms.json"),
+      graphics: read("graphics.json"),
+      blocks: read("blocks.json"),
+      sprites: read("sprites.json"),
+      items: read("items.json"),
+    };
+    if (existsSync(path.join(dir, "actors.json"))) pack.actors = read("actors.json");
+    if (existsSync(path.join(dir, "block_attrs.json"))) pack.blockAttrs = read("block_attrs.json");
+    const prep = prepare(pack);
+    const world = createWorld(prep, 416);
+    const item = (prep.itemsByRoom[416] ?? [])[0];
+    assert.ok(item);
+    assert.ok(world.extra);
+    assert.notEqual(
+      `${world.extra!.col},${world.extra!.row}`,
+      `${item!.col & 0x1f},${item!.row & 0x7f}`,
+    );
+  });
+
   it("start room 8 from export spawns extra $17 at $90 marker (13,19)", () => {
     const dir = path.join(REPO_ROOT, "out");
     if (!existsSync(path.join(dir, "rooms.json"))) return;

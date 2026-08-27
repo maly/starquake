@@ -1,4 +1,5 @@
-import { TICK_MS } from "./constants";
+import { drainSfx, unlock, wireAudioUi } from "./audio/player";
+import { DISPLAY_H, DISPLAY_W, SCREEN_H, SCREEN_W, TICK_MS } from "./constants";
 import { expectedDoorCode, teleportNameForRoom } from "./objects";
 import {
   cellPos,
@@ -23,6 +24,10 @@ import {
 } from "./render";
 import { formatScore, formatTime } from "./score";
 import type { GameData, Prepared } from "./types";
+import { clampWorldStats, drawChrome, drawStatus } from "./ui/chrome";
+import { blitPlayfieldRgba, rasterizeScreen } from "./ui/compose";
+import { drawUiOverlay, feedTeleportKey, isUiBlocking } from "./ui/overlay";
+import { PLAY_Y0, clearScreen, newScreenBuffers, pastePlayfield } from "./ui/screen";
 
 const DATA_BASE = "../out";
 
@@ -55,16 +60,31 @@ function parseHash(): number | null {
   return Number.isNaN(n) ? null : clampRoom(n);
 }
 
+/** Dev panel default ON; `?dev=0` hides it (`body.dev-off`). */
+function applyDevToggle(): void {
+  const q = new URLSearchParams(location.search);
+  const off = q.get("dev") === "0";
+  document.body.classList.toggle("dev-off", off);
+  document.body.classList.toggle("dev-on", !off);
+}
+
 async function boot(): Promise<void> {
+  applyDevToggle();
   const canvas = $("screen") as HTMLCanvasElement;
   const rawCtx = canvas.getContext("2d", { alpha: false });
   if (!rawCtx) throw new Error("canvas");
   const ctx: CanvasRenderingContext2D = rawCtx;
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
+  canvas.width = SCREEN_W;
+  canvas.height = SCREEN_H;
   ctx.imageSmoothingEnabled = false;
-  const imageData = ctx.createImageData(WIDTH, HEIGHT);
-  const buf = newBuffers();
+  canvas.style.width = DISPLAY_W + "px";
+  canvas.style.height = DISPLAY_H + "px";
+  const imageData = ctx.createImageData(SCREEN_W, SCREEN_H);
+  const screenRgba = imageData.data;
+  const playRgba = new Uint8ClampedArray(WIDTH * HEIGHT * 4);
+  const playBuf = newBuffers();
+  const screenBuf = newScreenBuffers();
+  const hudScratch = newScreenBuffers();
   const stage = $("stage");
   const overlayEl = $("overlay") as HTMLInputElement;
   const gotoEl = $("goto") as HTMLInputElement;
@@ -101,15 +121,7 @@ async function boot(): Promise<void> {
 
   const start = parseHash() ?? 0;
   const world = createWorld(prep, start);
-  world.readTeleportCode = (ownName: string) => {
-    const typed = window.prompt(
-      `YOU HAVE ENTERED TELEPORT\nCODE : ${ownName}\nENTER TELEPORTAL DESTINATION CODE`,
-      "",
-    );
-    keys.left = false;
-    keys.right = false;
-    return typed;
-  };
+  wireAudioUi();
   let blob = spawnBlob(prep, start, world);
   if (blob.room === start) enterRoom(prep, world, start, { blob });
   let overlay = false;
@@ -119,6 +131,13 @@ async function boot(): Promise<void> {
   let frames = 0;
   let acc = 0;
   let last = performance.now();
+  let chromeRoom = -1;
+
+  function rebuildChrome(): void {
+    clearScreen(hudScratch, 0);
+    drawChrome(hudScratch);
+    chromeRoom = blob.room;
+  }
 
   function showEndOverlay(): void {
     if (endShown || !world.endResult) return;
@@ -136,13 +155,6 @@ async function boot(): Promise<void> {
         <div><dt>CORES REPLACED</dt><dd>${er.coresReplaced}</dd></div>
       </dl></div>`;
     document.body.appendChild(panel);
-  }
-
-  function fitScale(): void {
-    const scale = Math.max(1, Math.floor(Math.min(stage.clientWidth / WIDTH, stage.clientHeight / HEIGHT)));
-    canvas.style.width = WIDTH * scale + "px";
-    canvas.style.height = HEIGHT * scale + "px";
-    $("scale").textContent = "×" + scale;
   }
 
   function updatePanel(): void {
@@ -172,41 +184,56 @@ async function boot(): Promise<void> {
       : world.pulses.length
         ? "off"
         : "—";
-    const dd22El = $("stat-dd22");
-    dd22El.textContent = String(world.dd22);
-    const padEl = $("stat-pad");
-    padEl.textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "—";
-    const tpEl = $("stat-teleport");
-    tpEl.textContent = teleportNameForRoom(blob.room) || "—";
+    $("stat-dd22").textContent = String(world.dd22);
+    $("stat-pad").textContent = world.pad ? `${world.pad.x}, ${world.pad.y}` : "—";
+    $("stat-teleport").textContent = teleportNameForRoom(blob.room) || "—";
     const doorEl = $("stat-door");
     const doors = prep.doorsByRoom?.[blob.room] ?? [];
     if (doors.length) {
       const need = expectedDoorCode(blob.room);
-      const keys = need.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
+      const keyTxt = need.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
       const hasUni = world.inventory.some((it) => it.sprite === 0x0f);
-      doorEl.textContent = hasUni ? `${keys} (máš $0F)` : keys;
+      doorEl.textContent = hasUni ? `${keyTxt} (máš $0F)` : keyTxt;
     } else {
       doorEl.textContent = "—";
     }
-    const msgEl = $("stat-message");
-    msgEl.textContent = world.message || "—";
+    $("stat-message").textContent = world.message || "—";
     gotoEl.value = String(blob.room);
     $("time").textContent = lastMs.toFixed(2) + " ms";
     $("avg").textContent = avgMs.toFixed(2) + " ms";
     $("fps").textContent = avgMs > 0 ? (1000 / avgMs).toFixed(0) : "—";
+    $("scale").textContent = "×2";
     if (world.gameOver) showEndOverlay();
   }
 
   function draw(): void {
     const t0 = performance.now();
-    const anim = animationSet(blob, world);
-    renderWorld(prep, world, buf, imageData.data, blob.room, {
-      items: true,
-      overlay,
-      blob: world.blobHidden
-        ? null
-        : { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame, ink: world.blobInk },
-    });
+    clampWorldStats(world);
+    if (chromeRoom !== blob.room) rebuildChrome();
+
+    // HUD base from chrome scratch
+    screenBuf.data.set(hudScratch.data);
+    screenBuf.attr.set(hudScratch.attr);
+    drawStatus(screenBuf, world, prep);
+
+    if (isUiBlocking(world.ui)) {
+      drawUiOverlay(screenBuf, world.ui);
+      rasterizeScreen(screenBuf, screenRgba);
+    } else {
+      const anim = animationSet(blob, world);
+      renderWorld(prep, world, playBuf, playRgba, blob.room, {
+        items: true,
+        overlay,
+        blob: world.blobHidden
+          ? null
+          : { x: blob.x, y: blob.y, set: anim.set, frame: anim.frame, ink: world.blobInk },
+      });
+      // Cell paste for attrs under entities, then stamp playfield RGBA at Y+48
+      pastePlayfield(screenBuf, playBuf);
+      rasterizeScreen(screenBuf, screenRgba);
+      blitPlayfieldRgba(screenRgba, playRgba, PLAY_Y0, HEIGHT, WIDTH);
+    }
+
     ctx.putImageData(imageData, 0, 0);
     const dt = performance.now() - t0;
     lastMs = dt;
@@ -219,28 +246,37 @@ async function boot(): Promise<void> {
     const room = clampRoom(id);
     blob = spawnBlob(prep, room, world);
     enterRoom(prep, world, room, { blob });
+    chromeRoom = -1;
     const hash = "#" + blob.room;
     if (location.hash !== hash) history.replaceState(null, "", hash);
   }
 
   document.addEventListener("keydown", (ev) => {
+    unlock();
     if (ev.target instanceof HTMLInputElement) return;
-    if (ev.key === "ArrowLeft" || ev.key === "a" || ev.key === "A") {
+    if (world.ui.kind === "teleport") {
+      feedTeleportKey(world.ui, ev.key, true, world);
+      if (ev.key.length === 1 || ev.key === " ") ev.preventDefault();
+      return;
+    }
+    if (isUiBlocking(world.ui)) {
+      ev.preventDefault();
+      return;
+    }
+    // Spectrum layout: Q up, A down, O left, P right, Space fire.
+    if (ev.key === "o" || ev.key === "O") {
       keys.left = true;
       ev.preventDefault();
-    } else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") {
+    } else if (ev.key === "p" || ev.key === "P") {
       keys.right = true;
       ev.preventDefault();
-    } else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") {
+    } else if (ev.key === "q" || ev.key === "Q") {
       keys.up = true;
       ev.preventDefault();
-    } else if (ev.key === " ") {
-      keys.fire = true;
-      ev.preventDefault();
-    } else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") {
+    } else if (ev.key === "a" || ev.key === "A") {
       keys.down = true;
       ev.preventDefault();
-    } else if (ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") {
+    } else if (ev.key === " ") {
       keys.fire = true;
       ev.preventDefault();
     } else if (ev.key === "PageUp") {
@@ -250,12 +286,17 @@ async function boot(): Promise<void> {
     }
   });
   document.addEventListener("keyup", (ev) => {
-    if (ev.key === "ArrowLeft" || ev.key === "a" || ev.key === "A") keys.left = false;
-    else if (ev.key === "ArrowRight" || ev.key === "d" || ev.key === "D") keys.right = false;
-    else if (ev.key === "ArrowUp" || ev.key === "w" || ev.key === "W") keys.up = false;
-    else if (ev.key === "ArrowDown" || ev.key === "s" || ev.key === "S") keys.down = false;
-    else if (ev.key === " " || ev.key === "p" || ev.key === "P" || ev.key === "x" || ev.key === "X") keys.fire = false;
+    if (world.ui.kind === "teleport") {
+      feedTeleportKey(world.ui, ev.key, false, world);
+    }
+    if (ev.key === "o" || ev.key === "O") keys.left = false;
+    else if (ev.key === "p" || ev.key === "P") keys.right = false;
+    else if (ev.key === "q" || ev.key === "Q") keys.up = false;
+    else if (ev.key === "a" || ev.key === "A") keys.down = false;
+    else if (ev.key === " ") keys.fire = false;
   });
+  document.addEventListener("pointerdown", () => unlock());
+  document.addEventListener("click", () => unlock());
   $("go").addEventListener("click", () => goRoom(parseInt(gotoEl.value, 10) || 0));
   gotoEl.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") goRoom(parseInt(gotoEl.value, 10) || 0);
@@ -263,15 +304,14 @@ async function boot(): Promise<void> {
   overlayEl.addEventListener("change", () => {
     overlay = overlayEl.checked;
   });
-  window.addEventListener("resize", fitScale);
   window.addEventListener("hashchange", () => {
     const id = parseHash();
     if (id !== null && id !== blob.room) goRoom(id);
   });
 
   $("status").textContent =
-    "50 Hz · šipky / WASD · Up sběr/pad · Down plošinka · mezerník palba · Left/Right teleport/dveře · jádro #199";
-  fitScale();
+    "50 Hz · HUD+playfield 256×192 · Q/A/O/P + mezerník · teleport 5 znaků · dveře inventář · ?dev=0";
+  void stage;
 
   function frame(now: number): void {
     acc += now - last;
@@ -280,7 +320,9 @@ async function boot(): Promise<void> {
     while (acc >= TICK_MS) {
       const prev = blob.room;
       tick(prep, blob, input(), world);
+      drainSfx(world);
       if (blob.room !== prev) {
+        chromeRoom = -1;
         const hash = "#" + blob.room;
         if (location.hash !== hash) history.replaceState(null, "", hash);
       }
@@ -289,6 +331,7 @@ async function boot(): Promise<void> {
     draw();
     requestAnimationFrame(frame);
   }
+  rebuildChrome();
   requestAnimationFrame(frame);
 }
 

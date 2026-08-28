@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: (doplní se po `git commit` `$0E`). Working tree čistý po stroji `$0E`; `tmp_*` sondy necommituj.
+Poslední commit: `4948d6c`. Working tree čistý po stroji `$0E`; `tmp_*` sondy necommituj.
 
 ## Tvrdé meze
 
@@ -83,7 +83,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP/Cheops overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; BGM MP3 smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
 
-Ověřeno: `npm test` 190 pass (overflow `dd0b6f4` + stroj `$0E`).
+Ověřeno: `npm test` 190 pass. HEAD `4948d6c` (stroj `$0E`; overflow `dd0b6f4`).
 
 ## Otevřené
 

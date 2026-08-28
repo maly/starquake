@@ -35,7 +35,7 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 
 ## Hygiena
 
-- [x] WORKLOG: poslední commit je `$0E` (doplní se hash).
+- [x] WORKLOG: poslední commit je `4948d6c`.
 - [x] WORKLOG bod 17: `viewer/bgm.mp3` už je v gitu (stejný soubor jako `music/game-loop.mp3`).
 - [x] `docs/notes/item-effects.md` — `$0F` v enginu; Cheops výměna taky.
 - [ ] Git remote `origin` — push teď nejde.

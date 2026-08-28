@@ -81,13 +81,14 @@ import {
 } from "./constants";
 import { deliverCoreParts, initCoreState, initSocketFlags, tickCoreCeremony } from "./core";
 import { copyPadFromBlob, enterNasties, syncHoverpad, tickEnergyDrain, tickNasties } from "./entities";
-import { spawnExtra, tickPickup } from "./items";
+import { clearA350Bit, spawnExtra, tickPickup } from "./items";
 import {
   evaluateTeleport,
   firstPassage,
   firstTeleport,
   makePulses,
   onStationPixel,
+  restoreClearedSockets,
   tickPulses,
   walkSpecialObjects,
   type TeleportEval,
@@ -95,13 +96,16 @@ import {
 import { parkBullet, parkedBullet, tickFire, tickPadFire } from "./projectiles";
 import { composeTiles, moveRoom, newBuffers } from "./render";
 import {
+  beginCheopsUi,
   beginDoorUi,
   beginTeleportUi,
   idleUi,
   isUiBlocking,
   syncWorldMessage,
+  tickCheopsUi,
   tickDoorUi,
   tickTeleportUi,
+  type CheopsUi,
 } from "./ui/overlay";
 import {
   a390Unvisited,
@@ -476,6 +480,7 @@ function tickDeath(prep: Prepared, blob: BlobState, world: World): void {
  * A ≥ $10 sets $D2C4=1 and restores XY/$DD22 from the last room entry.
  */
 export function applyDeath(prep: Prepared, blob: BlobState, world: World, a: number): void {
+  if (world.cheatGod) return;
   if (world.deathPhase) return;
   world.deathA = a & 0xff;
   world.d2c4 = (a & 0xff) >= DEATH_RESTORE_MIN_A ? 1 : 0;
@@ -742,7 +747,12 @@ function tickBody(prep: Prepared, blob: BlobState, input: Input, world?: World):
   tickEnergyDrain(world);
 
   const pickupInput = stationed ? { ...input, up: false } : input;
-  tickPickup(prep, blob, pickupInput, world);
+  if (tickPickup(prep, blob, pickupInput, world) === "cheops") {
+    world.teleportLatch = true;
+    world.ui = beginCheopsUi(world, blob.room);
+    syncWorldMessage(world, world.ui);
+    return;
+  }
 
   const boardedBefore = world.dd22 === DD22_PAD;
   const code = walkSpecialObjects(prep, blob, input, world);
@@ -816,6 +826,7 @@ export function createWorld(prep: Prepared, room: number): World {
     extra: null,
     inventory: [],
     cheops: false,
+    cheatGod: false,
     dd22: DD22_WALK,
     lastDir: 0,
     station: { x: 0, y: 0 },
@@ -868,6 +879,7 @@ export interface EnterRoomOpts {
 /** $A426 draws the packed room then $A4B1 zeros $DBBB for $31 bytes. */
 export function enterRoom(prep: Prepared, world: World, room: number, opts?: EnterRoomOpts): void {
   composeTiles(prep, world.terrain, room);
+  restoreClearedSockets(prep, world, room);
   for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
   world.slotIndex = 0;
   world.pulseIndex = 0;
@@ -918,7 +930,40 @@ export function tickOverlay(prep: Prepared, blob: BlobState, world: World): void
       }
       world.ui = idleUi();
     }
+    return;
   }
+  if (ui.kind === "cheops") {
+    if (tickCheopsUi(ui, world)) {
+      syncWorldMessage(world, ui);
+      applyCheopsFinish(prep, blob, world, ui);
+      world.ui = idleUi();
+    } else {
+      syncWorldMessage(world, ui);
+    }
+  }
+}
+
+/**
+ * `$CDFB JP $CC4B`: Y snap, `$D2C4=$03`, reload without nasties.
+ * Success also `$A801` + drop extra `$19`.
+ */
+export function applyCheopsFinish(
+  prep: Prepared,
+  blob: BlobState,
+  world: World,
+  ui: CheopsUi,
+): void {
+  world.teleportLatch = true;
+  if (ui.chosen) {
+    world.cheops = true;
+    world.extra = null;
+    clearA350Bit(world.a350, blob.room);
+  }
+  blob.y = gameYToPlay(((playYToGame(blob.y) + 1) & 0xf8) - 1);
+  world.d2c4 = DOOR_REASON;
+  enterRoom(prep, world, blob.room, { nasties: false, blob });
+  syncHoverpad(prep, world, blob.room, blob);
+  saveEntry(world, blob);
 }
 
 /**

@@ -1,6 +1,6 @@
 import { drainSfx, unlock, wireAudioUi } from "./audio/player";
 import { DISPLAY_H, DISPLAY_W, SCREEN_H, SCREEN_W, TICK_MS } from "./constants";
-import { expectedDoorCode, teleportNameForRoom } from "./objects";
+import { expectedCheopsCode, expectedDoorCode, teleportNameForRoom } from "./objects";
 import {
   cellPos,
   fallSpeed,
@@ -23,10 +23,11 @@ import {
   roomRow,
 } from "./render";
 import { formatScore, formatTime } from "./score";
+import { parseCheatSprite, setInventorySlot } from "./cheat";
 import type { GameData, Prepared } from "./types";
 import { clampWorldStats, drawChrome, drawStatus } from "./ui/chrome";
 import { blitPlayfieldRgba, rasterizeScreen } from "./ui/compose";
-import { drawUiOverlay, feedTeleportKey, isUiBlocking } from "./ui/overlay";
+import { drawUiOverlay, feedCheopsKey, feedTeleportKey, isUiBlocking } from "./ui/overlay";
 import { PLAY_Y0, clearScreen, newScreenBuffers, pastePlayfield } from "./ui/screen";
 
 const DATA_BASE = "../out";
@@ -201,6 +202,22 @@ async function boot(): Promise<void> {
     } else {
       doorEl.textContent = "—";
     }
+    const cheopsEl = $("stat-cheops");
+    if (cheopsEl) {
+      if (world.ui.kind === "cheops") {
+        const ui = world.ui;
+        const code = ui.digits.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
+        const offers = ui.offers.map((n, i) => `${i + 1}:$${n.toString(16)}`).join(" ");
+        cheopsEl.textContent = ui.phase === "exchange" ? offers : `${ui.phase} ${code}`;
+      } else if (world.extra?.sprite === 0x19) {
+        const code = expectedCheopsCode(blob.room)
+          .map((n) => "$" + n.toString(16).toUpperCase())
+          .join(" ");
+        cheopsEl.textContent = `extra $19  kód ${code}`;
+      } else {
+        cheopsEl.textContent = world.cheops ? "výměna hotová" : "—";
+      }
+    }
     $("stat-message").textContent = world.message || "—";
     gotoEl.value = String(blob.room);
     $("time").textContent = lastMs.toFixed(2) + " ms";
@@ -221,7 +238,7 @@ async function boot(): Promise<void> {
     drawStatus(screenBuf, world, prep);
 
     if (isUiBlocking(world.ui)) {
-      drawUiOverlay(screenBuf, world.ui);
+      drawUiOverlay(screenBuf, world.ui, prep);
       rasterizeScreen(screenBuf, screenRgba);
     } else {
       const anim = animationSet(blob, world);
@@ -257,10 +274,15 @@ async function boot(): Promise<void> {
 
   document.addEventListener("keydown", (ev) => {
     unlock();
-    if (ev.target instanceof HTMLInputElement) return;
+    if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
     if (world.ui.kind === "teleport") {
       feedTeleportKey(world.ui, ev.key, true, world);
       if (ev.key.length === 1 || ev.key === " ") ev.preventDefault();
+      return;
+    }
+    if (world.ui.kind === "cheops") {
+      feedCheopsKey(world.ui, ev.key, world, ev.code);
+      ev.preventDefault();
       return;
     }
     if (isUiBlocking(world.ui)) {
@@ -307,6 +329,36 @@ async function boot(): Promise<void> {
   });
   overlayEl.addEventListener("change", () => {
     overlay = overlayEl.checked;
+  });
+  const cheatGodEl = $("cheat-god") as HTMLInputElement;
+  const cheatSlotEl = $("cheat-slot") as HTMLSelectElement;
+  const cheatSpriteEl = $("cheat-sprite") as HTMLInputElement;
+  function insertCheatSprite(raw: string): void {
+    const sprite = parseCheatSprite(raw);
+    if (sprite === null) {
+      $("status").textContent = "Cheat: sprite $00–$FF (např. $0F)";
+      return;
+    }
+    const slot = parseInt(cheatSlotEl.value, 10) || 0;
+    setInventorySlot(world, slot, sprite);
+    cheatSpriteEl.value = "$" + sprite.toString(16).toUpperCase().padStart(2, "0");
+  }
+  cheatGodEl.addEventListener("change", () => {
+    world.cheatGod = cheatGodEl.checked;
+  });
+  $("cheat-insert").addEventListener("click", () => insertCheatSprite(cheatSpriteEl.value));
+  cheatSpriteEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      insertCheatSprite(cheatSpriteEl.value);
+    }
+  });
+  document.querySelectorAll<HTMLButtonElement>(".cheat-presets [data-sprite]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const raw = btn.getAttribute("data-sprite") || "";
+      cheatSpriteEl.value = raw;
+      insertCheatSprite(raw);
+    });
   });
   window.addEventListener("hashchange", () => {
     const id = parseHash();

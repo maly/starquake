@@ -713,6 +713,7 @@ export function tickNasties(prep: Prepared, blob: BlobState, world: World): numb
 }
 
 export function tickEnergyDrain(world: World): void {
+  if (world.cheatGod) return;
   world.energyDrain = (world.energyDrain + 1) & 0xff;
   if (world.energyDrain < ENERGY_DRAIN_WRAP) return;
   world.energyDrain = 0;

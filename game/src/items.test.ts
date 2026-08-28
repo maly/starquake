@@ -12,8 +12,17 @@ import {
   START_LIVES,
   START_PLATFORMS,
 } from "./constants";
-import { applyExtra, a350Allows, clearA350Bit, itemGamePos } from "./items";
+import {
+  applyCheopsChoice,
+  applyExtra,
+  a350Allows,
+  clearA350Bit,
+  itemGamePos,
+  pickCheopsSlot,
+  rollCheopsOffers,
+} from "./items";
 import { createWorld, enterRoom, spawnBlob, tick } from "./physics";
+import { feedCheopsKey } from "./ui/overlay";
 import { blitItems, newBuffers, prepare } from "./render";
 import { REPO_ROOT } from "./server";
 import type { ExtraObject, GameData, Item, Prepared, Room, World } from "./types";
@@ -267,11 +276,11 @@ describe("extra $A350 / $CC9A", () => {
     expectStats(world, 0, 0x17, 0x30, 0x7e);
   });
 
-  it("extra $19 via $CC9A sets cheops and leaves stats", () => {
+  it("extra $19 skips $CC9A table and leaves stats", () => {
     const world = createWorld(grid(), 1);
     setStats(world, 4, 0x17, 0x30, 0x7e);
     applyExtra(world, EXTRA_CHEOPS);
-    assert.equal(world.cheops, true);
+    assert.equal(world.cheops, false);
     expectStats(world, 4, 0x17, 0x30, 0x7e);
   });
 
@@ -370,7 +379,7 @@ describe("extra $A350 / $CC9A", () => {
     assert.equal(a350Allows(world.a350, 1), false);
   });
 
-  it("records Cheops ($19) without implementing the exchange", () => {
+  it("Up on extra $19 starts Cheops UI and leaves the extra until success", () => {
     const prep = grid();
     const world = createWorld(prep, 1);
     const blob = spawnBlob(prep, 1, world);
@@ -378,8 +387,81 @@ describe("extra $A350 / $CC9A", () => {
     blob.x = 40;
     blob.y = 143 - 70;
     tick(prep, blob, { ...idle(), up: true }, world);
-    assert.equal(world.cheops, true);
+    assert.equal(world.ui.kind, "cheops");
     assert.ok(world.extra);
+    assert.equal(world.cheops, false);
+  });
+
+  it("AABB overlap without Up does not start Cheops", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    world.extra = { sprite: EXTRA_CHEOPS, ink: 6, col: 4, row: 8, x: 40, y: 70 };
+    blob.x = 40;
+    blob.y = 143 - 70;
+    tick(prep, blob, idle(), world);
+    assert.equal(world.ui.kind, "none");
+    assert.ok(world.extra);
+  });
+
+  it("successful exchange clears $A350, drops extra, sets cheops", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    world.extra = { sprite: EXTRA_CHEOPS, ink: 6, col: 4, row: 8, x: 40, y: 70 };
+    blob.x = 40;
+    blob.y = 143 - 70;
+    world.inventory = [
+      { sprite: 0x0f, attr: 3 },
+      { sprite: 0x1a, attr: 3 },
+    ];
+    tick(prep, blob, { ...idle(), up: true }, world);
+    assert.equal(world.ui.kind, "cheops");
+    for (let i = 0; i < 65; i++) tick(prep, blob, idle(), world);
+    assert.equal(world.ui.kind, "cheops");
+    if (world.ui.kind !== "cheops") throw new Error("expected cheops ui");
+    const offer0 = world.ui.offers[0]!;
+    feedCheopsKey(world.ui, "1", world);
+    tick(prep, blob, idle(), world);
+    assert.equal(world.ui.kind, "none");
+    assert.equal(world.cheops, true);
+    assert.equal(world.extra, null);
+    assert.equal(a350Allows(world.a350, 1), false);
+    assert.equal(world.inventory[1]?.sprite, offer0);
+    assert.equal(world.d2c4, 0x03);
+  });
+});
+
+describe("Cheops slot pick $CD32 / offers $CD56", () => {
+  it("picks the first sprite outside $09–$19", () => {
+    assert.equal(pickCheopsSlot([{ sprite: 0x0f, attr: 3 }, { sprite: 0x1a, attr: 3 }]), 1);
+    assert.equal(pickCheopsSlot([{ sprite: 0x05, attr: 3 }]), 0);
+    assert.equal(pickCheopsSlot([{ sprite: 0x0a, attr: 3 }, { sprite: 0x0b, attr: 3 }]), 1);
+    assert.equal(pickCheopsSlot([]), 0);
+  });
+
+  it("rolls four $D2DE bit7 sprites into $CCEA..$CCED, option 5 is the given item", () => {
+    const world = createWorld(grid(), 1);
+    world.d2de = [0x80, 0x8b, 0x89, 0x8a, 0x84, 0x85, 0xa1, 0x8c, 0x88];
+    world.dac = { dac0: 0x1234, dac2: 0, dac4: 0x1234, db19: 3, db1a: 3 };
+    const offers = rollCheopsOffers(world, 0x1a);
+    assert.equal(offers.length, 5);
+    assert.equal(offers[4], 0x1a);
+    for (const spr of offers.slice(0, 4)) {
+      assert.ok([0x00, 0x0b, 0x09, 0x0a, 0x04, 0x05, 0x21, 0x0c, 0x08].includes(spr));
+    }
+  });
+
+  it("applyCheopsChoice writes the chosen sprite into the slot and keeps attr", () => {
+    const world = createWorld(grid(), 1);
+    world.inventory = [
+      { sprite: 0x0f, attr: 5 },
+      { sprite: 0x1a, attr: 3 },
+    ];
+    applyCheopsChoice(world, 1, [0x21, 0x0b, 0x09, 0x0a, 0x1a], 0);
+    assert.equal(world.inventory[1]?.sprite, 0x21);
+    assert.equal(world.inventory[1]?.attr, 3);
+    assert.equal(world.inventory[0]?.sprite, 0x0f);
   });
 });
 

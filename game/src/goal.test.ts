@@ -8,7 +8,9 @@ import {
   CORE_GUARD_XY,
   CORE_NEIGHBOR,
   CORE_ROOM,
+  CORE_TOOL_SPRITE,
   CORE_VICTORY_PAIRS,
+  CLEAR_ATTR,
   DOOR_KEY_SPRITE,
   DOOR_REASON,
   DOOR_SHIFT_X,
@@ -19,7 +21,7 @@ import {
   SCORE_FIRST_VISIT,
 } from "./constants";
 import { expectedDoorCode } from "./objects";
-import { createWorld, enterRoom, spawnBlob, tick } from "./physics";
+import { attrAt, blocksBlob, createWorld, enterRoom, spawnBlob, tick } from "./physics";
 import { blitCorePanel, newBuffers, prepare } from "./render";
 import { addScore, adventureScore, formatScore, killScorePoints } from "./score";
 import { REPO_ROOT } from "./server";
@@ -129,6 +131,35 @@ describe("security doors $00", () => {
     }
     assert.deepEqual(found, [176, 187, 200, 210, 265, 352, 362, 429]);
     assert.equal(prep.doorsByRoom![362]!.length, 1);
+  });
+});
+
+describe("socket $B0 / $A807 in room 486", () => {
+  it("tool $10 punches $AB9F 3-cell gap so the $03 pillar is walkable", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const room = 486;
+    const sockets = prep.socketsByRoom?.[room] ?? [];
+    assert.ok(sockets.length >= 1, "room 486 is $95F0 socket $E6");
+    const world = createWorld(prep, room);
+    const blob = spawnBlob(prep, room, world);
+    const hs = sockets[0]!;
+    blob.x = hs.x;
+    blob.y = GAME_Y_ORIGIN - hs.y;
+    world.inventory = [{ sprite: CORE_TOOL_SPRITE, attr: 3 }];
+    const col = ((hs.x >> 3) & 0xfc) | 1;
+    const screenRow = 24 - (((hs.y + 1) & 0xff) >> 3);
+    const row0 = screenRow - 6;
+    assert.equal(attrAt(prep, room, col, row0, world) & 0xff, 0x03);
+    assert.equal(blocksBlob(attrAt(prep, room, col, row0, world)), true);
+    tick(prep, blob, { left: false, right: false, up: false, down: false, fire: false }, world);
+    for (let i = 0; i < 3; i++) {
+      const a = attrAt(prep, room, col, row0 + i, world);
+      assert.equal(a, CLEAR_ATTR, `cell ${col},${row0 + i}`);
+      assert.equal(blocksBlob(a), false);
+    }
+    enterRoom(prep, world, room, { blob });
+    assert.equal(attrAt(prep, room, col, row0, world), CLEAR_ATTR);
   });
 });
 

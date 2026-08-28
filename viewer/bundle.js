@@ -535,12 +535,28 @@
   var START_LIVES = 4;
   var ITEM_COUNT = 45;
   var ITEM_NEAR = 15;
+  var INVENTORY_SLOTS = 4;
   var ITEM_ORIGIN_ROWS = 24;
   var A350_BYTES = 128;
   var EXTRA_MIN_DAC = 85;
   var EXTRA_SPRITE_BASE = 17;
   var EXTRA_CHEOPS = 25;
   var EXTRA_DAC_ROLLS = 20;
+  var CHEOPS_CODE_BC = 3853;
+  var CHEOPS_DIGIT_COUNT = 2;
+  var CHEOPS_OFFERS = 5;
+  var CHEOPS_SKIP_MIN = 9;
+  var CHEOPS_SKIP_MAX = 26;
+  var CHEOPS_D2DE_MOD = 9;
+  var CHEOPS_D2DE_ADD = 10;
+  var CHEOPS_D2DE_MIN = 128;
+  var CHEOPS_SPRITE_MASK = 63;
+  var CHEOPS_SFX_INTRO = 11;
+  var CHEOPS_SFX_PICK = 16;
+  var CHEOPS_MSG_TITLE = "CHEOPS PYRAMID";
+  var CHEOPS_MSG_CODE = "CHEOPS KEY CODE";
+  var CHEOPS_MSG_EXCHANGE = "EXCHANGE    FOR";
+  var CHEOPS_MSG_HINT = "HIT ANY KEY FROM 1 TO 5";
   var EXTRA_EFFECTS = [
     [1, 32],
     [1, 96],
@@ -1154,6 +1170,12 @@
     return (raw & 63) % 5 + DOOR_DIGIT_MIN;
   }
   function expectedDoorCode(room, d2c6 = DOOR_D2C6, bc = DOOR_CODE_BC) {
+    return accessCodeDigits(room, d2c6, bc);
+  }
+  function expectedCheopsCode(room, d2c6 = DOOR_D2C6) {
+    return accessCodeDigits(room, d2c6, CHEOPS_CODE_BC).slice(0, CHEOPS_DIGIT_COUNT);
+  }
+  function accessCodeDigits(room, d2c6, bc) {
     const h = d2c6 >> 8 & 255;
     const l = d2c6 & 255;
     const e = room & 255;
@@ -1170,8 +1192,13 @@
     return world.inventory.some((it) => (it.sprite & 255) === (sprite & 255));
   }
   function doorKeysAccepted(world, room) {
+    return inventoryMatchesDigits(world, expectedDoorCode(room));
+  }
+  function cheopsKeysAccepted(world, room) {
+    return inventoryMatchesDigits(world, expectedCheopsCode(room));
+  }
+  function inventoryMatchesDigits(world, need) {
     if (inventoryHasSprite(world, DOOR_KEY_SPRITE)) return true;
-    const need = expectedDoorCode(room);
     const used = new Array(world.inventory.length).fill(false);
     let wildcards = 0;
     for (const it of world.inventory) {
@@ -1198,6 +1225,25 @@
     }
     return true;
   }
+  function blankSocketGap(world, hs) {
+    const col = (hs.x >> 3 & 252 | 1) & 31;
+    const screenRow = ITEM_ORIGIN_ROWS - ((hs.y + 1 & 255) >> 3);
+    const row0 = screenRow - PLAY_ORIGIN;
+    for (let i = 0; i < 3; i++) {
+      const row = row0 + i;
+      if (col < 0 || row < 0 || col >= COLS || row >= ROWS) continue;
+      const idx = row * COLS + col;
+      world.terrain.attr[idx] = CLEAR_ATTR;
+      const dst = idx * CELL;
+      for (let py = 0; py < CELL; py++) world.terrain.data[dst + py] = 0;
+    }
+  }
+  function restoreClearedSockets(prep, world, room) {
+    for (const s of prep.socketsByRoom?.[room] ?? []) {
+      if (((world.socketFlags[s.slot] ?? 0) & 127) !== 0) continue;
+      blankSocketGap(world, s);
+    }
+  }
   function tryClearSocket(prep, blob, world) {
     if (!inventoryHasSprite(world, CORE_TOOL_SPRITE)) return false;
     const { x, y } = blobGame(blob);
@@ -1206,6 +1252,7 @@
       const flag = world.socketFlags[s.slot] ?? 0;
       if ((flag & 127) === 0) return false;
       world.socketFlags[s.slot] = flag & 128;
+      blankSocketGap(world, s);
       requestSfx(world, 8);
       return true;
     }
@@ -1887,6 +1934,7 @@
     return null;
   }
   function tickEnergyDrain(world) {
+    if (world.cheatGod) return;
     world.energyDrain = world.energyDrain + 1 & 255;
     if (world.energyDrain < ENERGY_DRAIN_WRAP) return;
     world.energyDrain = 0;
@@ -2028,7 +2076,6 @@
   }
   function applyExtra(world, sprite) {
     if (sprite === EXTRA_CHEOPS) {
-      world.cheops = true;
       return;
     }
     let a = sprite & 255;
@@ -2089,6 +2136,50 @@
       y: pos.y
     };
   }
+  function padInventory(inventory) {
+    const slots = inventory.slice(0, 4).map((it) => ({ sprite: it.sprite & 255, attr: it.attr & 255 }));
+    while (slots.length < 4) slots.push({ sprite: 0, attr: 0 });
+    return slots;
+  }
+  function pickCheopsSlot(inventory) {
+    const slots = padInventory(inventory);
+    for (let i = 0; i < 4; i++) {
+      const a = slots[i].sprite & 255;
+      if (a === 0) continue;
+      if (a < CHEOPS_SKIP_MIN || a >= CHEOPS_SKIP_MAX) return i;
+    }
+    for (let i = 3; i >= 0; i--) {
+      if ((slots[i].sprite & 255) !== 0) return i;
+    }
+    return 0;
+  }
+  function z80SubAdd2(a, sub, add) {
+    let v = a & 255;
+    while (v >= sub) v -= sub;
+    return v + add - sub & 255;
+  }
+  function rollCheopsSprite(world) {
+    for (let n = 0; n < 4096; n++) {
+      dacStep(world.dac);
+      const idx = z80SubAdd2(world.dac.dac0 & 255, CHEOPS_D2DE_MOD, CHEOPS_D2DE_ADD);
+      const val = world.d2de[idx - 1] ?? 0;
+      if (val < CHEOPS_D2DE_MIN) continue;
+      return val & CHEOPS_SPRITE_MASK;
+    }
+    return 0;
+  }
+  function rollCheopsOffers(world, given) {
+    const offers = [0, 0, 0, 0, given & 255];
+    for (let i = CHEOPS_OFFERS - 2; i >= 0; i--) offers[i] = rollCheopsSprite(world);
+    return offers;
+  }
+  function applyCheopsChoice(world, slot, offers, choice) {
+    const spr = (offers[choice] ?? 0) & 255;
+    while (world.inventory.length <= slot) world.inventory.push({ sprite: 0, attr: 0 });
+    const it = world.inventory[slot];
+    if (!it) world.inventory[slot] = { sprite: spr, attr: 0 };
+    else it.sprite = spr;
+  }
   function collectTableItem(prep, blob, world) {
     const list = prep.itemsByRoom[blob.room] ?? [];
     const bx = blob.x;
@@ -2111,7 +2202,7 @@
     const by = GAME_Y_ORIGIN - blob.y;
     if (world.extra && nearItem(bx, by, world.extra.x, world.extra.y)) {
       if (world.extra.sprite === EXTRA_CHEOPS) {
-        if (input2.up && !input2.left && !input2.right) world.cheops = true;
+        if (input2.up) return "cheops";
       } else {
         applyExtra(world, world.extra.sprite);
         clearA350Bit(world.a350, blob.room);
@@ -3178,6 +3269,28 @@
       ticks: 0
     };
   }
+  function beginCheopsUi(world, room) {
+    requestSfx(world, CHEOPS_SFX_INTRO);
+    return {
+      kind: "cheops",
+      phase: "intro",
+      ok: cheopsKeysAccepted(world, room),
+      chosen: false,
+      ticks: 0,
+      digits: expectedCheopsCode(room),
+      slot: 0,
+      given: 0,
+      offers: []
+    };
+  }
+  function enterCheopsExchange(ui, world) {
+    ui.slot = pickCheopsSlot(world.inventory);
+    const given = world.inventory[ui.slot]?.sprite ?? 0;
+    ui.given = given & 255;
+    ui.offers = rollCheopsOffers(world, ui.given);
+    ui.phase = "exchange";
+    ui.ticks = 0;
+  }
   function drawDoorOverlay(buf, ui) {
     clearPlayfield(buf);
     printAt(buf, 8, 9, MSG_SECURITY_DOOR);
@@ -3207,9 +3320,44 @@
       else printAt(buf, 21, 6, MSG_TP_BAD);
     }
   }
-  function drawUiOverlay(buf, ui) {
+  function blitSprite2(buf, prep, spriteId, row, col, attr) {
+    const sprite = prep?.sprites[spriteId];
+    if (!sprite) return;
+    for (const cell of sprite.cells) {
+      const cy = row + cell.row;
+      const cx = col + cell.col;
+      if (cy < 0 || cy >= 24 || cx < 0 || cx >= SCREEN_COLS) continue;
+      const idx = cellIndex(cy, cx);
+      const dst = idx * CELL;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py] ^= cell.data[py];
+      buf.attr[idx] = attr;
+    }
+  }
+  function drawCheopsOverlay(buf, ui, prep) {
+    clearPlayfield(buf);
+    printAt(buf, 9, 6, CHEOPS_MSG_TITLE);
+    if (ui.phase === "intro" || ui.phase === "result") {
+      printAt(buf, 13, 9, CHEOPS_MSG_CODE);
+    }
+    if (ui.phase === "result") {
+      if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
+      else printAt(buf, 21, 6, MSG_ACCESS_BAD);
+    }
+    if (ui.phase === "exchange" || ui.phase === "done" && ui.chosen) {
+      printAt(buf, 13, 8, CHEOPS_MSG_EXCHANGE);
+      printAt(buf, 21, 4, CHEOPS_MSG_HINT);
+      blitSprite2(buf, prep, ui.given, 12, 17, 71);
+      for (let i = 0; i < CHEOPS_OFFERS; i++) {
+        const col = 4 + i * 6;
+        printAt(buf, 15, col, `${i + 1}.`);
+        blitSprite2(buf, prep, ui.offers[i] ?? 0, 16, col, 71);
+      }
+    }
+  }
+  function drawUiOverlay(buf, ui, prep) {
     if (ui.kind === "door") drawDoorOverlay(buf, ui);
     else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui);
+    else if (ui.kind === "cheops") drawCheopsOverlay(buf, ui, prep);
   }
   function tickDoorUi(ui, world) {
     ui.ticks += 1;
@@ -3229,6 +3377,46 @@
       return true;
     }
     return ui.phase === "done";
+  }
+  function tickCheopsUi(ui, world) {
+    if (ui.phase === "done") return true;
+    if (ui.phase === "exchange") return false;
+    ui.ticks += 1;
+    if (ui.phase === "intro" && ui.ticks >= 25) {
+      ui.phase = "result";
+      ui.ticks = 0;
+      if (world) requestSfx(world, 15);
+    } else if (ui.phase === "result" && ui.ticks >= 40) {
+      if (ui.ok && world) {
+        enterCheopsExchange(ui, world);
+        return false;
+      }
+      ui.phase = "done";
+      return true;
+    }
+    return false;
+  }
+  function cheopsChoiceFromKey(key, physical) {
+    if (physical) {
+      const digit = physical.match(/^(?:Digit|Numpad)([1-5])$/);
+      if (digit) return digit[1].charCodeAt(0) - 49 & 255;
+    }
+    if (key.length === 1) {
+      const c = key.charCodeAt(0);
+      if (c >= 49 && c <= 53) return c - 49;
+    }
+    return null;
+  }
+  function feedCheopsKey(ui, key, world, physical) {
+    if (ui.phase !== "exchange") return;
+    const choice = cheopsChoiceFromKey(key, physical);
+    if (choice === null) return;
+    if (world) {
+      applyCheopsChoice(world, ui.slot, ui.offers, choice);
+      requestSfx(world, CHEOPS_SFX_PICK);
+    }
+    ui.chosen = true;
+    ui.phase = "done";
   }
   function mapTeleportKey(key) {
     if (key === " ") return " ";
@@ -3292,6 +3480,14 @@
       world.message = ui.ok ? DOOR_MSG_OK : DOOR_MSG_BAD;
     } else if (ui.kind === "teleport" && (ui.phase === "result" || ui.phase === "done")) {
       world.message = ui.ok ? TELEPORT_MSG_OK : TELEPORT_MSG_BAD;
+    } else if (ui.kind === "cheops") {
+      if (ui.phase === "exchange" || ui.phase === "done" && ui.chosen) {
+        world.message = CHEOPS_MSG_EXCHANGE;
+      } else if (ui.phase === "result" || ui.phase === "done") {
+        world.message = ui.ok ? DOOR_MSG_OK : DOOR_MSG_BAD;
+      } else {
+        world.message = CHEOPS_MSG_CODE;
+      }
     }
   }
   function isUiBlocking(ui) {
@@ -3535,6 +3731,7 @@
     if (world.deathTicks >= DEATH_PAUSE_FRAMES) finishDeath(prep, blob, world);
   }
   function applyDeath(prep, blob, world, a) {
+    if (world.cheatGod) return;
     if (world.deathPhase) return;
     world.deathA = a & 255;
     world.d2c4 = (a & 255) >= DEATH_RESTORE_MIN_A ? 1 : 0;
@@ -3756,7 +3953,12 @@
     else tickFire(prep, blob, !!input2.fire, world);
     tickEnergyDrain(world);
     const pickupInput = stationed ? { ...input2, up: false } : input2;
-    tickPickup(prep, blob, pickupInput, world);
+    if (tickPickup(prep, blob, pickupInput, world) === "cheops") {
+      world.teleportLatch = true;
+      world.ui = beginCheopsUi(world, blob.room);
+      syncWorldMessage(world, world.ui);
+      return;
+    }
     const boardedBefore = world.dd22 === DD22_PAD;
     const code = walkSpecialObjects(prep, blob, input2, world);
     if (world.dd22 === DD22_PAD && !boardedBefore) copyPadFromBlob(world, blob);
@@ -3824,6 +4026,7 @@
       extra: null,
       inventory: [],
       cheops: false,
+      cheatGod: false,
       dd22: DD22_WALK,
       lastDir: 0,
       station: { x: 0, y: 0 },
@@ -3867,6 +4070,7 @@
   }
   function enterRoom(prep, world, room, opts) {
     composeTiles(prep, world.terrain, room);
+    restoreClearedSockets(prep, world, room);
     for (let i = 0; i < PLATFORM_SLOTS; i++) world.slots[i] = null;
     world.slotIndex = 0;
     world.pulseIndex = 0;
@@ -3909,7 +4113,30 @@
         }
         world.ui = idleUi();
       }
+      return;
     }
+    if (ui.kind === "cheops") {
+      if (tickCheopsUi(ui, world)) {
+        syncWorldMessage(world, ui);
+        applyCheopsFinish(prep, blob, world, ui);
+        world.ui = idleUi();
+      } else {
+        syncWorldMessage(world, ui);
+      }
+    }
+  }
+  function applyCheopsFinish(prep, blob, world, ui) {
+    world.teleportLatch = true;
+    if (ui.chosen) {
+      world.cheops = true;
+      world.extra = null;
+      clearA350Bit(world.a350, blob.room);
+    }
+    blob.y = gameYToPlay((playYToGame(blob.y) + 1 & 248) - 1);
+    world.d2c4 = DOOR_REASON;
+    enterRoom(prep, world, blob.room, { nasties: false, blob });
+    syncHoverpad(prep, world, blob.room, blob);
+    saveEntry(world, blob);
   }
   function applyTeleport(prep, blob, world, code) {
     const ev = evaluateTeleport(code, blob.room);
@@ -4082,6 +4309,25 @@
   }
   function cellPos(blob) {
     return { col: blob.x >> 3, row: blob.y >> 3 };
+  }
+
+  // src/cheat.ts
+  function parseCheatSprite(text) {
+    const s = text.trim();
+    if (!s) return null;
+    let n;
+    if (/^\$[0-9a-f]+$/i.test(s)) n = parseInt(s.slice(1), 16);
+    else if (/^0x[0-9a-f]+$/i.test(s)) n = parseInt(s, 16);
+    else if (/^[0-9a-f]+$/i.test(s) && /[a-f]/i.test(s)) n = parseInt(s, 16);
+    else if (/^\d+$/.test(s)) n = parseInt(s, 10);
+    else return null;
+    if (!Number.isFinite(n) || n < 0 || n > 255) return null;
+    return n & 255;
+  }
+  function setInventorySlot(world, slot, sprite, attr = 3) {
+    const i = Math.max(0, Math.min(INVENTORY_SLOTS - 1, slot | 0));
+    while (world.inventory.length < INVENTORY_SLOTS) world.inventory.push({ sprite: 0, attr: 0 });
+    world.inventory[i] = { sprite: sprite & 255, attr: attr & 255 };
   }
 
   // src/ui/bars.ts
@@ -4552,6 +4798,20 @@
       } else {
         doorEl.textContent = "\u2014";
       }
+      const cheopsEl = $("stat-cheops");
+      if (cheopsEl) {
+        if (world.ui.kind === "cheops") {
+          const ui = world.ui;
+          const code = ui.digits.map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
+          const offers = ui.offers.map((n, i) => `${i + 1}:$${n.toString(16)}`).join(" ");
+          cheopsEl.textContent = ui.phase === "exchange" ? offers : `${ui.phase} ${code}`;
+        } else if (world.extra?.sprite === 25) {
+          const code = expectedCheopsCode(blob.room).map((n) => "$" + n.toString(16).toUpperCase()).join(" ");
+          cheopsEl.textContent = `extra $19  k\xF3d ${code}`;
+        } else {
+          cheopsEl.textContent = world.cheops ? "v\xFDm\u011Bna hotov\xE1" : "\u2014";
+        }
+      }
       $("stat-message").textContent = world.message || "\u2014";
       gotoEl.value = String(blob.room);
       $("time").textContent = lastMs.toFixed(2) + " ms";
@@ -4568,7 +4828,7 @@
       screenBuf.attr.set(hudScratch.attr);
       drawStatus(screenBuf, world, prep);
       if (isUiBlocking(world.ui)) {
-        drawUiOverlay(screenBuf, world.ui);
+        drawUiOverlay(screenBuf, world.ui, prep);
         rasterizeScreen(screenBuf, screenRgba);
       } else {
         const anim = animationSet(blob, world);
@@ -4598,10 +4858,15 @@
     }
     document.addEventListener("keydown", (ev) => {
       unlock();
-      if (ev.target instanceof HTMLInputElement) return;
+      if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
       if (world.ui.kind === "teleport") {
         feedTeleportKey(world.ui, ev.key, true, world);
         if (ev.key.length === 1 || ev.key === " ") ev.preventDefault();
+        return;
+      }
+      if (world.ui.kind === "cheops") {
+        feedCheopsKey(world.ui, ev.key, world, ev.code);
+        ev.preventDefault();
         return;
       }
       if (isUiBlocking(world.ui)) {
@@ -4647,6 +4912,36 @@
     });
     overlayEl.addEventListener("change", () => {
       overlay = overlayEl.checked;
+    });
+    const cheatGodEl = $("cheat-god");
+    const cheatSlotEl = $("cheat-slot");
+    const cheatSpriteEl = $("cheat-sprite");
+    function insertCheatSprite(raw) {
+      const sprite = parseCheatSprite(raw);
+      if (sprite === null) {
+        $("status").textContent = "Cheat: sprite $00\u2013$FF (nap\u0159. $0F)";
+        return;
+      }
+      const slot = parseInt(cheatSlotEl.value, 10) || 0;
+      setInventorySlot(world, slot, sprite);
+      cheatSpriteEl.value = "$" + sprite.toString(16).toUpperCase().padStart(2, "0");
+    }
+    cheatGodEl.addEventListener("change", () => {
+      world.cheatGod = cheatGodEl.checked;
+    });
+    $("cheat-insert").addEventListener("click", () => insertCheatSprite(cheatSpriteEl.value));
+    cheatSpriteEl.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        insertCheatSprite(cheatSpriteEl.value);
+      }
+    });
+    document.querySelectorAll(".cheat-presets [data-sprite]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const raw = btn.getAttribute("data-sprite") || "";
+        cheatSpriteEl.value = raw;
+        insertCheatSprite(raw);
+      });
     });
     window.addEventListener("hashchange", () => {
       const id = parseHash();

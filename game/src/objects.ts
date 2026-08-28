@@ -3,6 +3,11 @@ import {
   CORE_SOCKET_ATTR_HI,
   CORE_SOCKET_TABLE,
   CORE_TOOL_SPRITE,
+  CELL,
+  CHEOPS_CODE_BC,
+  CHEOPS_DIGIT_COUNT,
+  CLEAR_ATTR,
+  COLS,
   DOOR_CODE_BC,
   DOOR_D2C6,
   DOOR_DIGIT_MAX,
@@ -22,6 +27,7 @@ import {
   KILL_ATTR_HI,
   PASSAGE_ATTR_HI,
   PLAY_ORIGIN,
+  ROWS,
   PULSE_AABB_DX,
   PULSE_AABB_DY,
   PULSE_ANIM_ATTR_BASE,
@@ -317,6 +323,15 @@ export function reduceDoorDigit(raw: number): number {
  * Seed `$D2C6` from snapshot (`DOOR_D2C6` = `$7B78`).
  */
 export function expectedDoorCode(room: number, d2c6: number = DOOR_D2C6, bc: number = DOOR_CODE_BC): number[] {
+  return accessCodeDigits(room, d2c6, bc);
+}
+
+/** `$CD1A` A=`$02` BC=`$0F0D`: first two of the three `$D616` digits. */
+export function expectedCheopsCode(room: number, d2c6: number = DOOR_D2C6): number[] {
+  return accessCodeDigits(room, d2c6, CHEOPS_CODE_BC).slice(0, CHEOPS_DIGIT_COUNT);
+}
+
+function accessCodeDigits(room: number, d2c6: number, bc: number): number[] {
   const h = (d2c6 >> 8) & 0xff;
   const l = d2c6 & 0xff;
   const e = room & 0xff;
@@ -357,8 +372,19 @@ export function inventoryHasSprite(world: World, sprite: number): boolean {
  * Typed prompt codes are not used — player brings keys.
  */
 export function doorKeysAccepted(world: World, room: number): boolean {
+  return inventoryMatchesDigits(world, expectedDoorCode(room));
+}
+
+/** `$D693` with Cheops N=2 (`$D5F6`). */
+export function cheopsKeysAccepted(world: World, room: number): boolean {
+  return inventoryMatchesDigits(world, expectedCheopsCode(room));
+}
+
+/**
+ * `$D693`: `$0F` covers every digit; else multiset match; `$0E` one digit.
+ */
+export function inventoryMatchesDigits(world: World, need: number[]): boolean {
   if (inventoryHasSprite(world, DOOR_KEY_SPRITE)) return true;
-  const need = expectedDoorCode(room);
   const used = new Array(world.inventory.length).fill(false);
   let wildcards = 0;
   for (const it of world.inventory) {
@@ -391,6 +417,32 @@ export function doorCodeAccepted(world: World, room: number, _typed: string | nu
   return doorKeysAccepted(world, room);
 }
 
+/**
+ * `$AB9F`: print 3 spaces at AT row H, H+1, H+2 and col `(L∧$FC)∨1`.
+ * Playfield-local: screen row from hotspot Y, then −`PLAY_ORIGIN`.
+ */
+export function blankSocketGap(world: World, hs: Hotspot): void {
+  const col = (((hs.x >> 3) & 0xfc) | 1) & 0x1f;
+  const screenRow = ITEM_ORIGIN_ROWS - (((hs.y + 1) & 0xff) >> 3);
+  const row0 = screenRow - PLAY_ORIGIN;
+  for (let i = 0; i < 3; i++) {
+    const row = row0 + i;
+    if (col < 0 || row < 0 || col >= COLS || row >= ROWS) continue;
+    const idx = row * COLS + col;
+    world.terrain.attr[idx] = CLEAR_ATTR;
+    const dst = idx * CELL;
+    for (let py = 0; py < CELL; py++) world.terrain.data[dst + py] = 0;
+  }
+}
+
+/** `$AB93`: after `$A80A`, if `$95F0` low 7 bits are 0, punch the gap again. */
+export function restoreClearedSockets(prep: Prepared, world: World, room: number): void {
+  for (const s of prep.socketsByRoom?.[room] ?? []) {
+    if (((world.socketFlags[s.slot] ?? 0) & 0x7f) !== 0) continue;
+    blankSocketGap(world, s);
+  }
+}
+
 /** `$CE96`: tool `$10` clears low 7 bits of `$95F0` flag (keep room-hi bit7). */
 export function tryClearSocket(prep: Prepared, blob: BlobState, world: World): boolean {
   if (!inventoryHasSprite(world, CORE_TOOL_SPRITE)) return false;
@@ -400,6 +452,7 @@ export function tryClearSocket(prep: Prepared, blob: BlobState, world: World): b
     const flag = world.socketFlags[s.slot] ?? 0;
     if ((flag & 0x7f) === 0) return false;
     world.socketFlags[s.slot] = flag & 0x80;
+    blankSocketGap(world, s);
     requestSfx(world, 0x08);
     return true;
   }

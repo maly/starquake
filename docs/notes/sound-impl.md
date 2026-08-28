@@ -26,6 +26,9 @@ Index `$17` (L=0 hang) **nikdy** nehrát. A=`$05`/`$06`/`$16` bez CALL — nehr�
 | kill střelou `hitByBullet` | `$12` | `$A2FA` |
 | sběr `$94E8` do inventáře | `$0C` | `$D1CC` |
 | extra `$CC9A` (ne Cheops `$19`) | A z páru `$CCBC` (`$01`/`$02`/`$03`/`$00`) | `$CCAA` |
+| Cheops overlay | `$0B` | `$CD17` |
+| Cheops `$D5FD` výsledek | `$0F` | `$D75B` / `$D783` |
+| Cheops výběr 1–5 | `$10` jednou (ROM ×`$23`) | `$CDDC` |
 | dveře: start overlay | `$08` | `$CC24` |
 | dveře: vstup do `result`, OK | `$0A` pak `$0F` | `$CC35` + `$D75B` |
 | dveře: vstup do `result`, fail | `$0F` | `$D783` |
@@ -43,8 +46,7 @@ Index `$17` (L=0 hang) **nikdy** nehrát. A=`$05`/`$06`/`$16` bez CALL — nehr�
 ## Co nespouštět (není v enginu / zakázané)
 
 - menu `$605A`, define keys `$6295`, hi-score `$68F8`
-- Cheops `$CD17` / `$CDDC` a `$D5FD` z Cheops (`$CCF1` mimo rozsah)
-- házení cifer `$D679` / shoda `$D70E` — overlay dveří digit-sprite animaci nemá
+- házení cifer `$D679` / shoda `$D70E` — overlay dveří/Cheops digit-sprite animaci nemá
 - stroj `$0E` (`$D0E0`), místnost ±1 `$0F` (`$D133`)
 - `$D1CA` při prázdném Up bez sběru — engine latchuje Up, ale zvuk jen když se inventář skutečně změní (sběr). Prázdný Up bez itemu nehrát; full inventář v ROM taky `$D7C0` nemá.
 

@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
 import {
+  DOOR_KEY_SPRITE,
   GAME_Y_ORIGIN,
   KILL_AABB,
   PULSE_LAYERS,
@@ -11,7 +12,15 @@ import {
   TELEPORT_MSG_BAD,
   TELEPORT_TABLE,
 } from "./constants";
-import { evaluateTeleport, firstTeleport, hitKillTerrain, teleportNameForRoom, tickPulses } from "./objects";
+import {
+  cheopsKeysAccepted,
+  evaluateTeleport,
+  expectedCheopsCode,
+  firstTeleport,
+  hitKillTerrain,
+  teleportNameForRoom,
+  tickPulses,
+} from "./objects";
 import { applyTeleport, attrAt, blocksBlob, createWorld, playYToGame, spawnBlob, tick } from "./physics";
 import { prepare } from "./render";
 import { REPO_ROOT } from "./server";
@@ -350,5 +359,40 @@ describe("horizontal passage $0F $D117", () => {
     tick(prep, blob, { left: false, right: true, up: false, down: false, fire: false }, world);
     assert.equal(blob.room, 61);
     assert.equal(blob.x, 198);
+  });
+});
+
+describe("Cheops key code $CD1A A=2 BC=$0F0D", () => {
+  it("room 0 yields two $09–$0D digits from $D616 with Cheops BC", () => {
+    // B=$0F C=$0D, $D2C6=$7B78, E=0:
+    // $0F⊕$7B⊕$00=$74 → ($34%5)+9=$0B; $74⊕$78⊕$0D=$01 → $0A.
+    assert.deepEqual(expectedCheopsCode(0), [0x0b, 0x0a]);
+  });
+
+  it("accepts $0F or the two digit sprites; empty inventory fails", () => {
+    const solid = Array.from({ length: 18 }, () => Array<number>(32).fill(0));
+    const attributes = Array.from({ length: 18 }, () => Array<number>(32).fill(0x47));
+    const rooms = Array.from({ length: 512 }, (_, id) => ({ id, blocks: [], attributes, solid }));
+    const prep: Prepared = {
+      graphics: [],
+      sprites: [],
+      actorsBySet: new Map(),
+      actorsByPtr: new Map(),
+      blocks: [],
+      rooms,
+      itemsByRoom: Array.from({ length: 512 }, () => []),
+    };
+    const world = createWorld(prep, 0);
+    world.inventory = [];
+    assert.equal(cheopsKeysAccepted(world, 0), false);
+    world.inventory = [{ sprite: DOOR_KEY_SPRITE, attr: 3 }];
+    assert.equal(cheopsKeysAccepted(world, 0), true);
+    world.inventory = [
+      { sprite: 0x0b, attr: 3 },
+      { sprite: 0x0a, attr: 3 },
+    ];
+    assert.equal(cheopsKeysAccepted(world, 0), true);
+    world.inventory = [{ sprite: 0x0b, attr: 3 }];
+    assert.equal(cheopsKeysAccepted(world, 0), false);
   });
 });

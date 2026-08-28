@@ -1,5 +1,12 @@
 import {
   A350_BYTES,
+  CHEOPS_D2DE_ADD,
+  CHEOPS_D2DE_MIN,
+  CHEOPS_D2DE_MOD,
+  CHEOPS_OFFERS,
+  CHEOPS_SKIP_MAX,
+  CHEOPS_SKIP_MIN,
+  CHEOPS_SPRITE_MASK,
   EXTRA_CHEOPS,
   EXTRA_DAC_ROLLS,
   EXTRA_EFFECTS,
@@ -16,7 +23,7 @@ import {
 import { requestSfx } from "./audio/effects";
 import { dacStep, seedDac } from "./entities";
 import type { BlobState } from "./physics";
-import type { Item, Prepared, World } from "./types";
+import type { InventoryItem, Item, Prepared, World } from "./types";
 
 export function itemGamePos(item: Item): { x: number; y: number } {
   const col = item.col & 0x1f;
@@ -81,10 +88,9 @@ function ccccSprite(world: World): number {
   return (e + 0x12) & 0xff;
 }
 
-/** $CC9A. Sprite $19 (Cheops) is recorded only — no exchange UI. */
+/** $CC9A. Sprite $19 (Cheops) jumps to `$CCF1` — this table is not used. */
 export function applyExtra(world: World, sprite: number): void {
   if (sprite === EXTRA_CHEOPS) {
-    world.cheops = true;
     return;
   }
   let a = sprite & 0xff;
@@ -155,6 +161,60 @@ export function spawnExtra(prep: Prepared, world: World, room: number): void {
   };
 }
 
+function padInventory(inventory: InventoryItem[]): InventoryItem[] {
+  const slots = inventory.slice(0, 4).map((it) => ({ sprite: it.sprite & 0xff, attr: it.attr & 0xff }));
+  while (slots.length < 4) slots.push({ sprite: 0, attr: 0 });
+  return slots;
+}
+
+/** `$CD32`: first sprite `<$09` or `≥$1A`; else last nonempty; empty → slot 0. */
+export function pickCheopsSlot(inventory: InventoryItem[]): number {
+  const slots = padInventory(inventory);
+  for (let i = 0; i < 4; i++) {
+    const a = slots[i]!.sprite & 0xff;
+    if (a === 0) continue;
+    if (a < CHEOPS_SKIP_MIN || a >= CHEOPS_SKIP_MAX) return i;
+  }
+  for (let i = 3; i >= 0; i--) {
+    if ((slots[i]!.sprite & 0xff) !== 0) return i;
+  }
+  return 0;
+}
+
+/** Z80 `SUB n / JR NC` then `ADD m` → (a%n)−n+m. `$CD5D` SUB `$09` ADD `$0A`. */
+function z80SubAdd(a: number, sub: number, add: number): number {
+  let v = a & 0xff;
+  while (v >= sub) v -= sub;
+  return (v + add - sub) & 0xff;
+}
+
+function rollCheopsSprite(world: World): number {
+  for (let n = 0; n < 4096; n++) {
+    dacStep(world.dac);
+    const idx = z80SubAdd(world.dac.dac0 & 0xff, CHEOPS_D2DE_MOD, CHEOPS_D2DE_ADD);
+    const val = world.d2de[idx - 1] ?? 0;
+    if (val < CHEOPS_D2DE_MIN) continue;
+    return val & CHEOPS_SPRITE_MASK;
+  }
+  return 0;
+}
+
+/** `$CD56`: fill `$CCED`…`$CCEA` (key 4…1), `$CCEE` = given (key 5). */
+export function rollCheopsOffers(world: World, given: number): number[] {
+  const offers = [0, 0, 0, 0, given & 0xff];
+  for (let i = CHEOPS_OFFERS - 2; i >= 0; i--) offers[i] = rollCheopsSprite(world);
+  return offers;
+}
+
+/** `$CDEC` LD (HL),A — sprite only; attr stays. */
+export function applyCheopsChoice(world: World, slot: number, offers: number[], choice: number): void {
+  const spr = (offers[choice] ?? 0) & 0xff;
+  while (world.inventory.length <= slot) world.inventory.push({ sprite: 0, attr: 0 });
+  const it = world.inventory[slot];
+  if (!it) world.inventory[slot] = { sprite: spr, attr: 0 };
+  else it.sprite = spr;
+}
+
 function collectTableItem(prep: Prepared, blob: BlobState, world: World): void {
   const list = prep.itemsByRoom[blob.room] ?? [];
   const bx = blob.x;
@@ -176,12 +236,12 @@ function collectTableItem(prep: Prepared, blob: BlobState, world: World): void {
 /**
  * $CB8A extras + $94E8 Up-alone. Teleport $0D and hoverpad $0C are walkSpecialObjects.
  */
-export function tickPickup(prep: Prepared, blob: BlobState, input: { left: boolean; right: boolean; up: boolean; down?: boolean; fire?: boolean }, world: World): void {
+export function tickPickup(prep: Prepared, blob: BlobState, input: { left: boolean; right: boolean; up: boolean; down?: boolean; fire?: boolean }, world: World): "cheops" | void {
   const bx = blob.x;
   const by = GAME_Y_ORIGIN - blob.y;
   if (world.extra && nearItem(bx, by, world.extra.x, world.extra.y)) {
     if (world.extra.sprite === EXTRA_CHEOPS) {
-      if (input.up && !input.left && !input.right) world.cheops = true;
+      if (input.up) return "cheops";
     } else {
       applyExtra(world, world.extra.sprite);
       clearA350Bit(world.a350, blob.room);

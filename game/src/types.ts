@@ -226,8 +226,10 @@ export interface World {
   a350: Uint8Array;
   extra: ExtraObject | null;
   inventory: InventoryItem[];
-  /** $19 Cheops extra: state only, no exchange UI. */
+  /** `$CCF1` succeeded (inventory swap + `$A801`). */
   cheops: boolean;
+  /** Viewer cheat: skip `$CB58` drain and `$C350` death. Not ROM. */
+  cheatGod: boolean;
   /** $DD22: 0 walk, 1 lift $C761, 2 hoverpad $C967. */
   dd22: number;
   /** $DD24 last nonzero dirs 0–3 ($C61B). Releasing keys does not clear it. */

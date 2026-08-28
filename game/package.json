@@ -8,7 +8,7 @@
     "build:web": "esbuild src/main.ts --bundle --format=iife --outfile=../viewer/bundle.js",
     "build:dump": "esbuild src/dump.ts --bundle --platform=node --format=cjs --outfile=../viewer/dump.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsc --noEmit && tsx --test src/render.test.ts src/physics.test.ts src/world.test.ts src/entities.test.ts src/projectiles.test.ts src/items.test.ts src/server.test.ts src/objects.test.ts src/goal.test.ts src/ui/bars.test.ts src/ui/print.test.ts src/ui/overlay.test.ts src/ui/chrome.test.ts src/audio/effects.test.ts src/audio/hooks.test.ts src/audio/channel.test.ts",
+    "test": "tsc --noEmit && tsx --test src/render.test.ts src/physics.test.ts src/world.test.ts src/entities.test.ts src/projectiles.test.ts src/items.test.ts src/server.test.ts src/objects.test.ts src/goal.test.ts src/ui/bars.test.ts src/ui/print.test.ts src/ui/overlay.test.ts src/ui/chrome.test.ts src/audio/effects.test.ts src/audio/hooks.test.ts src/audio/channel.test.ts src/cheat.test.ts",
     "start": "tsx src/server.ts",
     "all": "npm test && npm run build"
   },

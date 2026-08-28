@@ -42,6 +42,7 @@ python -m starquake_extract render --out out --all
 | pole + Jít | identifikátor 0–511 |
 | `#N` v URL | totéž |
 | Pevné buňky | magenta překryv podle `rooms.json` → `solid` |
+| Cheat (panel) | slot 0–3 + sprite (`$0F`); god = bez `$CB58` / `$C350`. `?dev=0` skryje |
 
 Hrací plocha je 256×144 (32×18 buněk). Rám ze Spectrum řádků 0–5 se nekreslí.
 

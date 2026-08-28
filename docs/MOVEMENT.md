@@ -244,18 +244,28 @@ Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA=
 | `$16` | 3 | `$3C` | palba |
 | `$17` | `$CCCC` | viz níže | ne tabulkové `$00,$00` |
 | `$18` | 0 (`$CCCA`) | `$01` (`$CCCB`) | životy `$D2CC` +1 (přetečení tabulky); `$7F`→`$80`, `$FF`→`0` |
-| `$19` | — | — | Cheops (`$CCF1`); stav `cheops`, bez výměny; `$CC9A` se nevolá |
+| `$19` | — | — | Cheops `$CCF1` (ne `$CC9A`): Up, 2ciferný kód, výměna 1–5 |
 
 `$CCCC` (lives=0 → `A=$18` → lives +1). Lives≠0: smyčka B=3 od energie/plošinek/palby, A start `$FF`; při `A≥(HL)` zapíše `E=2×(3−B)` a A←`(HL)`; `A=E+$12` → `$12` / `$14` / `$16`. Leftover E z ticku nerozhoduje.
 
 Meze: E/P/F strop `$7F` (`$D469`); dolní mez 0 jen `$D4E9` (ne tato cesta). Životy bez stropu (`$D425` B=3 od `$D2CF`).
+
+### Cheops `$CCF1` (extra `$19`)
+
+AABB extra `$19` + `$DD23` bit 3 (Up). `$CC9A` se nevolá; extra se hned nemaže. Overlay `$A412` + `CHEOPS PYRAMID` / `CHEOPS KEY CODE`, SFX `$0B`. Minihra `$D5FD` A=`$02` BC=`$0F0D` — **2** cifry stejným `$D616` jako dveře (`$D2C6=$7B78`). `$0F` wildcard všech, `$0E` jedné. Fail: ACCESS CODE INVALID, `$CC4B` Y-snap `$D2C4=$03`, extra zůstane (`$A350` beze změny). OK: ACCESS AUTHORISED, pak výměna.
+
+Výměna (`$CD32`–`$CDF0`): první inventární sprite `<$09` nebo `≥$1A` (přeskoč `$09`–`$19` a nuly); jinak poslední neprázdný. Čtyři nabídky z `$D2DE` s bitem 7 (`AND $3F`), index `($DAC0 % 9)+1`; pátá = odevzdaný sprite. Klávesy 1–5 (`$D5C8`). Zápis jen sprite (`$CDEC`), attr beze změny. SFX `$10`, HUD `$D425`, `$A801` maže extra, `$CC4B`.
+
+Digit-sprite animace `$D78B` / házení `$D679` jako u dveří engine nekreslí (text + 2×2 UDG nabídek).
+
+Rozbor: [`notes/item-effects.md`](notes/item-effects.md) § 9.
 
 ### `$94E8` sprite (inventář, ne přímý refill)
 
 | sprite | význam | stav |
 |---|---|---|
 | `$0F` | klíč kódu (`$D693`) | inventář; dveře wildcard všech cifer |
-| `$10` | nástroj `$B0` (`$CE8C`) | inventář; clear socket `$95F0` |
+| `$10` | nástroj `$B0` (`$CE8C`) | inventář; `$CE96` flag + `$A807`/`$AB9F` 3 mezery (col `(X≫3∧$FC)∨1`) |
 | `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář (staty beze změny); jádrové ID v `$D2DE` |
 | `$FF` | prázdný záznam | ignorovat |
 
@@ -424,7 +434,7 @@ Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839
 | `$08` | `1E 00 01 01 C3` | dveře start; socket `$0B` |
 | `$09` | `8C 80 01 7F C3` | teleport OK |
 | `$0A` | `00 22 01 7F DF` | dveře minihra OK |
-| `$0B` | `22 00 28 7F DF` | Cheops overlay (mimo) |
+| `$0B` | `22 00 28 7F DF` | Cheops overlay `$CD17` |
 | `$0C` | `20 00 14 00 81` | sběr `$94E8` |
 | `$0D` | `C8 C9 FE 05 03` | (nepoužito in-game) |
 | `$0E` | `00 0A FE 0F 07` | (nepoužito in-game) |
@@ -448,6 +458,9 @@ Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839
 | `hitByBullet` | `$12` |
 | `collectTableItem` unshift | `$0C` |
 | `applyExtra` (ne Cheops `$19`) | 1. B páru `$CCBC` |
+| `beginCheopsUi` | `$0B` |
+| `tickCheopsUi` intro→result | `$0F` (`$D5FD` OK/fail) |
+| `feedCheopsKey` 1–5 | `$10` |
 | `beginDoorUi` | `$08` |
 | `tickDoorUi` intro→result OK | `$0A` pak `$0F` |
 | `tickDoorUi` intro→result fail | `$0F` |

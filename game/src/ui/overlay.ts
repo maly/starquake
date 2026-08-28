@@ -1,4 +1,12 @@
 import {
+  CELL,
+  CHEOPS_MSG_CODE,
+  CHEOPS_MSG_EXCHANGE,
+  CHEOPS_MSG_HINT,
+  CHEOPS_MSG_TITLE,
+  CHEOPS_OFFERS,
+  CHEOPS_SFX_INTRO,
+  CHEOPS_SFX_PICK,
   DOOR_MSG_BAD,
   DOOR_MSG_OK,
   TELEPORT_MSG_BAD,
@@ -6,10 +14,22 @@ import {
   TELEPORT_NAME_LEN,
 } from "../constants";
 import { requestSfx } from "../audio/effects";
-import { doorKeysAccepted, evaluateTeleport, expectedDoorCode, teleportNameForRoom } from "../objects";
+import {
+  applyCheopsChoice,
+  pickCheopsSlot,
+  rollCheopsOffers,
+} from "../items";
+import {
+  cheopsKeysAccepted,
+  doorKeysAccepted,
+  evaluateTeleport,
+  expectedCheopsCode,
+  expectedDoorCode,
+  teleportNameForRoom,
+} from "../objects";
 import type { Prepared, World } from "../types";
 import { newPrintState, printMessage } from "./print";
-import { clearPlayfield, type ScreenBuffers } from "./screen";
+import { cellIndex, clearPlayfield, SCREEN_COLS, type ScreenBuffers } from "./screen";
 
 /** Exact ROM overlay copy (double spaces where present). */
 export const MSG_SECURITY_DOOR = "SECURITY  DOOR";
@@ -25,7 +45,7 @@ export const MSG_DASHES = "- - - - -";
 export const MSG_TP_OK = "NOW TELEPORTING";
 export const MSG_TP_BAD = "CODE NOT RECOGNISED";
 
-export type UiKind = "none" | "door" | "teleport";
+export type UiKind = "none" | "door" | "teleport" | "cheops";
 
 export interface DoorUi {
   kind: "door";
@@ -49,7 +69,19 @@ export interface TeleportUi {
   ticks: number;
 }
 
-export type UiState = { kind: "none" } | DoorUi | TeleportUi;
+export interface CheopsUi {
+  kind: "cheops";
+  phase: "intro" | "result" | "exchange" | "done";
+  ok: boolean;
+  chosen: boolean;
+  ticks: number;
+  digits: number[];
+  slot: number;
+  given: number;
+  offers: number[];
+}
+
+export type UiState = { kind: "none" } | DoorUi | TeleportUi | CheopsUi;
 
 export function idleUi(): UiState {
   return { kind: "none" };
@@ -88,6 +120,31 @@ export function beginTeleportUi(room: number, world?: World): TeleportUi {
   };
 }
 
+/** `$CCF1`: CHEOPS KEY CODE then `$D5FD` A=2. Exchange after OK. */
+export function beginCheopsUi(world: World, room: number): CheopsUi {
+  requestSfx(world, CHEOPS_SFX_INTRO);
+  return {
+    kind: "cheops",
+    phase: "intro",
+    ok: cheopsKeysAccepted(world, room),
+    chosen: false,
+    ticks: 0,
+    digits: expectedCheopsCode(room),
+    slot: 0,
+    given: 0,
+    offers: [],
+  };
+}
+
+function enterCheopsExchange(ui: CheopsUi, world: World): void {
+  ui.slot = pickCheopsSlot(world.inventory);
+  const given = world.inventory[ui.slot]?.sprite ?? 0;
+  ui.given = given & 0xff;
+  ui.offers = rollCheopsOffers(world, ui.given);
+  ui.phase = "exchange";
+  ui.ticks = 0;
+}
+
 export function drawDoorOverlay(buf: ScreenBuffers, ui: DoorUi): void {
   clearPlayfield(buf);
   printAt(buf, 8, 9, MSG_SECURITY_DOOR);
@@ -120,9 +177,46 @@ export function drawTeleportOverlay(buf: ScreenBuffers, ui: TeleportUi): void {
   }
 }
 
-export function drawUiOverlay(buf: ScreenBuffers, ui: UiState): void {
+function blitSprite(buf: ScreenBuffers, prep: Prepared | undefined, spriteId: number, row: number, col: number, attr: number): void {
+  const sprite = prep?.sprites[spriteId];
+  if (!sprite) return;
+  for (const cell of sprite.cells) {
+    const cy = row + cell.row;
+    const cx = col + cell.col;
+    if (cy < 0 || cy >= 24 || cx < 0 || cx >= SCREEN_COLS) continue;
+    const idx = cellIndex(cy, cx);
+    const dst = idx * CELL;
+    for (let py = 0; py < CELL; py++) buf.data[dst + py]! ^= cell.data[py]!;
+    buf.attr[idx] = attr;
+  }
+}
+
+export function drawCheopsOverlay(buf: ScreenBuffers, ui: CheopsUi, prep?: Prepared): void {
+  clearPlayfield(buf);
+  printAt(buf, 9, 6, CHEOPS_MSG_TITLE);
+  if (ui.phase === "intro" || ui.phase === "result") {
+    printAt(buf, 13, 9, CHEOPS_MSG_CODE);
+  }
+  if (ui.phase === "result") {
+    if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
+    else printAt(buf, 21, 6, MSG_ACCESS_BAD);
+  }
+  if (ui.phase === "exchange" || (ui.phase === "done" && ui.chosen)) {
+    printAt(buf, 13, 8, CHEOPS_MSG_EXCHANGE);
+    printAt(buf, 21, 4, CHEOPS_MSG_HINT);
+    blitSprite(buf, prep, ui.given, 12, 17, 0x47);
+    for (let i = 0; i < CHEOPS_OFFERS; i++) {
+      const col = 4 + i * 6;
+      printAt(buf, 15, col, `${i + 1}.`);
+      blitSprite(buf, prep, ui.offers[i] ?? 0, 16, col, 0x47);
+    }
+  }
+}
+
+export function drawUiOverlay(buf: ScreenBuffers, ui: UiState, prep?: Prepared): void {
   if (ui.kind === "door") drawDoorOverlay(buf, ui);
   else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui);
+  else if (ui.kind === "cheops") drawCheopsOverlay(buf, ui, prep);
 }
 
 /**
@@ -147,6 +241,56 @@ export function tickDoorUi(ui: DoorUi, world?: World): boolean {
     return true;
   }
   return ui.phase === "done";
+}
+
+export function tickCheopsUi(ui: CheopsUi, world?: World): boolean {
+  if (ui.phase === "done") return true;
+  if (ui.phase === "exchange") return false;
+  ui.ticks += 1;
+  if (ui.phase === "intro" && ui.ticks >= 25) {
+    ui.phase = "result";
+    ui.ticks = 0;
+    if (world) requestSfx(world, 0x0f);
+  } else if (ui.phase === "result" && ui.ticks >= 40) {
+    if (ui.ok && world) {
+      enterCheopsExchange(ui, world);
+      return false;
+    }
+    ui.phase = "done";
+    return true;
+  }
+  return false;
+}
+
+/**
+ * ROM `$CDCD` wants ASCII `'1'`–`'5'`.
+ * Czech QWERTZ number row unshifted is `+ěščř…` (`ev.key`), digits need Shift;
+ * Numpad still sends `"1"`–`"5"`. Use `ev.code` Digit1–5 / Numpad1–5 so the
+ * physical top-row keys work without Shift.
+ */
+export function cheopsChoiceFromKey(key: string, physical?: string): number | null {
+  if (physical) {
+    const digit = physical.match(/^(?:Digit|Numpad)([1-5])$/);
+    if (digit) return (digit[1]!.charCodeAt(0) - 0x31) & 0xff;
+  }
+  if (key.length === 1) {
+    const c = key.charCodeAt(0);
+    if (c >= 0x31 && c <= 0x35) return c - 0x31;
+  }
+  return null;
+}
+
+/** `$D5C8` then `$CDCD` CP `$31` / `$36`. */
+export function feedCheopsKey(ui: CheopsUi, key: string, world?: World, physical?: string): void {
+  if (ui.phase !== "exchange") return;
+  const choice = cheopsChoiceFromKey(key, physical);
+  if (choice === null) return;
+  if (world) {
+    applyCheopsChoice(world, ui.slot, ui.offers, choice);
+    requestSfx(world, CHEOPS_SFX_PICK);
+  }
+  ui.chosen = true;
+  ui.phase = "done";
 }
 
 /**
@@ -226,6 +370,14 @@ export function syncWorldMessage(world: World, ui: UiState): void {
     world.message = ui.ok ? DOOR_MSG_OK : DOOR_MSG_BAD;
   } else if (ui.kind === "teleport" && (ui.phase === "result" || ui.phase === "done")) {
     world.message = ui.ok ? TELEPORT_MSG_OK : TELEPORT_MSG_BAD;
+  } else if (ui.kind === "cheops") {
+    if (ui.phase === "exchange" || (ui.phase === "done" && ui.chosen)) {
+      world.message = CHEOPS_MSG_EXCHANGE;
+    } else if (ui.phase === "result" || ui.phase === "done") {
+      world.message = ui.ok ? DOOR_MSG_OK : DOOR_MSG_BAD;
+    } else {
+      world.message = CHEOPS_MSG_CODE;
+    }
   }
 }
 

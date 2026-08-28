@@ -120,6 +120,10 @@
             <dd id="stat-door">—</dd>
           </div>
           <div>
+            <dt>Cheops $CCF1</dt>
+            <dd id="stat-cheops">—</dd>
+          </div>
+          <div>
             <dt>Přechod $0F</dt>
             <dd id="stat-passage">—</dd>
           </div>
@@ -140,6 +144,36 @@
           Zvýraznit pevné buňky
           <span class="hint">bit 6, ne 0x64 · pole <code>solid</code></span>
         </label>
+
+        <section class="cheats" aria-label="Cheat mód">
+          <h2>Cheat (test)</h2>
+          <label class="check">
+            <input id="cheat-god" type="checkbox" />
+            Bez úbytku energie / smrti
+            <span class="hint">přeskočí <code>$CB58</code> i <code>$C350</code> (rostlina, puls, vetřelec)</span>
+          </label>
+          <label class="goto-label" for="cheat-slot">Inventář slot 0–3</label>
+          <div class="goto-row cheat-row">
+            <select id="cheat-slot" aria-label="Slot">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+            <input id="cheat-sprite" type="text" spellcheck="false" placeholder="$0F" aria-label="Sprite" />
+            <button id="cheat-insert" type="button">Vložit</button>
+          </div>
+          <div class="cheat-presets">
+            <button type="button" data-sprite="$0F">$0F klíč</button>
+            <button type="button" data-sprite="$10">$10 nástroj</button>
+            <button type="button" data-sprite="$09">$09</button>
+            <button type="button" data-sprite="$0A">$0A</button>
+            <button type="button" data-sprite="$0B">$0B</button>
+            <button type="button" data-sprite="$0C">$0C</button>
+            <button type="button" data-sprite="$0D">$0D</button>
+            <button type="button" data-sprite="$1A">$1A jádro</button>
+          </div>
+        </section>
 
         <dl class="facts timing">
           <div>
@@ -164,13 +198,13 @@
           Q nahoru (sběr $D09F / nástup na pad $CEAD), A dolů (plošinka $C79F),
           O vlevo, P vpravo, mezerník palba ($C85A / na padu $CA15). O/P na
           teleportu spustí zadání 5 znaků; security door bere inventář
-          ($D5FD / klíč <code>$0F</code>). Jádro <code>#199</code>. Dev panel:
-          default zapnutý, <code>?dev=0</code> vypne. PageUp / PageDown mění
-          místnost.
+          ($D5FD / klíč <code>$0F</code>). Jádro <code>#199</code>. Cheat v panelu
+          (inventář slot + god). Dev panel: default zapnutý, <code>?dev=0</code>
+          vypne. PageUp / PageDown mění místnost.
         </p>
       </aside>
     </div>
 
-    <script src="bundle.js?v=drain-1"></script>
+    <script src="bundle.js?v=socket-1"></script>
   </body>
 </html>

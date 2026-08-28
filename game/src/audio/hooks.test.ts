@@ -25,10 +25,13 @@ import { applyDeath, applyPassage, createWorld, spawnBlob, tick } from "../physi
 import { tickFire } from "../projectiles";
 import type { Entity, Item, Prepared, Room } from "../types";
 import {
+  beginCheopsUi,
   beginDoorUi,
   beginTeleportUi,
+  feedCheopsKey,
   feedTeleportKey,
   finishTeleportInput,
+  tickCheopsUi,
   tickDoorUi,
 } from "../ui/overlay";
 
@@ -203,6 +206,30 @@ describe("sfx hooks", () => {
     world.sfx.length = 0;
     applyExtra(world, EXTRA_CHEOPS);
     assert.deepEqual(world.sfx, []);
+  });
+
+  it("Cheops overlay $0B; fail $0F; pick 1–5 $10", () => {
+    const prep = grid();
+    const failWorld = createWorld(prep, 0);
+    failWorld.inventory = [];
+    const failUi = beginCheopsUi(failWorld, 0);
+    assert.ok(failWorld.sfx.includes(0x0b));
+    failWorld.sfx.length = 0;
+    failUi.ticks = 24;
+    tickCheopsUi(failUi, failWorld);
+    assert.deepEqual(failWorld.sfx, [0x0f]);
+
+    const okWorld = createWorld(prep, 0);
+    okWorld.inventory = [
+      { sprite: DOOR_KEY_SPRITE, attr: 3 },
+      { sprite: 0x1a, attr: 3 },
+    ];
+    okWorld.d2de = CORE_D2DE_INIT.map((v) => v);
+    const okUi = beginCheopsUi(okWorld, 0);
+    for (let i = 0; i < 65; i++) tickCheopsUi(okUi, okWorld);
+    okWorld.sfx.length = 0;
+    feedCheopsKey(okUi, "5", okWorld);
+    assert.deepEqual(okWorld.sfx, [0x10]);
   });
 
   it("beginDoorUi $08; intro→result OK $0A+$0F, fail $0F", () => {

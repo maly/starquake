@@ -359,6 +359,27 @@ export const EXTRA_CHEOPS = 0x19;
 export const EXTRA_DAC_ROLLS = 0x14;
 
 /**
+ * Cheops `$CCF1`: extra `$19` + Up (`$DD23` bit 3).
+ * `$D5FD` A=`$02`, BC=`$0F0D` — 2 cifry, stejný `$D616` jako dveře.
+ * Výměna `$CD32`–`$CDF0`: slot mimo `$09`–`$19`, 4× `$D2DE` bit7, klávesy 1–5.
+ */
+export const CHEOPS_CODE_BC = 0x0f0d;
+export const CHEOPS_DIGIT_COUNT = 2;
+export const CHEOPS_OFFERS = 5;
+export const CHEOPS_SKIP_MIN = 0x09;
+export const CHEOPS_SKIP_MAX = 0x1a;
+export const CHEOPS_D2DE_MOD = 0x09;
+export const CHEOPS_D2DE_ADD = 0x0a;
+export const CHEOPS_D2DE_MIN = 0x80;
+export const CHEOPS_SPRITE_MASK = 0x3f;
+export const CHEOPS_SFX_INTRO = 0x0b;
+export const CHEOPS_SFX_PICK = 0x10;
+export const CHEOPS_MSG_TITLE = "CHEOPS PYRAMID";
+export const CHEOPS_MSG_CODE = "CHEOPS KEY CODE";
+export const CHEOPS_MSG_EXCHANGE = "EXCHANGE    FOR";
+export const CHEOPS_MSG_HINT = "HIT ANY KEY FROM 1 TO 5";
+
+/**
  * $CCBC pairs for extra sprites $11–$18: offset from $D2CC, addend.
  * $17 is $CCCC overlay, not the table `$00,$00` at $CCC8.
  * $18 overflows the 15-byte table: $CCCA=$00, $CCCB=$01 → lives +1, no $7F cap.

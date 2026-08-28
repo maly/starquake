@@ -97,7 +97,7 @@ Sprite u `$94E8`: `$AB80 LD A,$41 / SUB D` s D = zbývající počet smyčky (`$
 | A (typ) | sprite / zdroj | podmínka | účinek | zápis / CALL |
 |---|---|---|---|---|
 | `$0E` | nibble `$E0` → `$A9F6 AND $0F` | `$DD29==$10` a `$DD1E==B` (`$D0A3` / `$D0AB`) jinak `$D1A6` | stroj na plošinky: typ → `$05`, dvě 2×2 do `$DBBB` (`OR $40`, život `$02`), zvuk `$10` | `$D0B3` / `$D0F8`–`$D112` / `$D0E0`; **ne** `$D41F`, `$D2CE` beze změny (sonda) |
-| `$0F` | nibble `$F0` | `$DD23 ∧ $03 ≠ 0` (`$D11B`) jinak `$D1A6` | bit0 → `$D2C8++` jinak `--`; zvuk `$04`; `A=$05` RET | `$D12D` / `$D12A` / `$D131` / `$D136` — reload, mimo rozsah |
+| `$0F` | nibble `$F0` | `$DD23 ∧ $03 ≠ 0` (`$D11B`) jinak `$D1A6` | bit0 → `$D2C8++` jinak `--`; zvuk `$04`; `A=$05` RET | `$D12D` / `$D12A` / `$D131` / `$D136` — v enginu (`applyPassage`) |
 | `$10`–`$13` | v `$A9F6`/`$AB80` **nevznikají** | `CP $14` C | nic | `$D13B JR C,$D1A6` |
 | `$02`–`$05`, `$0A` | nibble `$20`/`$30`/`$40`/`$A0` → `$A9F6` | totéž | nic | `$D13B` |
 | `$14`+ | `$94E8` index `A−$14` | `$DD31==$01` jinak `$D1A6` | inventář, byte1=`$01`, XOR `$47`, komprese `$96FC` | `$D140` / `$D16B` / `$D176` / `$D194` |
@@ -218,7 +218,7 @@ Sonda `$CCCC`:
 | inventář | 4 sloty, nový na začátek (LDDR `$0A` z `$D2D9`→`$D2DB`) | `$D1CF` | `{sprite, attr}` |
 | `$D1CA` bez sběru | **1. tick Up** (`$DD31=1`) i bez `$14+` vloží `00 00` dopředu | `$D1B3 CP $00 / JP Z $D2B9` | sonda `$CB58` prázdný seznam: `0C 03 0D 03 0E 03` → `00 00 0C 03 0D 03 0E 03`, zvuk `$0C` |
 | overflow | `$D2DB≠0` po posunu → drop zpět `$94E8` / `$A7FE` | `$D1F8` / `$D200` | mimo rozsah; sonda 4 plné + `$1A` → inv `1A 03 0C 03 0D 03 0E 03`, `$D2DA=0F 03` |
-| Cheops | extra `$19`, ne `$D09F` | `$CCF1` | mimo rozsah |
+| Cheops | extra `$19`, ne `$D09F` | `$CCF1` | implementováno (výměna 1–5) |
 | kód `$D693` | sprite `$0F` v inventáři zkrátí minihru | `$D693 CP $0F` | mimo rozsah |
 | jádro `$C7` / `$0B` | `$CE82 CP $0B`, nástroj `$10` | `$CE8C` | mimo rozsah |
 | security door | typ `$00` | `$CBDC` | mimo rozsah |
@@ -252,10 +252,10 @@ NEVÍM k přenosu: viz § 9.
 ## 9. Nedořešené
 
 1. **Stroj `$0E` UX.** Zápis do `$DBBB` a podmínka `$DD29==$10` (max pádu) + stejné Y jsou v emu. Které místnosti, kolik platforem hráč vidí, jestli se dá spustit jinak než pád — NEVÍM (mimo rozsah).
-2. **`$0F` mapa.** `A=$05` po `RET` je důvod reloadu (`$A52A` analogicky `$03`/`$04` u dveří/teleportu). Graf místností / zda jde o dveře nebo wrap — NEVÍM, mimo rozsah.
+2. **`$0F` mapa.** V enginu: 22 místností (11 párů), exact XY + L\|R, room ±1, snap dest `$0F`. `A=$05` = `$D2C4`.
 3. **Typy `$10`–`$13` v live `$96FC`.** Větev `$D13B` je no-op. `$AB80` začíná na `$14`, extra je `$01`. Jestli je někdy zapíše jiný kód — NEVÍM.
 4. **Drop overflow `$D1CA` / `$D236`.** Sonda vidí `$D2DA` = vytlačený slot a `$D1E1` Y remap. Přesné XY zpět do místnosti a Y=`$32` — NEVÍM do hloubky (mimo rozsah).
-5. **Cheops výměna `$CCF1`–`$CDFB`.** Větev ověřená (PC=`$CCF1`, `$CC9A` 0). Klávesy 1–5, `$CCEA`, bit `$A350` — mimo rozsah.
+5. **Cheops výměna `$CCF1`–`$CDFB`.** Implementováno: 2ciferný kód BC=`$0F0D`, slot `$CD32`, 4× `$D2DE` bit7 + original, klávesy 1–5, `$A801` po úspěchu. Digit-roll `$D78B` jako u dveří ne.
 6. **`$D693` / jádro `$C7` / security `$CBDC`.** Jen že `$D09F` tam neskáče.
 7. **Skóre při nenulovém `$D419`.** Sběr pracovní cifry nesází; kdyby je nastavil jiný kód ve stejném ticku, `$D1F5` by je přičetl. Za jakých ticků to nastane při sběru — NEVÍM (typicky `$D419` nula).
 8. **Engine vs `$18` a 1. Up prázdný slot.** ROM to dělá. Jestli engine extra `$18` ignoruje a prázdný slot z Up nevkládá — rozhodnutí orchestrátora, ne NEVÍM o ROM.

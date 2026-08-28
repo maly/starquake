@@ -5,7 +5,7 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 ## Hráč to pozná
 
 - [x] Puls `$70` / jiskra `$DB88` — persist XOR (ne replace L6/L7). Rozbor: `docs/notes/pulse-spark.md`.
-- [ ] Cheops `$CCF1` — extra `$19` jen nastaví `cheops`; výměna v pyramidě chybí.
+- [x] Cheops `$CCF1` — extra `$19` + Up: 2ciferný kód, výměna 1–5 z `$D2DE`.
 - [ ] Přeplněný inventář `$D1CA` — pátý předmět se zahodí z pole; ROM ho dropne zpět do místnosti.
 - [ ] Objekt `$0E` (nibble `$E0`) — stroj: pád z max. výšky položí dvě plošinky. Není zelené pole `$64`.
 - [ ] Door/TP overlay — text OK; chybí animace cifer `$D78B` / ikony `$25`/`$26`/`$24` a SFX `$D679`/`$D70E`.
@@ -35,8 +35,8 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 
 ## Hygiena
 
-- [ ] WORKLOG: poslední commit je `d4523e1`, ne `cc710eb`.
-- [ ] WORKLOG bod 17: `viewer/bgm.mp3` už je v gitu (stejný soubor jako `music/game-loop.mp3`).
-- [ ] `docs/notes/item-effects.md` — `$0F` pořád „mimo rozsah“, v enginu je.
+- [x] WORKLOG: poslední commit je `caaa8db`.
+- [x] WORKLOG bod 17: `viewer/bgm.mp3` už je v gitu (stejný soubor jako `music/game-loop.mp3`).
+- [x] `docs/notes/item-effects.md` — `$0F` v enginu; Cheops výměna taky.
 - [ ] Git remote `origin` — push teď nejde.
 - [ ] Untracked `tmp_*` sondy necommituj; `music/` (intro + duplicitní loop) rozhodnout.

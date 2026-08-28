@@ -112,6 +112,7 @@ import {
   zeroScore,
 } from "./score";
 import { requestSfx, SFX_STEP_INIT } from "./audio/effects";
+import { CHAN_DEATH, CHAN_FALL, CHAN_LAND, CHAN_PLATFORM, emptyChan, requestA41B, tickChannel } from "./audio/channel";
 import type { Entity, Graphic, Prepared, World } from "./types";
 
 export interface Input {
@@ -452,6 +453,7 @@ function tickDeath(prep: Prepared, blob: BlobState, world: World): void {
       world.nastyCount = 4;
       world.deathPhase = "fly";
       world.deathTicks = 0;
+      requestA41B(world, CHAN_DEATH);
     }
     return;
   }
@@ -651,11 +653,13 @@ function applyWalk(
   } else {
     const support = supportY(prep, blob.room, blob.x, blob.y, world);
     if (support !== null && support <= blob.y) {
+      if (world && blob.fallIndex !== 0) requestA41B(world, CHAN_LAND);
       blob.y = support;
       blob.fallIndex = 0;
       blob.onGround = true;
     } else {
       blob.onGround = false;
+      if (world && blob.fallIndex === 0) requestA41B(world, CHAN_FALL);
       const idx = Math.min(blob.fallIndex, FALL_TABLE.length - 1);
       const dy = FALL_TABLE[idx]!;
       const nextY = blob.y + dy;
@@ -678,6 +682,14 @@ function applyWalk(
  */
 export function tick(prep: Prepared, blob: BlobState, input: Input, world?: World): void {
   if (world?.gameOver) return;
+  try {
+    tickBody(prep, blob, input, world);
+  } finally {
+    if (world) tickChannel(world);
+  }
+}
+
+function tickBody(prep: Prepared, blob: BlobState, input: Input, world?: World): void {
   if (world?.deathPhase) {
     tickDeath(prep, blob, world);
     return;
@@ -839,6 +851,8 @@ export function createWorld(prep: Prepared, room: number): World {
     pulses: [],
     sfx: [],
     sfxStep: SFX_STEP_INIT,
+    chan: emptyChan(),
+    buzz: [],
   };
   enterRoom(prep, world, room);
   return world;
@@ -1112,6 +1126,7 @@ function tryBuildPlatform(prep: Prepared, blob: BlobState, input: Input, world: 
   };
   writePlatform(world, col, row);
   world.platforms = Math.max(0, world.platforms - PLATFORM_COST);
+  requestA41B(world, CHAN_PLATFORM);
 }
 
 /** $DBEC: one of 12 slots per tick. DEC life; below 4, peel XOR layers then SET 6. */

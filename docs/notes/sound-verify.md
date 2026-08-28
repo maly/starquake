@@ -63,7 +63,7 @@ Playable volající předávají `world` do overlay (`physics.ts` `tick` / `tick
 - Cheops `$CD17`/`$CDDC`, digit-roll `$D679`/`$D70E`
 - stroj `$0E`, místnost ±1 `$0F`
 - prázdný Up bez sběru (`$D1CA` v ROM by hrál `$0C`)
-- palba / pád / plošinka / oblaka = kanál `$A41B` — v `game/src` **žádný** `$A41B`; `projectiles.ts` nevolá `requestSfx`
+- palba / pád / plošinka / oblaka = kanál `$A41B` — `audio/channel.ts` + hooky; ne `$D7C0`
 - `$A41B` se **nehrálo** jako `$D7C0`
 - `melody.ts`: jen id 1–5 + komentář, **bez** přehrávače `$6600`/`$D9DE`
 

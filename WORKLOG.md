@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `cc710eb` (spawn home `$9EE2`, energie `$7F`/`$DD30=0`, ink≠0). Working tree: goal + UI 32×24 + **`$D7C0` SFX / BGM** + notes + `tmp_*_probe.py` (necommituj sondy).
+Poslední commit: `28fc706` (puls `$DB88` persist XOR + GRAFIX 4 snímky). Working tree: notes pulse-spark + `$A41B` ověření; `tmp_*` sondy necommituj.
 
 ## Tvrdé meze
 
@@ -11,7 +11,7 @@ Poslední commit: `cc710eb` (spawn home `$9EE2`, energie `$7F`/`$DD30=0`, ink≠
 - Nesnižuj match thresholdy (emu vs export = 0 pixelů).
 - Collision/static tile export (`rooms.json` `solid` / `$D280` overlay) neměň.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
-- Zatím **neimplementovat:** výměna Cheops `$CCF1`, drop přeplněného inventáře `$D1CA`, objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří. `$D7C0` SFX je v `game/src/audio/` (ne `$A41B` / ne `$6600`).
+- Zatím **neimplementovat:** výměna Cheops `$CCF1`, drop přeplněného inventáře `$D1CA`, objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří. `$6600` skip.
 - Konstanty s ROM adresami do `docs/MOVEMENT.md` a comments v `constants.ts`.
 - Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`, `tmp_security_probe.py`, `tmp_core_probe.py`, `tmp_score_probe.py`, `tmp_ui_layout_probe.py`, `tmp_ui_verify_probe.py`, `tmp_ui_engine_hud.ts`, `tmp_sfx_probe.py`, `tmp_melody_probe.py` (+ další `tmp_ui_*` / `tmp_sfx_*`).
 
@@ -48,11 +48,11 @@ Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přec
 | `game/src/render.ts` | `prepare()` hotspots, stamp pad, `blitPulses` `$DB88` (playfield-local) |
 | `game/src/ui/*` | screen 32×24, font `$ADD4`, chrome UDG, `$D425`/`$D463`, print `$D3C1`, door/TP overlay |
 | `game/src/dump.ts` | + `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing` |
-| `game/src/audio/*` | `$D7C0` fronta `world.sfx` + Web Audio; `$6600` skip; BGM MP3 |
+| `game/src/audio/*` | `$D7C0` `world.sfx`; `$A57B` `world.buzz`; `$6600` skip; BGM MP3 |
 
 Souřadnice: `$DD1D` X zleva, `$DD1E` Y odspodu; playY = `143 − gameY` (playfield-local). Compose: playfield Y += 48. Start Blob: X=`$88` Y=`$3F`. Entity Y je game-Y.
 
-Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`, `item-effects.md`, `security-doors.md`, `core.md`, `endgame-score.md`, `ui-layout.md`, `ui-text.md`, `ui-messages.md`, `ui-verify.md`, `sound-effects.md`, `melodies.md`, `sound-impl.md`, `sound-verify.md`. Konstanty: `docs/MOVEMENT.md`.
+Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`, `pulse-spark.md`, `item-effects.md`, `security-doors.md`, `core.md`, `endgame-score.md`, `ui-layout.md`, `ui-text.md`, `ui-messages.md`, `ui-verify.md`, `sound-effects.md`, `melodies.md`, `sound-impl.md`, `sound-verify.md`. Konstanty: `docs/MOVEMENT.md`.
 
 ### Tick
 
@@ -83,7 +83,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; BGM MP3 smyčka, mute/gain persist. `$6600` a `$A41B` ne.
 
-Ověřeno (working tree): `npm test` 155 pass; HUD vs emu 0 mismatch (ř. 0–5); live **0,25 ms**/snímek (limit 20). Puls `$DB88` persist XOR.
+Ověřeno (working tree): `npm test` 163 pass. Puls `$DB88` persist XOR. `$A57B` kanál.
 
 ## Otevřené
 
@@ -99,7 +99,7 @@ Ověřeno (working tree): `npm test` 155 pass; HUD vs emu 0 mismatch (ř. 0–5)
 10. Arrow `$BF88` ve zdviži — není v extractu.
 11. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
 12. Objekt `$0E` (auto-plošiny při dopadu).
-13. Spectrum end bitmap, hi-score `$64FA`, `$64A0` scramble. Kanál `$A41B`/`$A57B` (palba/pád/plošinka) a melodie `$6600` jsou skip.
+13. Spectrum end bitmap, hi-score `$64FA`, `$64A0` scramble. Melodie `$6600` skip. `$A41B`/`$A57B` je v `audio/channel.ts`.
 14. Puls `$70` / `$DB88` — **opraveno persist XOR.** Engine dřív každý snímek *přepisoval* aktuální L6/L7 (vypadalo to jako všechny fáze najednou). ROM `$DB88`/`$DB50` vrstvy XORuje do display file: toggle L5 A=`$47`, při flag≠0 `$A6BD[timer∧3]`. `xorInk` = delta, blit `^=` na terrain. `#13` jeden, `#198` dva.
 15. Door/TP overlay: chybí digit-sprite animace `$D78B` / ikony `$25`/`$26`/`$24` (text OK); SFX házení cifer `$D679`/`$D70E` proto taky ne.
 17. BGM soubor `viewer/bgm.mp3` zadavatel ještě nedodal — hra bez něj jen varuje.
@@ -109,7 +109,9 @@ Ověřeno (working tree): `npm test` 155 pass; HUD vs emu 0 mismatch (ř. 0–5)
 
 ### 2026-08-28 — puls `$DB88` persist XOR
 
-Kořen: `$A66C` volá `$DB88` (XOR na obrazovku), ne replace. Replace aktuální L6/L7 kreslil hustý blob („stack fází“). Testy ten model držely. `xorInk` teď persistuje L5 toggl + anim XOR; dvě L7 se vyruší; perioda 8 on/off se vrátí na prázdno. Bundle přestavěn.
+Kořen: `$A66C` volá `$DB88` (XOR na obrazovku), ne replace. Replace aktuální L6/L7 kreslil hustý blob („stack fází“). Testy ten model držely. `xorInk` teď persistuje L5 toggl + anim XOR; dvě L7 se vyruší; perioda 8 on/off se vrátí na prázdno. Bundle přestavěn. Rozbor: `docs/notes/pulse-spark.md`.
+
+`$A41B`/`$A57B` zapojeno: `channel.ts`, hooky palba/pád/dopad/plošinka/oblaka/spawn/kill/ambient. PCM 20 ms / tick.
 
 ### 2026-08-28 — animace vetřelců + pad
 

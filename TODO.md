@@ -4,7 +4,7 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 
 ## Hráč to pozná
 
-- [x] Puls `$70` / jiskra `$DB88` — persist XOR jako ROM (`L5` toggle + `$A6BD` anim, ne replace aktuální vrstvy). `#13` / `#198`.
+- [x] Puls `$70` / jiskra `$DB88` — persist XOR (ne replace L6/L7). Rozbor: `docs/notes/pulse-spark.md`.
 - [ ] Cheops `$CCF1` — extra `$19` jen nastaví `cheops`; výměna v pyramidě chybí.
 - [ ] Přeplněný inventář `$D1CA` — pátý předmět se zahodí z pole; ROM ho dropne zpět do místnosti.
 - [ ] Objekt `$0E` (nibble `$E0`) — stroj: pád z max. výšky položí dvě plošinky. Není zelené pole `$64`.
@@ -15,7 +15,8 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 
 - [ ] Hop `TEMP_JUMP_*` — v `$C5BD` skok není (odmapovaný).
 - [ ] Overlay `solid` (`$D280`) vs chůze `$D2F0` — na obrazovce obráceně, podle ROM správně. Neměnit export.
-- [ ] Kanál `$A41B` (palba/pád/plošinka) a melodie `$6600` — skip; pozadí = MP3.
+- [x] Kanál `$A41B`/`$A41C` → `$A57B` — palba `$05`, pád `$06`, dopad `$07`, plošinka `$08`, oblaka `$09`, spawn 1…4, kill `$0B`, ambient `$0C`…`$0F`.
+- [ ] Melodie `$6600` — skip (title/end); pozadí = MP3.
 - [ ] Spectrum end-screen, hi-score `$64FA`, scramble `$64A0` — HTML overlay +1000.
 - [ ] Arrow `$BF88` ve zdviži — není v extractu.
 - [ ] Digit `$0E` wildcard u dveří — 1× v enginu; Spectrum minihra ne.

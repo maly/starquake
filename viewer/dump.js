@@ -361,6 +361,113 @@ function requestSfx(world, a) {
   world.sfx.push(a);
 }
 
+// src/audio/synth.ts
+var SFX_CPU_HZ = 35e5;
+var SFX_SAMPLE_RATE = 44100;
+
+// src/audio/channel.ts
+var CHAN_TABLE = [
+  [10, 12, 3, 100],
+  [9, 12, 3, 0],
+  [10, 90, 0, 13],
+  [14, 24, 12, 243],
+  [6, 200, 247, 250],
+  [70, 200, 235, 250],
+  [1, 150, 0, 0],
+  [3, 120, 10, 15],
+  [63, 0, 0, 26],
+  [5, 29, 12, 26],
+  [4, 59, 5, 33],
+  [66, 12, 244, 255],
+  [30, 0, 0, 30],
+  [74, 12, 3, 200],
+  [73, 120, 3, 0],
+  [0, 0, 0, 0]
+];
+var CHAN_FIRE = 5;
+var CHAN_FALL = 6;
+var CHAN_LAND = 7;
+var CHAN_PLATFORM = 8;
+var CHAN_DEATH = 9;
+var CHAN_KILL = 11;
+var CHAN_AMBIENT_BASE = 12;
+var CHAN_FIRE_DELTA = 247;
+var PCM_LEVEL = 12e3;
+var FRAME_HZ2 = 50;
+var OUTER_T = 23;
+var INNER_T = 35;
+function emptyChan() {
+  return { req0: 0, req1: 0, dur: 0, pitch: 0, delta: 0, noise: 0, count: 0, reload: 0 };
+}
+function requestA41B(world, a) {
+  if (!Number.isInteger(a) || a < 1 || a > 16) return;
+  world.chan.req0 = a;
+}
+function requestA41C(world, a) {
+  if (!Number.isInteger(a) || a < 1 || a > 16) return;
+  world.chan.req1 = a;
+}
+function fireSoundBusy(world) {
+  return world.chan.dur !== 0 && world.chan.delta === CHAN_FIRE_DELTA;
+}
+function load(world, a) {
+  const rec = CHAN_TABLE[a - 1];
+  if (!rec) return;
+  const b0 = rec[0];
+  world.chan.dur = b0 & 63;
+  world.chan.pitch = rec[1];
+  world.chan.delta = rec[2];
+  world.chan.noise = rec[3];
+  const r = (b0 >> 6 & 3) + 1;
+  world.chan.count = r;
+  world.chan.reload = r;
+}
+function framePcm(e) {
+  const n = e === 0 ? 256 : e;
+  const halfT = OUTER_T + INNER_T * n;
+  const nSamp = Math.round(SFX_SAMPLE_RATE / FRAME_HZ2);
+  const tPer = SFX_CPU_HZ / SFX_SAMPLE_RATE;
+  const pcm = new Int16Array(nSamp);
+  let acc = 0;
+  let speaker = 1;
+  for (let i = 0; i < nSamp; i++) {
+    acc += tPer;
+    while (acc >= halfT) {
+      acc -= halfT;
+      speaker ^= 1;
+    }
+    pcm[i] = speaker ? PCM_LEVEL : -PCM_LEVEL;
+  }
+  return pcm;
+}
+function tickChannel(world) {
+  const ch = world.chan;
+  if (ch.req0) {
+    load(world, ch.req0);
+    ch.req0 = 0;
+  } else if (ch.dur === 0) {
+    if (ch.req1) {
+      load(world, ch.req1);
+      ch.req1 = 0;
+    } else {
+      const dac0 = world.dac.dac0 & 255;
+      if (dac0 < 4) {
+        const dac1 = world.dac.dac0 >> 8 & 255;
+        ch.req1 = (dac1 & 3) + CHAN_AMBIENT_BASE;
+      }
+      return;
+    }
+  }
+  ch.count = ch.count - 1 & 255;
+  if (ch.count !== 0) return;
+  ch.count = ch.reload;
+  ch.dur = ch.dur - 1 & 255;
+  ch.pitch = ch.pitch + ch.delta & 255;
+  const e = (ch.pitch ^ ch.noise) >> 1 & 127;
+  ch.noise = ch.noise + 1 & 255;
+  world.buzz.push(framePcm(e));
+}
+
 // src/projectiles.ts
 function cellSolid(world, col, row) {
   if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return false;
@@ -429,6 +536,8 @@ function tickPadFire(_prep, blob, fire, world) {
   if (world.padShotDir === 0) {
     if (world.fireDir !== 0) return;
     if (!fire || world.firepower === 0) return;
+    if (fireSoundBusy(world)) return;
+    requestA41B(world, CHAN_FIRE);
     world.firepower = Math.max(0, world.firepower - 1);
     const gameY = GAME_Y_ORIGIN - blob.y;
     world.padShotDir = world.lastDir || 1;
@@ -491,6 +600,8 @@ function tickFire(_prep, blob, fire, world) {
   if (world.fireDir === 0) {
     if (world.padShotDir !== 0) return;
     if (!fire || world.firepower === 0) return;
+    if (fireSoundBusy(world)) return;
+    requestA41B(world, CHAN_FIRE);
     world.firepower = Math.max(0, world.firepower - 1);
     world.fireDir = world.aim || FIRE_DIR_RIGHT;
     world.bullet.x = blob.x & 255;
@@ -1228,6 +1339,7 @@ function hitByBullet(e, world) {
   if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
   addScore(world, killScorePoints(e.basePtr || e.ptr));
   requestSfx(world, 18);
+  requestA41C(world, CHAN_KILL);
   e.ptr = DEAD_GRAPHIC;
   e.set = "stars";
   e.ink = 7;
@@ -1371,7 +1483,7 @@ function think(e, blob, world, slot) {
   }
   return false;
 }
-function appearOrDie(e, blob) {
+function appearOrDie(e, blob, world) {
   if (e.state === 2) {
     e.ptr = DEAD_GRAPHIC;
     e.set = "stars";
@@ -1391,6 +1503,7 @@ function appearOrDie(e, blob) {
     e.y = e.homeY;
     e.ptr = APPEAR_GRAPHIC;
     e.set = "corepieces1";
+    if (world) requestA41C(world, (world.dac.dac0 & 3) + 1);
   }
   if (was === APPEAR_FRAMES) {
     if (e.basePtr >> 8 < KILL_GRAPHIC_HI && blob && !farFromBlob(e.x, e.y, blob)) {
@@ -1420,7 +1533,7 @@ function stepOne(e, prep2, blob, world, slot, inner) {
   e.timer = e.timer - 1 & 255;
   if (e.timer !== 0) return null;
   e.timer = e.period;
-  if (appearOrDie(e, blob) && e.y === 0) return null;
+  if (appearOrDie(e, blob, world) && e.y === 0) return null;
   const abort = think(e, blob, world, slot);
   stepMove(e, world);
   if (abort) return { kind: "abort" };
@@ -2933,6 +3046,7 @@ function tickDeath(prep2, blob, world) {
       world.nastyCount = 4;
       world.deathPhase = "fly";
       world.deathTicks = 0;
+      requestA41B(world, CHAN_DEATH);
     }
     return;
   }
@@ -3098,11 +3212,13 @@ function applyWalk(prep2, blob, input, pixels, world) {
   } else {
     const support = supportY(prep2, blob.room, blob.x, blob.y, world);
     if (support !== null && support <= blob.y) {
+      if (world && blob.fallIndex !== 0) requestA41B(world, CHAN_LAND);
       blob.y = support;
       blob.fallIndex = 0;
       blob.onGround = true;
     } else {
       blob.onGround = false;
+      if (world && blob.fallIndex === 0) requestA41B(world, CHAN_FALL);
       const idx = Math.min(blob.fallIndex, FALL_TABLE.length - 1);
       const dy = FALL_TABLE[idx];
       const nextY = blob.y + dy;
@@ -3120,6 +3236,13 @@ function applyWalk(prep2, blob, input, pixels, world) {
 }
 function tick(prep2, blob, input, world) {
   if (world?.gameOver) return;
+  try {
+    tickBody(prep2, blob, input, world);
+  } finally {
+    if (world) tickChannel(world);
+  }
+}
+function tickBody(prep2, blob, input, world) {
   if (world?.deathPhase) {
     tickDeath(prep2, blob, world);
     return;
@@ -3264,7 +3387,9 @@ function createWorld(prep2, room2) {
     entry: { x: NEW_GAME_X, y: NEW_GAME_Y, dd22: DD22_WALK },
     pulses: [],
     sfx: [],
-    sfxStep: SFX_STEP_INIT
+    sfxStep: SFX_STEP_INIT,
+    chan: emptyChan(),
+    buzz: []
   };
   enterRoom(prep2, world, room2);
   return world;
@@ -3461,6 +3586,7 @@ function tryBuildPlatform(prep2, blob, input, world) {
   };
   writePlatform(world, col, row);
   world.platforms = Math.max(0, world.platforms - PLATFORM_COST);
+  requestA41B(world, CHAN_PLATFORM);
 }
 function tickBridges(world) {
   world.slotIndex += 1;

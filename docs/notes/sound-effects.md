@@ -248,6 +248,8 @@ Vstup `$C350`/`$C35E` A je **typ smrti**, ne index `$D839`. `$C3AA A=$0F` jen p�
 
 `$A57B` taky `OUT ($FE)` (`$A5BE`) s XOR `$10`, ale čeká na změnu FRAMES `$5C78` a končí `HALT` `$A5DC`. Mimo rozsah waveform.
 
+Engine: `game/src/audio/channel.ts` (`tickChannel` každý `tick`, `world.buzz`). Inner delay aproximace 23+35E T / half-wave, 20 ms burst. Palba `$C87B` (A41F=`$F7` blokuje další ránu).
+
 ---
 
 ## Open questions

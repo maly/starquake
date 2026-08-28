@@ -20,6 +20,7 @@ import { beginCoreCeremony, deliverCoreParts, matchCoreDeliveries } from "../cor
 import { tickNasties } from "../entities";
 import { applyExtra, itemGamePos, tickPickup } from "../items";
 import { tryClearSocket } from "../objects";
+import { CHAN_FIRE, CHAN_KILL } from "./channel";
 import { applyDeath, applyPassage, createWorld, spawnBlob, tick } from "../physics";
 import { tickFire } from "../projectiles";
 import type { Entity, Item, Prepared, Room } from "../types";
@@ -138,6 +139,38 @@ describe("sfx hooks", () => {
     world.nastyCount = 1;
     tickNasties(prep, blob, world);
     assert.ok(world.sfx.includes(0x12));
+    assert.equal(world.chan.req1, CHAN_KILL);
+  });
+
+  it("tickFire writes A41B $05", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.facing = 1;
+    world.aim = 1;
+    tickFire(prep, blob, true, world);
+    assert.equal(world.chan.req0, CHAN_FIRE);
+  });
+
+  it("nasty appear writes A41C 1..4 from dac0", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    world.dac.dac0 = 2;
+    world.entities = [
+      liveEntity({
+        state: 0,
+        stateTimer: 0,
+        timer: 1,
+        period: 1,
+        y: 0x0f,
+        homeX: 80,
+        homeY: 80,
+      }),
+    ];
+    world.nastyCount = 1;
+    tickNasties(prep, blob, world);
+    assert.ok(world.chan.req1 >= 1 && world.chan.req1 <= 4);
   });
 
   it("tickPickup collect unshift queues $0C; empty Up does not", () => {

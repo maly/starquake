@@ -58,6 +58,7 @@ import {
 import { lastStation } from "./objects";
 import type { BlobState } from "./physics";
 import { requestSfx } from "./audio/effects";
+import { CHAN_KILL, requestA41C } from "./audio/channel";
 import { parkBullet, shotFlying } from "./projectiles";
 import { addScore, killScorePoints } from "./score";
 import type { DacState, Entity, EntityCache, Prepared, World } from "./types";
@@ -457,6 +458,7 @@ function hitByBullet(e: Entity, world: World): void {
   if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
   addScore(world, killScorePoints(e.basePtr || e.ptr));
   requestSfx(world, 0x12);
+  requestA41C(world, CHAN_KILL);
   e.ptr = DEAD_GRAPHIC;
   e.set = "stars";
   e.ink = 7;
@@ -609,7 +611,7 @@ function think(e: Entity, blob: BlobState, world: World, slot: number): boolean 
   return false;
 }
 
-function appearOrDie(e: Entity, blob?: BlobState): boolean {
+function appearOrDie(e: Entity, blob?: BlobState, world?: World): boolean {
   if (e.state === 2) {
     e.ptr = DEAD_GRAPHIC;
     e.set = "stars";
@@ -629,6 +631,7 @@ function appearOrDie(e: Entity, blob?: BlobState): boolean {
     e.y = e.homeY;
     e.ptr = APPEAR_GRAPHIC;
     e.set = "corepieces1";
+    if (world) requestA41C(world, (world.dac.dac0 & 3) + 1);
   }
   if (was === APPEAR_FRAMES) {
     if ((e.basePtr >> 8) < KILL_GRAPHIC_HI && blob && !farFromBlob(e.x, e.y, blob)) {
@@ -669,7 +672,7 @@ function stepOne(
   e.timer = (e.timer - 1) & 0xff;
   if (e.timer !== 0) return null;
   e.timer = e.period;
-  if (appearOrDie(e, blob) && e.y === 0) return null;
+  if (appearOrDie(e, blob, world) && e.y === 0) return null;
   const abort = think(e, blob, world, slot);
   stepMove(e, world);
   if (abort) return { kind: "abort" };

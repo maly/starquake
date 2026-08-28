@@ -259,7 +259,7 @@ Vzhled: paper 2 (červená), inkoust z `$EA62`. `$1B` je červená rostlina na s
 
 `$A530` po energii: AABB proti `$9635` (`|ΔX| < $0E`, Y v `[comp−$16, comp]`, `comp = ($1A−row)<<3 − 2`). `XOR A / CP (HL) / CALL NZ,$C350` — zabije, až když je flag (byte 5) nenulový. Headless místnost 13, flag 0: `$A576`; flag 1, energie `$17` i `$7F`: `$C350` A=`$00`. `$CB8A` na týchž XY `$D2B9` (žádný objekt).
 
-`$A66C` (z `$D9C8` přes `$A415`) flag periodicky XORuje a kreslí `$DB88`. To **není** statický terén `$06`. Engine `$06` z `$70` neskládat.
+`$A66C` (z `$D9C8` přes `$A415`) flag periodicky XORuje a kreslí `$DB88`. To **není** statický terén `$06`. Engine `$06` z `$70` neskládat. Jiskra: [`pulse-spark.md`](pulse-spark.md).
 
 ---
 

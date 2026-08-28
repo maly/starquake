@@ -327,7 +327,7 @@ Platný teleport / `$0F` v kroku 6 hned volá `$A426` a zbytek ticku se přesko�
 2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne. `$64` je v overlay i chůzi nepevná.
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
-5. **Zvuk `$D7C0`.** Beeper je v `game/src/audio/` (viz sekce níže). Zbývá `$A41B` / `$6600` / digit-roll.
+5. **Zvuk.** `$D7C0` + `$A57B` v `game/src/audio/`. Zbývá `$6600` / digit-roll.
 6. **Animace 4 GRAFIX snímků** u vetřelce i padu — live ptr frame 0; kresba `ptr+(frames/2)%4×$30` na `X − 2×frame` (snímky 1–3 jsou předshift `+2/+4/+6` pro `X∧7`, ne posun entity).
 7. **Extra spawn `$AAB6` po `$A80A`.** Markery jsou raw nibble `$90` (`$96CB`), ne nakreslený attr. Engine seed `$7530+id×12` + 20× `$DAC6`, ne celý řetězec při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
 8. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah. Extra `$17`/`$18` jsou v enginu (`$CCCC` / přetečení `$CCBC`).
@@ -403,7 +403,7 @@ stateDiagram-v2
 
 Checkpoint: `enterRoom` / `spawnBlob` / východ / teleport uloží Blob XY (game) + `$DD22` do `world.entry`. `$06` a `$11` po smrti vrací na vstup do místnosti. Nula energie a běžný vetřelec zarovnají místo smrti a pad (`$DD22`) nechají.
 
-Nedořešené v této sekci: `$C7` při respawnu; statistika AI 5 carry/chase. ROM bliká jen A∧7=2. Puls `$DB88`: persist XOR L=`$05` při toggle + `$A6BD`[timer∧3] když flag≠0 (`xorInk` = display-file delta). `$A66C` 1 ze 4 slotů / tick (`$9634` wrap `$04`); DEC timer, `$FF` → reload + XOR flag.
+Nedořešené v této sekci: `$C7` při respawnu; statistika AI 5 carry/chase. ROM bliká jen A∧7=2. Puls `$DB88`: viz [`pulse-spark.md`](notes/pulse-spark.md) — persist XOR L5 + `$A6BD`, ne replace L6/L7.
 
 ## Zvuk `$D7C0`
 
@@ -463,4 +463,17 @@ Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839
 
 Pozadí = `viewer/bgm.mp3` (smyčka, vlastní gain). Melodie `$6600` se nehraje.
 
-**Nedořešené:** `$A41B` palba/pád/plošinka; `$6600` melodie (skip); digit-roll `$D679`; IM1 jitter; MP3 dodá zadavatel (`viewer/bgm.mp3`).
+Kanál `$A41B`/`$A41C` → `$A57B` (tabulka `$A607`): palba, pád, plošinka, spawn, oblaka, ambient. A41B přeruší živý hlas; A41C čeká na A41D=0. Jeden 20 ms burst / 50 Hz tick (`world.buzz`). Palba se nespustí, dokud živý increment je `$F7` (`$C87B`).
+
+| jev | zápis | A |
+|---|---|---|
+| palba Blob / pad | `$A41B` | `$05` (`$C87F`, `$CA3B`) |
+| začátek pádu | `$A41B` | `$06` (`$C733`) |
+| dopad (floor, `fallIndex≠0`) | `$A41B` | `$07` (`$C798`) |
+| stavba plošinky | `$A41B` | `$08` (`$C84F`) |
+| oblaka smrti | `$A41B` | `$09` (`$C43A`) |
+| objevení vetřelce (appear `$B148`) | `$A41C` | `($DAC0∧3)+1` = 1…4 (`$A1CC`) |
+| kill (navíc k `$D7C0` `$12`) | `$A41C` | `$0B` (`$A2FF`) |
+| ambient, když oba hlasy ticho a `$DAC0<$04` | `$A41C` | `($DAC1∧3)+$0C` = `$0C`…`$0F` (`$A5CA`) |
+
+**Nedořešené:** přesný T-state inner loop `$A5C1` (engine 23+35E); `$6600` melodie (skip); digit-roll `$D679`; IM1 jitter.

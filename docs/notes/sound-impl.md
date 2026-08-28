@@ -8,7 +8,7 @@ Podklad: [`sound-effects.md`](sound-effects.md), [`melodies.md`](melodies.md). T
 
 ## Kanál `$A41B` / `$A57B` (palba, pád, plošinka, oblaka)
 
-**Neimplementovat v tomto kroku.** Není to tabulka `$D839` ani `$D7C0`. Zadání váže efekty na volající `$D7C0`. Nedořešené v `MOVEMENT.md`.
+**Zapojeno 2026-08-28.** Tabulka `$A607`, `tickChannel` 50 Hz, PCM burst do `world.buzz`. A41B interrupt, A41C až A41D=0, ambient `$A5CA`. Není `$D7C0`.
 
 ## `$D7C0` v enginu
 

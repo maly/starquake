@@ -298,6 +298,22 @@ export interface World {
   sfx: number[];
   /** `$C6FF` walk XOR state; snapshot `$14`, XOR `$01` → `$14`/`$15`. */
   sfxStep: number;
+  /** `$A41B`/`$A41C` live voice (`$A57B`). */
+  chan: ChanState;
+  /** One 20 ms `$A57B` burst per playing tick; browser drains after tick. */
+  buzz: Int16Array[];
+}
+
+/** `$A41B` request + `$A41D`…`$A422` live 4-byte voice. */
+export interface ChanState {
+  req0: number;
+  req1: number;
+  dur: number;
+  pitch: number;
+  delta: number;
+  noise: number;
+  count: number;
+  reload: number;
 }
 
 export interface RenderOpts {

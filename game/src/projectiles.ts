@@ -19,6 +19,7 @@ import {
   PAD_SHOT_Y_LO,
   ROWS,
 } from "./constants";
+import { CHAN_FIRE, fireSoundBusy, requestA41B } from "./audio/channel";
 import type { BlobState } from "./physics";
 import type { Entity, Prepared, World } from "./types";
 
@@ -105,6 +106,8 @@ export function tickPadFire(_prep: Prepared, blob: BlobState, fire: boolean, wor
   if (world.padShotDir === 0) {
     if (world.fireDir !== 0) return;
     if (!fire || world.firepower === 0) return;
+    if (fireSoundBusy(world)) return;
+    requestA41B(world, CHAN_FIRE);
     world.firepower = Math.max(0, world.firepower - 1);
     const gameY = GAME_Y_ORIGIN - blob.y;
     world.padShotDir = world.lastDir || 1;
@@ -173,6 +176,8 @@ export function tickFire(_prep: Prepared, blob: BlobState, fire: boolean, world:
   if (world.fireDir === 0) {
     if (world.padShotDir !== 0) return;
     if (!fire || world.firepower === 0) return;
+    if (fireSoundBusy(world)) return;
+    requestA41B(world, CHAN_FIRE);
     world.firepower = Math.max(0, world.firepower - 1);
     world.fireDir = world.aim || FIRE_DIR_RIGHT;
     world.bullet.x = blob.x & 0xff;

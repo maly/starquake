@@ -191,10 +191,29 @@ export function playSfx(id: number): void {
   startSfx(ctx, id);
 }
 
+function startPcm(ac: AudioContext, pcm: Int16Array): void {
+  if (muted || !sfxGain || pcm.length === 0) return;
+  const buf = ac.createBuffer(1, pcm.length, SFX_SAMPLE_RATE);
+  const ch = buf.getChannelData(0);
+  const scale = 1 / 32768;
+  for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i]! * scale;
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  src.connect(sfxGain);
+  src.start(Math.max(ac.currentTime, 0));
+}
+
 /** Drain `world.sfx` into Web Audio. Safe when the context is locked. */
 export function drainSfx(world: World): void {
   for (const id of world.sfx) playSfx(id);
   world.sfx.length = 0;
+  const ac = ctx;
+  if (!ac || ac.state === "suspended" || muted) {
+    world.buzz.length = 0;
+    return;
+  }
+  for (const pcm of world.buzz) startPcm(ac, pcm);
+  world.buzz.length = 0;
 }
 
 export function setMuted(value: boolean): void {

@@ -65,8 +65,8 @@ export interface Pulse extends PulseDef {
   timer: number;
   flag: number;
   /**
-   * Current spark bitmap (2 cells × 8 bytes) for one `$DC55` anim layer.
-   * Replaced each anim tick; blitted onto fresh tiles via OR.
+   * Persist XOR of `$DC55` layers (`$DB88` / `$DB50`) — 2 cells × 8 bytes.
+   * Toggle XORs L5; while on, each `$A66C` visit XORs `$A6BD[timer∧3]`.
    */
   xorInk: Uint8Array;
   /** Last `$DB88` attribute (anim `$44+dac` or toggle `$47`). */

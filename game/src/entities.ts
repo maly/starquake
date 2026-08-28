@@ -21,7 +21,9 @@ import {
   FIXED_NASTY_DIR,
   FIXED_NASTY_PTR,
   GAME_Y_ORIGIN,
+  GRAFIX_ANIM_PERIOD,
   GRAFIX_BASE,
+  GRAFIX_FRAMES,
   GRAFIX_STRIDE,
   GRAPHIC_LO_C8,
   HIT_DX,
@@ -391,13 +393,13 @@ function hitBlob(e: Entity, blob: BlobState): boolean {
   return dx < HIT_DX && dy < HIT_DY;
 }
 
-/** $A305: lethal → A=$01 / $11, does not touch $D2CD. Annoying → $DD30 += $0A. */
-function applyContact(e: Entity, blob: BlobState, world: World): number | null {
+/** $A305: lethal → A=$01 / $11. Annoying → $DD30 += $0A once per 50 Hz tick. */
+function applyContact(e: Entity, blob: BlobState, world: World, allowAnnoy: boolean): number | null {
   if (!hitBlob(e, blob)) return null;
   if (isLethal(e)) {
     return (e.ptr & 0xff) === GRAPHIC_LO_C8 ? DEATH_A_LETHAL_C8 : DEATH_A_LETHAL;
   }
-  world.energyDrain = (world.energyDrain + ANNOY_DRAIN_BUMP) & 0xff;
+  if (allowAnnoy) world.energyDrain = (world.energyDrain + ANNOY_DRAIN_BUMP) & 0xff;
   return null;
 }
 
@@ -652,10 +654,17 @@ function stepMove(e: Entity, world: World): void {
 
 type StepResult = { kind: "death"; a: number } | { kind: "abort" } | null;
 
-function stepOne(e: Entity, prep: Prepared, blob: BlobState, world: World, slot: number): StepResult {
+function stepOne(
+  e: Entity,
+  prep: Prepared,
+  blob: BlobState,
+  world: World,
+  slot: number,
+  inner: number,
+): StepResult {
   if (e.y === 0) return null;
   hitByBullet(e, world);
-  const death = applyContact(e, blob, world);
+  const death = applyContact(e, blob, world, inner === 0);
   if (death !== null) return { kind: "death", a: death };
   e.timer = (e.timer - 1) & 0xff;
   if (e.timer !== 0) return null;
@@ -667,16 +676,32 @@ function stepOne(e: Entity, prep: Prepared, blob: BlobState, world: World, slot:
   return null;
 }
 
+export function grafixAnimFrame(ticks: number): number {
+  return Math.floor(ticks / GRAFIX_ANIM_PERIOD) % GRAFIX_FRAMES;
+}
+
+function syncGrafixFrames(world: World): void {
+  const frame = grafixAnimFrame(world.frames);
+  const n = Math.min(world.nastyCount, world.entities.length);
+  for (let i = 0; i < n; i++) {
+    const e = world.entities[i];
+    if (!e || !entityVisible(e)) continue;
+    e.frame = frame;
+  }
+  if (world.pad && entityVisible(world.pad)) world.pad.frame = frame;
+}
+
 /** $A01B: one $DAC6, then slots $9C43..1, 4 inner steps each. AI 6 think RET aborts the rest. */
 export function tickNasties(prep: Prepared, blob: BlobState, world: World): number | null {
   if (world.spawnGuard) world.spawnGuard -= 1;
   dacStep(world.dac);
+  syncGrafixFrames(world);
   const n = Math.min(world.nastyCount, world.entities.length);
   for (let slot = n; slot >= 1; slot--) {
     const e = world.entities[slot - 1];
     if (!e) continue;
     for (let i = 0; i < NASTY_INNER_STEPS; i++) {
-      const r = stepOne(e, prep, blob, world, slot);
+      const r = stepOne(e, prep, blob, world, slot, i);
       if (r?.kind === "death") return r.a;
       if (r?.kind === "abort") return null;
     }

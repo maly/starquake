@@ -387,6 +387,9 @@
   var ENTITY_DRAW_MIN = 16;
   var GRAFIX_BASE = 45576;
   var GRAFIX_STRIDE = 192;
+  var GRAFIX_FRAME = 48;
+  var GRAFIX_FRAMES = 4;
+  var GRAFIX_ANIM_PERIOD = 2;
   var KILL_GRAPHIC_HI = 180;
   var APPEAR_GRAPHIC = 45384;
   var DEAD_GRAPHIC = 48840;
@@ -423,6 +426,7 @@
   var PULSE_PERIOD_MASK = 12;
   var PULSE_PERIOD_BASE = 8;
   var PULSE_SLOTS = 4;
+  var PULSE_TOGGLE_LAYER = 5;
   var PULSE_ANIM_LAYERS = [6, 7, 7, 6];
   var PULSE_ANIM_ATTR_BASE = 68;
   var PULSE_LAYERS = {
@@ -446,7 +450,7 @@
   var FIXED_NASTY_DIR = 1;
   var AI5_CHASE_MAX = 70;
   var ENERGY_DRAIN_WRAP = 120;
-  var ENERGY_DRAIN_STEP = 4;
+  var ENERGY_DRAIN_STEP = 1;
   var START_ENERGY_DRAIN = 0;
   var ANNOY_DRAIN_BUMP = 10;
   var SPAWN_GUARD = 180;
@@ -961,13 +965,13 @@
     }
     return false;
   }
-  function writePulseInk(ink, layer) {
+  function xorPulseLayer(ink, layer) {
     const cells = PULSE_LAYERS[layer];
     if (!cells) return;
     for (let i = 0; i < 2; i++) {
       const bytes = cells[i];
       const base = i * 8;
-      for (let py = 0; py < 8; py++) ink[base + py] = bytes[py];
+      for (let py = 0; py < 8; py++) ink[base + py] ^= bytes[py];
     }
   }
   function tickPulses(blob, world) {
@@ -980,18 +984,14 @@
       if (slot.timer === 255) {
         slot.timer = slot.period;
         slot.flag ^= 1;
-        slot.xorInk.fill(0);
+        xorPulseLayer(slot.xorInk, PULSE_TOGGLE_LAYER);
         slot.lastAnim = null;
         slot.sparkAttr = 71;
       } else if (slot.flag !== 0) {
         const anim = PULSE_ANIM_LAYERS[slot.timer & 3];
-        slot.xorInk.fill(0);
-        writePulseInk(slot.xorInk, anim);
+        xorPulseLayer(slot.xorInk, anim);
         slot.lastAnim = anim;
         slot.sparkAttr = PULSE_ANIM_ATTR_BASE + (world.dac.dac0 & 3) & 255;
-      } else {
-        slot.xorInk.fill(0);
-        slot.lastAnim = null;
       }
     }
     const { x, y } = blobGame(blob);
@@ -1477,12 +1477,12 @@
     const dy = Math.abs(e.y - (GAME_Y_ORIGIN - blob.y));
     return dx < HIT_DX && dy < HIT_DY;
   }
-  function applyContact(e, blob, world) {
+  function applyContact(e, blob, world, allowAnnoy) {
     if (!hitBlob(e, blob)) return null;
     if (isLethal(e)) {
       return (e.ptr & 255) === GRAPHIC_LO_C8 ? DEATH_A_LETHAL_C8 : DEATH_A_LETHAL;
     }
-    world.energyDrain = world.energyDrain + ANNOY_DRAIN_BUMP & 255;
+    if (allowAnnoy) world.energyDrain = world.energyDrain + ANNOY_DRAIN_BUMP & 255;
     return null;
   }
   function makePad(x, blobGameY) {
@@ -1716,10 +1716,10 @@
     if (e.dir & 4) e.y = e.y - e.speedY & 255;
     if (e.dir & 8) e.y = e.y + e.speedY & 255;
   }
-  function stepOne(e, prep, blob, world, slot) {
+  function stepOne(e, prep, blob, world, slot, inner) {
     if (e.y === 0) return null;
     hitByBullet(e, world);
-    const death = applyContact(e, blob, world);
+    const death = applyContact(e, blob, world, inner === 0);
     if (death !== null) return { kind: "death", a: death };
     e.timer = e.timer - 1 & 255;
     if (e.timer !== 0) return null;
@@ -1730,15 +1730,29 @@
     if (abort) return { kind: "abort" };
     return null;
   }
+  function grafixAnimFrame(ticks) {
+    return Math.floor(ticks / GRAFIX_ANIM_PERIOD) % GRAFIX_FRAMES;
+  }
+  function syncGrafixFrames(world) {
+    const frame = grafixAnimFrame(world.frames);
+    const n = Math.min(world.nastyCount, world.entities.length);
+    for (let i = 0; i < n; i++) {
+      const e = world.entities[i];
+      if (!e || !entityVisible(e)) continue;
+      e.frame = frame;
+    }
+    if (world.pad && entityVisible(world.pad)) world.pad.frame = frame;
+  }
   function tickNasties(prep, blob, world) {
     if (world.spawnGuard) world.spawnGuard -= 1;
     dacStep(world.dac);
+    syncGrafixFrames(world);
     const n = Math.min(world.nastyCount, world.entities.length);
     for (let slot = n; slot >= 1; slot--) {
       const e = world.entities[slot - 1];
       if (!e) continue;
       for (let i = 0; i < NASTY_INNER_STEPS; i++) {
-        const r = stepOne(e, prep, blob, world, slot);
+        const r = stepOne(e, prep, blob, world, slot, i);
         if (r?.kind === "death") return r.a;
         if (r?.kind === "abort") return null;
       }
@@ -2204,7 +2218,7 @@
         if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
         const dst = (playRow * COLS + cx) * CELL;
         const base = i * 8;
-        for (let py = 0; py < CELL; py++) buf.data[dst + py] = ink[base + py];
+        for (let py = 0; py < CELL; py++) buf.data[dst + py] ^= ink[base + py];
         buf.attr[playRow * COLS + cx] = attr;
       }
     }
@@ -2259,6 +2273,9 @@
     const graphic = unpackGrafix(ptr, shifted);
     grafixPtrCache.set(key, graphic);
     return graphic;
+  }
+  function grafixAnimDrawX(x, frame) {
+    return x - (frame & 3) * 2;
   }
   function stampGrafix(rgba, frame, x, y, ink) {
     const rgb = SPECTRUM[ink & 7];
@@ -2322,16 +2339,17 @@
     const solid = opts.overlay ? prep.rooms[roomId].solid : null;
     rasterize(buf, rgba, !!opts.overlay, solid);
     if (opts.enemies !== false) {
+      const fi = grafixAnimFrame(world.frames);
       const n = Math.min(world.nastyCount, world.entities.length);
       for (let i = 0; i < n; i++) {
         const e = world.entities[i];
         if (!entityVisible(e)) continue;
-        const frame = graphicForPtr(prep, e.ptr) ?? prep.actorsBySet.get(e.set)?.[e.frame];
-        if (frame) stampGrafix(rgba, frame, e.x, GAME_Y_ORIGIN - e.y, e.ink);
+        const frame = graphicForPtr(prep, e.ptr + fi * GRAFIX_FRAME) ?? prep.actorsBySet.get(e.set)?.[fi];
+        if (frame) stampGrafix(rgba, frame, grafixAnimDrawX(e.x, fi), GAME_Y_ORIGIN - e.y, e.ink);
       }
       if (world.pad && entityVisible(world.pad)) {
-        const frame = graphicForPtr(prep, world.pad.ptr) ?? prep.actorsBySet.get(world.pad.set)?.[world.pad.frame];
-        if (frame) stampGrafix(rgba, frame, world.pad.x, GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
+        const frame = graphicForPtr(prep, world.pad.ptr + fi * GRAFIX_FRAME) ?? prep.actorsBySet.get(world.pad.set)?.[fi];
+        if (frame) stampGrafix(rgba, frame, grafixAnimDrawX(world.pad.x, fi), GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
       }
     }
     if (opts.enemies !== false && entityVisible(world.bullet)) {

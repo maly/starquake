@@ -5,6 +5,7 @@ import {
   blitGrafix,
   blitPulses,
   clampRoom,
+  grafixAnimDrawX,
   graphicForPtr,
   isSolid,
   moveRoom,
@@ -56,6 +57,13 @@ describe("isSolid", () => {
 });
 
 describe("GRAFIX draw", () => {
+  it("cancels the +2px pre-shift stored in frames 1..3", () => {
+    assert.equal(grafixAnimDrawX(72, 0), 72);
+    assert.equal(grafixAnimDrawX(72, 1), 70);
+    assert.equal(grafixAnimDrawX(72, 2), 68);
+    assert.equal(grafixAnimDrawX(72, 3), 66);
+  });
+
   it("stampGrafix paints ink pixels without changing cell attributes", () => {
     const buf = newBuffers();
     buf.attr.fill(0x47);
@@ -109,17 +117,19 @@ describe("$A66C pulse $DB88", () => {
     assert.ok(buf.data.every((b) => b === 0));
   });
 
-  it("writes current xorInk into spark cells (replaces, does not OR-stack)", () => {
+  it("XORs xorInk onto terrain cells ($DB50), twice cancels", () => {
     const buf = newBuffers();
     const playRow = 8 - 6;
     const dst = (playRow * 32 + 4) * 8;
-    buf.data[dst] = 0xff; // leftover bits must be erased
+    buf.data[dst] = 0xf0;
     const ink = [
       0x02, 0x12, 0x56, 0x5e, 0x56, 0x16, 0x16, 0x04, 0x88, 0xdc, 0xd0, 0x50, 0x8c, 0xd8, 0xd8, 0x50,
     ];
     blitPulses(buf, [pulse(1, 8, ink)], 0);
-    assert.equal(buf.data[dst], 0x02);
+    assert.equal(buf.data[dst], 0xf0 ^ 0x02);
     assert.equal(buf.data[dst + 1], 0x12);
     assert.equal(buf.attr[playRow * 32 + 4] & 0x47, 0x44);
+    blitPulses(buf, [pulse(1, 8, ink)], 0);
+    assert.equal(buf.data[dst], 0xf0);
   });
 });

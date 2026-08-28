@@ -30,6 +30,7 @@ import {
   PULSE_COMP_BASE,
   PULSE_COMP_BIAS,
   PULSE_LAYERS,
+  PULSE_TOGGLE_LAYER,
   PULSE_PERIOD_BASE,
   PULSE_PERIOD_MASK,
   PULSE_SLOTS,
@@ -232,23 +233,23 @@ export function hitKillTerrain(prep: Prepared, blob: BlobState): boolean {
   return false;
 }
 
-/** Write one `$DC55` layer (2×8) into ink. Caller must clear ink first. */
-function writePulseInk(ink: Uint8Array, layer: number): void {
+/** $DB88: XOR one `$DC55` layer (2×8) into the persist spark buffer. */
+function xorPulseLayer(ink: Uint8Array, layer: number): void {
   const cells = PULSE_LAYERS[layer];
   if (!cells) return;
   for (let i = 0; i < 2; i++) {
     const bytes = cells[i]!;
     const base = i * 8;
-    for (let py = 0; py < 8; py++) ink[base + py] = bytes[py]!;
+    for (let py = 0; py < 8; py++) ink[base + py] ^= bytes[py]!;
   }
 }
 
 /**
  * $A66C: one of 4 $9635 slots per tick ($9634 INC, wrap at $04).
- * DEC timer; $FF → reload period, XOR flag.
- * Else if flag≠0 → `$A6BD[timer∧3]` spark layer.
+ * DEC timer; $FF → reload period, XOR flag, `$DB88` L=$05 A=$47, RET.
+ * Else if flag≠0 → `$DB88` `$A6BD[timer∧3]` onto the same cells.
+ * xorInk is the display-file delta (persist XOR), not the current layer.
  *
- * Před každým novým animačním framem smaž předchozí jiskru, pak teprve kresli.
  * |dx| < $0E, Y in [comp−$16, comp], comp = ($1A−row)<<3 − 2.
  */
 export function tickPulses(blob: BlobState, world: World): boolean {
@@ -261,19 +262,14 @@ export function tickPulses(blob: BlobState, world: World): boolean {
     if (slot.timer === 0xff) {
       slot.timer = slot.period;
       slot.flag ^= 1;
-      slot.xorInk.fill(0);
+      xorPulseLayer(slot.xorInk, PULSE_TOGGLE_LAYER);
       slot.lastAnim = null;
       slot.sparkAttr = 0x47;
     } else if (slot.flag !== 0) {
       const anim = PULSE_ANIM_LAYERS[slot.timer & 3]!;
-      // Smaž předchozí animační frame, pak nakresli aktuální.
-      slot.xorInk.fill(0);
-      writePulseInk(slot.xorInk, anim);
+      xorPulseLayer(slot.xorInk, anim);
       slot.lastAnim = anim;
       slot.sparkAttr = (PULSE_ANIM_ATTR_BASE + (world.dac.dac0 & 3)) & 0xff;
-    } else {
-      slot.xorInk.fill(0);
-      slot.lastAnim = null;
     }
   }
   const { x, y } = blobGame(blob);

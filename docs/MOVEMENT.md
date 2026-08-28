@@ -50,7 +50,7 @@ Souřadnice v paměti: `$DD1D` = X (pixely zleva), `$DD1E` = Y **odspodu obrazov
 | smrtící / obtěžující | hi bajt grafiky `< $B4` / `≥ $B4` | `$A327 CP $B4` |
 | smrtící následek | `JP $C350` (smrt) | `$A305` |
 | obtěžující následek | `$DD30 += $0A` | `$A345` |
-| periodický úbytek energie | `$DD30` wrap `$78` → energie −4 | `$CB58` / `$D41F A=0 C=$04` |
+| periodický úbytek energie | `$DD30` wrap `$78` → energie −1 (ROM `C=$04`) | `$CB58` / `$D41F A=0` |
 | hitbox | \|dx\| < `$0E`, \|dy\| < `$0B` | `$A305` |
 | rychlost | 2 px (typ 3 umí 1) | `$A2A5` / `$9E90` |
 | podkroky | 4× za tick | `$A043 LD A,$04` |
@@ -98,7 +98,7 @@ Pohyb je `$A01B` (komentář „Move the nasties“). Jednou `$DAC6`, pak sloty 
 
 Spawn `$9C47` po vstupu do místnosti (`$A520`). Čtyři sloty, grafika `$B208+n×$C0`. Home `$9EE2`: po `RRCA` `$DAC0` buď vodorovná hrana Y=`$11`/`$8D` (`$DAC1` bit 0) a X=`SUB $17 ADD $1B`, nebo svislá hrana X=`$02`/`$EE` (`$DAC1` RLCA) a Y=`SUB $09 ADD $0F`. Prázdné 2×2 (`attr ∧ $60 == $40`); mimo 32×18 **není** vzduch. Stav 0: čeká na časovač, pak 16 kroků `corepieces1` (`$B148`) na `home` (`IX+$0A/$0B`), potom stav 1 a živá sada. Typ AI `IX+$19` (0 bounce, 1–2 náhodný směr, 3 náhodná rychlost, 4 chase, 5 mix, 6 bez svislé sondy). Terén: totéž `$D2F0`/`$D2F4` (`attr < $40`) — **neprocházejí zdí**.
 
-Kontakt `$A305` jen ve stavu 1. Smrtící sady `badalien*` mají high bajt `< $B4` → `$C350` (okamžitá smrt, ne −N energie). `alien*` `≥ $B4` přičtou `$0A` k `$DD30`; `$CB58` každý tick `$DD30++` a při `$78` bere 4 energie (`$D41F`). Doba nezranitelnosti **není**.
+Kontakt `$A305` jen ve stavu 1. Smrtící sady `badalien*` mají high bajt `< $B4` → `$C350` (okamžitá smrt, ne −N energie). `alien*` `≥ $B4` přičtou `$0A` k `$DD30` **jednou za 50 Hz tick** (ROM až 4× za `$A01B`); `$CB58` každý tick `$DD30++` a při `$78` bere 1 energii (ROM `C=$04`). Doba nezranitelnosti **není**.
 
 Mezi místnostmi: `$9C78` prohodí 21 bajtů × 4 se `$959C`. Návrat do **ihned předchozí** místnosti obnoví cache; třetí místnost ji zahodí a spawne znovu. Stav se **nehromadí** (vždy ≤ 4). Nejsou vázaní na 512 místností napevno.
 
@@ -328,7 +328,7 @@ Platný teleport / `$0F` v kroku 6 hned volá `$A426` a zbytek ticku se přesko�
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
 5. **Zvuk `$D7C0`.** Beeper je v `game/src/audio/` (viz sekce níže). Zbývá `$A41B` / `$6600` / digit-roll.
-6. **Animace 4 GRAFIX snímků** u vetřelce — engine drží frame 0; `$A01B` pointer sady neposouvá. Pad vždy `$AFC8` (snímky 1–3 se neindexují).
+6. **Animace 4 GRAFIX snímků** u vetřelce i padu — live ptr frame 0; kresba `ptr+(frames/2)%4×$30` na `X − 2×frame` (snímky 1–3 jsou předshift `+2/+4/+6` pro `X∧7`, ne posun entity).
 7. **Extra spawn `$AAB6` po `$A80A`.** Markery jsou raw nibble `$90` (`$96CB`), ne nakreslený attr. Engine seed `$7530+id×12` + 20× `$DAC6`, ne celý řetězec při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
 8. **Přeplněný inventář `$D1CA`** (drop zpět do `$94E8`) a Cheops UI — mimo rozsah. Extra `$17`/`$18` jsou v enginu (`$CCCC` / přetečení `$CCBC`).
 9. **1. tick Up bez `$14+`.** ROM vsune prázdný slot `00 00`; engine ne. Mimo rozsah.
@@ -350,7 +350,7 @@ Platný teleport / `$0F` v kroku 6 hned volá `$A426` a zbytek ticku se přesko�
 
 | veličina | hodnota | adresa |
 |---|---|---|
-| wrap `$DD30` | `$78` → energie −4, min 0 | `$CB58` / `$D41F A=0 C=$04` |
+| wrap `$DD30` | `$78` → energie −1, min 0 (ROM −4) | `$CB58` / `$D41F A=0` |
 | obtěžující bump | `$DD30 += $0A` (ne `$D2CD`) | `$A345` |
 | hitbox Blob–vetřelec | \|dx\| < `$0E`, \|dy\| < `$0B` | `$A316` / `$A321` |
 | smrtící / obtěžující | hi živého ptr `< $B4` / `≥ $B4` | `$A327` |
@@ -403,7 +403,7 @@ stateDiagram-v2
 
 Checkpoint: `enterRoom` / `spawnBlob` / východ / teleport uloží Blob XY (game) + `$DD22` do `world.entry`. `$06` a `$11` po smrti vrací na vstup do místnosti. Nula energie a běžný vetřelec zarovnají místo smrti a pad (`$DD22`) nechají.
 
-Nedořešené v této sekci: `$C7` při respawnu; statistika AI 5 carry/chase. ROM bliká jen A∧7=2. Puls `$DB88`: XOR L=`$05` + `$A6BD`[timer∧3] když flag≠0; engine kreslí každý snímek znovu (ne persist XOR obrazovky). `$A66C` 1 ze 4 slotů / tick (`$9634` wrap `$04`); DEC timer, `$FF` → reload + XOR flag.
+Nedořešené v této sekci: `$C7` při respawnu; statistika AI 5 carry/chase. ROM bliká jen A∧7=2. Puls `$DB88`: persist XOR L=`$05` při toggle + `$A6BD`[timer∧3] když flag≠0 (`xorInk` = display-file delta). `$A66C` 1 ze 4 slotů / tick (`$9634` wrap `$04`); DEC timer, `$FF` → reload + XOR flag.
 
 ## Zvuk `$D7C0`
 

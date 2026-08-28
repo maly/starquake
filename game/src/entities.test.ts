@@ -7,7 +7,6 @@ import {
   COLS,
   DEATH_A_LETHAL,
   DEATH_A_LETHAL_C8,
-  ENERGY_DRAIN_STEP,
   ENERGY_DRAIN_WRAP,
   GRAFIX_BASE,
   GRAFIX_STRIDE,
@@ -83,6 +82,49 @@ describe("nasty draw skip $D8B1", () => {
     }
     assert.equal(entityVisible(liveEntity({ x: 0, y: 0x0f, ptr: 0xdf40 })), false);
     assert.equal(entityVisible(liveEntity({ x: 192, y: 17 })), true);
+  });
+});
+
+describe("nasty GRAFIX frames", () => {
+  it("cycles 4 frames from world.frames without moving the live ptr", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    const e = liveEntity({ ptr: BADALIEN2_PTR, basePtr: BADALIEN2_PTR, ai: 6, period: 0xff, timer: 0xff });
+    world.entities = [e];
+    world.nastyCount = 1;
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 0;
+    blob.y = 0;
+    world.frames = 0;
+    tickNasties(prep, blob, world);
+    assert.equal(e.frame, 0);
+    assert.equal(e.ptr, BADALIEN2_PTR);
+    world.frames = 2;
+    tickNasties(prep, blob, world);
+    assert.equal(e.frame, 1);
+    assert.equal(e.ptr, BADALIEN2_PTR);
+    world.frames = 6;
+    tickNasties(prep, blob, world);
+    assert.equal(e.frame, 3);
+    world.frames = 8;
+    tickNasties(prep, blob, world);
+    assert.equal(e.frame, 0);
+  });
+
+  it("does not animate a parked slot", () => {
+    const prep = grid(() => {
+      /* air */
+    });
+    const world = createWorld(prep, 1);
+    const e = liveEntity({ x: 0, y: 0x0f, state: 0, stateTimer: 0, ptr: 0xdf40 });
+    world.entities = [e];
+    world.nastyCount = 1;
+    const blob = spawnBlob(prep, 1, world);
+    world.frames = 9;
+    tickNasties(prep, blob, world);
+    assert.equal(e.frame, 0);
   });
 });
 
@@ -198,7 +240,7 @@ describe("nasties $A01B", () => {
     world.nastyCount = 1;
     tickNasties(prep, blob, world);
     assert.equal(world.energy, START_ENERGY);
-    assert.equal(world.energyDrain, (drain + 0x0a * 4) & 0xff);
+    assert.equal(world.energyDrain, (drain + 0x0a) & 0xff);
   });
 
   it("lethal AABB |dx| < $0E, |dy| < $0B: 13/10 hit, 14/11 miss", () => {
@@ -246,7 +288,7 @@ describe("nasty ink $9E1C", () => {
 });
 
 describe("$CB58 energy drain", () => {
-  it("starts at new-game $7F / $DD30=0 and first -4 is after $78 ticks", () => {
+  it("starts at new-game $7F / $DD30=0 and first -1 is after $78 ticks", () => {
     const prep = grid(() => {
       /* air */
     });
@@ -256,7 +298,7 @@ describe("$CB58 energy drain", () => {
     for (let i = 0; i < ENERGY_DRAIN_WRAP - 1; i++) tickEnergyDrain(world);
     assert.equal(world.energy, 0x7f);
     tickEnergyDrain(world);
-    assert.equal(world.energy, 0x7f - ENERGY_DRAIN_STEP);
+    assert.equal(world.energy, 0x7e);
     assert.equal(world.energyDrain, 0);
   });
 });

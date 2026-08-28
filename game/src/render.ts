@@ -12,6 +12,7 @@ import {
   CORE_ROOM,
   CORE_SLOTS,
   GAME_Y_ORIGIN,
+  GRAFIX_FRAME,
   HEIGHT,
   MAP_COLS,
   MAP_ROWS,
@@ -22,7 +23,7 @@ import {
   SPECTRUM,
   WIDTH,
 } from "./constants";
-import { entityVisible } from "./entities";
+import { entityVisible, grafixAnimFrame } from "./entities";
 import { hotspotsFromData } from "./objects";
 import type { Buffers, ExtraObject, GameData, Graphic, Item, Prepared, Pulse, RenderOpts, Rgb, World } from "./types";
 
@@ -270,8 +271,7 @@ export function blitCorePanel(prep: Prepared, buf: Buffers, world: World, roomId
 }
 
 /**
- * Blit current spark frame onto playfield cells.
- * Buňky jiskry se nejdřív vynulují (smaže předchozí frame), pak se zapíše jen `xorInk`.
+ * `$DB88` / `$DB50`: XOR persist spark (`xorInk`) onto playfield cells copied from terrain.
  */
 export function blitPulses(buf: Buffers, pulses: Pulse[], _dac0: number): void {
   for (const p of pulses) {
@@ -290,7 +290,7 @@ export function blitPulses(buf: Buffers, pulses: Pulse[], _dac0: number): void {
       if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
       const dst = (playRow * COLS + cx) * CELL;
       const base = i * 8;
-      for (let py = 0; py < CELL; py++) buf.data[dst + py] = ink[base + py]!;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py]! ^= ink[base + py]!;
       buf.attr[playRow * COLS + cx] = attr;
     }
   }
@@ -391,6 +391,11 @@ export function blitGrafix(
 }
 
 /** Per-pixel overlay: no cell-ink rewrite ($D8B1), so no attribute clash. */
+/** Frames 1..3 of a GRAFIX set are the same sprite pre-shifted +2/+4/+6 for X∧7. */
+export function grafixAnimDrawX(x: number, frame: number): number {
+  return x - (frame & 3) * 2;
+}
+
 export function stampGrafix(
   rgba: Uint8ClampedArray,
   frame: Graphic,
@@ -492,18 +497,22 @@ export function renderWorld(
   const solid = opts.overlay ? prep.rooms[roomId]!.solid : null;
   rasterize(buf, rgba, !!opts.overlay, solid);
   if (opts.enemies !== false) {
+    const fi = grafixAnimFrame(world.frames);
     const n = Math.min(world.nastyCount, world.entities.length);
     for (let i = 0; i < n; i++) {
       const e = world.entities[i]!;
       if (!entityVisible(e)) continue;
-      const frame = graphicForPtr(prep, e.ptr) ?? prep.actorsBySet.get(e.set)?.[e.frame];
-      if (frame) stampGrafix(rgba, frame, e.x, GAME_Y_ORIGIN - e.y, e.ink);
+      const frame =
+        graphicForPtr(prep, e.ptr + fi * GRAFIX_FRAME) ?? prep.actorsBySet.get(e.set)?.[fi];
+      if (frame) stampGrafix(rgba, frame, grafixAnimDrawX(e.x, fi), GAME_Y_ORIGIN - e.y, e.ink);
     }
     // Pad entity: on station while walking ($9F49); on Blob while boarded ($C94D).
     // Empty stations when boarded happen because the pad left the dock, not by hiding it.
     if (world.pad && entityVisible(world.pad)) {
-      const frame = graphicForPtr(prep, world.pad.ptr) ?? prep.actorsBySet.get(world.pad.set)?.[world.pad.frame];
-      if (frame) stampGrafix(rgba, frame, world.pad.x, GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
+      const frame =
+        graphicForPtr(prep, world.pad.ptr + fi * GRAFIX_FRAME) ??
+        prep.actorsBySet.get(world.pad.set)?.[fi];
+      if (frame) stampGrafix(rgba, frame, grafixAnimDrawX(world.pad.x, fi), GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
     }
   }
   if (opts.enemies !== false && entityVisible(world.bullet)) {

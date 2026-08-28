@@ -30,7 +30,7 @@ npm start
 
 http://127.0.0.1:8000/viewer/ — canvas 256×192 (CSS ×2 → 512×384). `?dev=0` skryje vývojářský panel. Audio strip u canvasu (Zvuk / Hudba / hlasitosti); BGM `viewer/bgm.mp3` (chybí = ticho).
 
-Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přechod `$0F`), mezerník palba, security door inventář + overlay, PageUp/Down místnost. `#8` start extra `$17`, `#13` puls `$70`, `#61`/`#236` přechod `$0F`, `#176` dveře, `#199` jádro `$C7`, `#249` výtah, `#15` pad, `#343` EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`. Dump: `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing`.
+Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přechod `$0F`), mezerník palba, security door inventář + overlay, PageUp/Down místnost. `#8` start extra `$17`, `#13` puls `$70` (1), `#198` dva pulsy `$70`, `#61`/`#236` přechod `$0F`, `#176` dveře, `#199` jádro `$C7`, `#249` výtah, `#15` pad, `#343` EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`. Dump: `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing`.
 
 ## Architektura
 
@@ -77,13 +77,13 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - Střelba `$C85A`, předměty `$94E8` (inventář, **ne** refill) + extra `$A350` / `$CC9A` (`$11`–`$16` tabulka, `$17` `$CCCC`, `$18` lives+1 bez stropu `$7F`, `$19` Cheops flag).
 - Vznášedlo `$0C` / `$C967` / `$CA15`. Teleport `$0D` / `$D036` (5 znaků do rastru, ne `prompt`). Tajný přechod `$0F` / nibble `$F0` (exact XY + L\|R, room±1, snap dest `$0F`, sfx `$04`).
 - Zdviž `$64` / `$DD22=1`. `$D2F0` 2 řady když `(Y+1)∧7=0`, jinak 3 — otvor `$44` v `#249` neposkakuje.
-- Energie `$CB58` −4 při wrap `$78` (`$DD30` start 0, energie `$7F` jako nová hra); obtěžující `$DD30 += $0A` (až 4×/tick, bez i-frames). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
+- Energie `$CB58` −1 při wrap `$78` (ROM `C=$04`; HUD 1 px = 4 energie). `$DD30` start 0, energie `$7F`. Obtěžující `$DD30 += $0A` **1×/tick** (ROM až 4×). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
 - `$9F05` nibble `$80` → živý `$B2C8` AI 6. Perioda spawnu 4…8. AI 5 dir=0 / RRCA, AI 3 zapisuje 8-směr. `$A2B9` = `$08,$09,$01,$05,$04,$06,$02,$0A`.
 - Security doors typ `$00` (raw `$01`–`$0F`), klíč `$0F` / inventář; jádro `$C7` doručení `$A6C1` (9×`$D2DE`), výhra `$D2E8==5`; skóre + společný `EndResult` (HTML overlay).
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; BGM MP3 smyčka, mute/gain persist. `$6600` a `$A41B` ne.
 
-Ověřeno (working tree): `npm test` 150 pass; pytest suite 27 pass; HUD vs emu 0 mismatch (ř. 0–5); live **0,25 ms**/snímek (limit 20).
+Ověřeno (working tree): `npm test` 155 pass; HUD vs emu 0 mismatch (ř. 0–5); live **0,25 ms**/snímek (limit 20). Puls `$DB88` persist XOR.
 
 ## Otevřené
 
@@ -93,19 +93,27 @@ Ověřeno (working tree): `npm test` 150 pass; pytest suite 27 pass; HUD vs emu 
 4. `$DF70` bit-shift `X∧7≠0` — `blitGrafix` emuluje; pad na stanici se nestampuje (dock tiles), mimo stanici stamp; ostatní entity stamp.
 5. Podlaha dál `$D2F4` foot-column, ne inkoust nohou.
 6. Live `$DAC6` po `$A80A` — engine seed `$7530+id×12`. Extra spawn, pad bounce i perioda `$70` z `dac0` po spawn vetřelců.
-7. Animace 4 GRAFIX snímků vetřelce — frame 0. Pad vždy `$AFC8`.
+7. Vetřelci i pad: 4 GRAFIX fáze z `world.frames / 2`; live ptr / `$AFC8` beze změny (kresba `+$30`).
 8. Extra `$17`/`$18` v enginu. 1. tick Up bez `$14+` vsune `00 00` — mimo rozsah.
 9. Inventář overflow `$D1CA`, Cheops UI.
 10. Arrow `$BF88` ve zdviži — není v extractu.
 11. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
 12. Objekt `$0E` (auto-plošiny při dopadu).
 13. Spectrum end bitmap, hi-score `$64FA`, `$64A0` scramble. Kanál `$A41B`/`$A57B` (palba/pád/plošinka) a melodie `$6600` jsou skip.
-14. **Puls `$70` / `$DB88` jiskra — STÁLE ŠPATNĚ (odloženo).** Pozice OK, barvy OK (cyan sloupy = správně; žlutá ve Skoolkitu je accessibility overlay). Vizuálně pořád vypadá jako víc animačních framů přes sebe. Zkoušeno: running XOR `xorInk`, replace při změně vrstvy, assign jedné `$A6BD` vrstvy, `fill(0)` před framem, blit `=` místo `|=`, cache-bust. Offline/live bit count často ~46–48 (= jedna L6/L7), ale na očích pořád stack. Vrátit se k tomu s čistým srovnáním ROM `$A66C`/`$DB88` vs engine snímek po snímku (`#13`).
+14. Puls `$70` / `$DB88` — **opraveno persist XOR.** Engine dřív každý snímek *přepisoval* aktuální L6/L7 (vypadalo to jako všechny fáze najednou). ROM `$DB88`/`$DB50` vrstvy XORuje do display file: toggle L5 A=`$47`, při flag≠0 `$A6BD[timer∧3]`. `xorInk` = delta, blit `^=` na terrain. `#13` jeden, `#198` dva.
 15. Door/TP overlay: chybí digit-sprite animace `$D78B` / ikony `$25`/`$26`/`$24` (text OK); SFX házení cifer `$D679`/`$D70E` proto taky ne.
 17. BGM soubor `viewer/bgm.mp3` zadavatel ještě nedodal — hra bez něj jen varuje.
 16. Inventář ve statusu: XOR blit vs přesné `$DB24` timing; HUD redraw každý frame (ROM chrome jen `$A426`).
 
 ## Sezení
+
+### 2026-08-28 — puls `$DB88` persist XOR
+
+Kořen: `$A66C` volá `$DB88` (XOR na obrazovku), ne replace. Replace aktuální L6/L7 kreslil hustý blob („stack fází“). Testy ten model držely. `xorInk` teď persistuje L5 toggl + anim XOR; dvě L7 se vyruší; perioda 8 on/off se vrátí na prázdno. Bundle přestavěn.
+
+### 2026-08-28 — animace vetřelců + pad
+
+4 GRAFIX snímky, tempo `frames/2`. Snímky 1–3 jsou předshift `+2/+4/+6` (ne nová póza) — kresba na `X−2×frame`, jinak cukají do strany. Live ptr beze změny.
 
 ### 2026-08-27 — tajný přechod `$0F`
 
@@ -127,7 +135,7 @@ Rozbory: `docs/notes/sound-effects.md`, `melodies.md`. Rozhodnutí: `sound-impl.
 - **Stav:** pořád špatně (víc framů přes sebe). Odloženo na jindy.
 - Cyan sloupy = správně (žlutá ve Skoolkitu = accessibility).
 - Neúspěšné pokusy: XOR buffer / replace L6→L7 / assign jedné vrstvy / erase-then-draw + blit `=` / cache `pulse-erase-1`.
-- Příště: frame-by-frame ROM `$A66C` vs engine na `#13`, ne další slepé úpravy blit/tick.
+- Příště: frame-by-frame ROM `$A66C` vs engine (`#13` jeden, `#198` dva), ne další slepé úpravy blit/tick. Bug je ve všech místnostech s `$70`.
 
 ### 2026-08-27 — pad / item+extra / lethal spawn
 

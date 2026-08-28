@@ -109,6 +109,11 @@ export const ENTITY_DRAW_MIN = 0x10;
 /** $B208 + n×$C0 — GRAFIX sets used by $9DF9. High byte < $B4 is lethal ($A327). */
 export const GRAFIX_BASE = 0xb208;
 export const GRAFIX_STRIDE = 0xc0;
+/** One 3×2 GRAFIX frame; four per set at +$00/+$30/+$60/+$90. Draw-time only. */
+export const GRAFIX_FRAME = 0x30;
+export const GRAFIX_FRAMES = 4;
+/** 50 Hz ticks per GRAFIX phase (nasties + hoverpad). Faster than blob walk's 3. */
+export const GRAFIX_ANIM_PERIOD = 2;
 export const KILL_GRAPHIC_HI = 0xb4;
 export const APPEAR_GRAPHIC = 0xb148;
 export const DEAD_GRAPHIC = 0xbec8;
@@ -214,9 +219,13 @@ export const FIXED_NASTY_DIR = 1;
 /** $A2AE+$A285: after RRCA, A < $46 chases. */
 export const AI5_CHASE_MAX = 0x46;
 
-/** $CB58: $DD30 += 1 per tick, wrap at $78 → $D41F A=0 C=$04 (energy −4). */
+/**
+ * $CB58: $DD30 += 1 per tick, wrap at $78 → $D41F A=0 C.
+ * ROM `$CB63 LD C,$04`. HUD bar is 1 pixel per 4 energy; −4 felt like −4 pips.
+ * Engine uses 1.
+ */
 export const ENERGY_DRAIN_WRAP = 0x78;
-export const ENERGY_DRAIN_STEP = 4;
+export const ENERGY_DRAIN_STEP = 1;
 /** `$6452` zeros `$DD30` on new game. Snapshot `g$DD30` is `$51`. */
 export const START_ENERGY_DRAIN = 0;
 export const ANNOY_DRAIN_BUMP = 0x0a;

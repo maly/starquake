@@ -542,6 +542,30 @@ describe("hoverpad $CEAD / $C967", () => {
     assert.equal(world.pad?.y, playYToGame(blob.y) - 8);
   });
 
+  it("hoverpad GRAFIX frame follows world.frames, not the $AFC8 base ptr", () => {
+    const station: Hotspot = { x: 72, y: 87 };
+    const prep = withStations(
+      grid(() => {
+        /* air */
+      }),
+      1,
+      [station],
+    );
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = station.x;
+    blob.y = gameYToPlay(station.y);
+    tick(prep, blob, { ...idleInput(), up: true }, world);
+    assert.equal(world.dd22, DD22_PAD);
+    world.frames = 2;
+    tick(prep, blob, { ...idleInput(), up: true }, world);
+    assert.equal(world.pad?.ptr, HOVERPAD_PTR);
+    assert.equal(world.pad?.frame, 1);
+    world.frames = 6;
+    tick(prep, blob, { ...idleInput(), up: true }, world);
+    assert.equal(world.pad?.frame, 3);
+  });
+
   it("dismounts at the station when lastDir has no Up", () => {
     const station: Hotspot = { x: 72, y: 87 };
     const prep = withStations(

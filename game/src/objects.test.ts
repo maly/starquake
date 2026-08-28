@@ -5,6 +5,8 @@ import { describe, it } from "node:test";
 import {
   GAME_Y_ORIGIN,
   KILL_AABB,
+  PULSE_LAYERS,
+  PULSE_TOGGLE_LAYER,
   TELEPORT_COUNT,
   TELEPORT_MSG_BAD,
   TELEPORT_TABLE,
@@ -141,23 +143,39 @@ describe("teleport dest hotspots $A4F6", () => {
   });
 });
 
+function pulseInk(...layers: number[]): Uint8Array {
+  const ink = new Uint8Array(16);
+  for (const layer of layers) {
+    const cells = PULSE_LAYERS[layer];
+    if (!cells) continue;
+    for (let i = 0; i < 2; i++) {
+      const bytes = cells[i]!;
+      for (let py = 0; py < 8; py++) ink[i * 8 + py] ^= bytes[py]!;
+    }
+  }
+  return ink;
+}
+
+function slotPulse(over: Partial<{ timer: number; flag: number; xorInk: Uint8Array }>) {
+  return {
+    col: 10,
+    row: 12,
+    period: 8,
+    timer: 8,
+    flag: 0,
+    xorInk: new Uint8Array(16),
+    sparkAttr: 0x47,
+    lastAnim: null as number | null,
+    ...over,
+  };
+}
+
 describe("$A66C pulse slot round-robin", () => {
   it("updates one of 4 $9635 slots per tick, so period 8 toggles after 9 visits (36 ticks)", () => {
     const prep = loadPrep();
     if (!prep) return;
     const world = createWorld(prep, 13);
-    world.pulses = [
-      {
-        col: 10,
-        row: 12,
-        period: 8,
-        timer: 8,
-        flag: 0,
-        xorInk: new Uint8Array(16),
-        sparkAttr: 0x47,
-        lastAnim: null,
-      },
-    ];
+    world.pulses = [slotPulse({})];
     const blob = spawnBlob(prep, 13, world);
     blob.x = 0;
     blob.y = 0;
@@ -166,73 +184,60 @@ describe("$A66C pulse slot round-robin", () => {
     assert.ok(world.pulses[0]!.xorInk.every((b) => b === 0), "no ink before flag on");
     for (let i = 0; i < 28; i++) tickPulses(blob, world);
     assert.equal(world.pulses[0]!.flag, 1, "DEC to $FF after 9 slot visits × 4 frames");
-    assert.ok(world.pulses[0]!.xorInk.every((b) => b === 0), "toggle clears ink; anim blinks later");
+    assert.deepEqual([...world.pulses[0]!.xorInk], [...pulseInk(PULSE_TOGGLE_LAYER)], "$A69B XOR L5 on toggle, then RET");
   });
 
-  it("two anim visits with the same layer keep a single L7 frame (no XOR blink-off)", () => {
+  it("$DB88 persist: two L7 visits cancel (timer 3→2 then 2→1)", () => {
     const prep = loadPrep();
     if (!prep) return;
     const world = createWorld(prep, 13);
-    // timer 3→2 (&3=2→L7) then 2→1 (&3=1→L7): still exactly L7, not cleared.
-    const p = {
-      col: 10,
-      row: 12,
-      period: 8,
-      timer: 3,
-      flag: 1,
-      xorInk: new Uint8Array(16),
-      sparkAttr: 0x44,
-      lastAnim: null as number | null,
-    };
+    const p = slotPulse({ timer: 3, flag: 1 });
     world.pulses = [p];
     const blob = spawnBlob(prep, 13, world);
     blob.x = 0;
     blob.y = 0;
     world.pulseIndex = 3;
-    tickPulses(blob, world); // 3→2, L7
+    tickPulses(blob, world);
     assert.equal(p.timer, 2);
     assert.equal(p.lastAnim, 7);
-    assert.equal(p.xorInk[0], 0x08);
+    assert.deepEqual([...p.xorInk], [...pulseInk(7)]);
     world.pulseIndex = 3;
-    tickPulses(blob, world); // 2→1, still L7 assigned
+    tickPulses(blob, world);
     assert.equal(p.timer, 1);
     assert.equal(p.lastAnim, 7);
-    assert.equal(p.xorInk[0], 0x08);
-    assert.equal(p.xorInk[1], 0x1c);
+    assert.ok(p.xorInk.every((b) => b === 0), "second L7 XOR clears the first");
   });
 
-  it("switching anim layer replaces instead of stacking L6⊕L7", () => {
+  it("$DB88 persist: L6 then L7 stays as L6⊕L7, not a replace", () => {
     const prep = loadPrep();
     if (!prep) return;
     const world = createWorld(prep, 13);
-    // 8→7: L6; 7→6: L7 — must not leave L6⊕L7 in xorInk
-    const p = {
-      col: 10,
-      row: 12,
-      period: 8,
-      timer: 8,
-      flag: 1,
-      xorInk: new Uint8Array(16),
-      sparkAttr: 0x44,
-      lastAnim: null as number | null,
-    };
+    const p = slotPulse({ timer: 8, flag: 1 });
     world.pulses = [p];
     const blob = spawnBlob(prep, 13, world);
     blob.x = 0;
     blob.y = 0;
     world.pulseIndex = 3;
-    tickPulses(blob, world); // →7, L6
-    const l6 = Uint8Array.from(p.xorInk);
+    tickPulses(blob, world);
     assert.equal(p.lastAnim, 6);
+    assert.deepEqual([...p.xorInk], [...pulseInk(6)]);
     world.pulseIndex = 3;
-    tickPulses(blob, world); // →6, L7 replace
-    // Pure L7 first cell (not L6⊕L7)
+    tickPulses(blob, world);
     assert.equal(p.lastAnim, 7);
-    assert.equal(p.xorInk[0], 0x08);
-    assert.equal(p.xorInk[1], 0x1c);
-    assert.notDeepEqual([...p.xorInk], [...l6]);
-    // And never the XOR-stack of both layers
-    assert.notEqual(p.xorInk[0], l6[0]! ^ 0x08);
+    assert.deepEqual([...p.xorInk], [...pulseInk(6, 7)]);
+  });
+
+  it("period 8 on/off cycle returns to empty ink (L5 peels off after 4k anim XORs)", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, 13);
+    world.pulses = [slotPulse({})];
+    const blob = spawnBlob(prep, 13, world);
+    blob.x = 0;
+    blob.y = 0;
+    for (let i = 0; i < 72; i++) tickPulses(blob, world);
+    assert.equal(world.pulses[0]!.flag, 0);
+    assert.ok(world.pulses[0]!.xorInk.every((b) => b === 0));
   });
 });
 

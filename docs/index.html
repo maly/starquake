@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Starquake — mapa</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Starquake</h1>
+      <p class="tag">BLOB · 50 Hz · 256×192 · CSS ×2</p>
+    </header>
+
+    <div class="layout">
+      <section id="stage" class="stage" aria-label="Hrací plocha">
+        <canvas id="screen" width="256" height="192">Canvas 2D není k dispozici.</canvas>
+        <div class="audio-strip" id="audio-strip">
+          <label class="audio-check">
+            <input id="audio-sfx" type="checkbox" checked />
+            Zvuk
+          </label>
+          <label class="audio-check">
+            <input id="audio-bgm" type="checkbox" checked />
+            Hudba
+          </label>
+          <label class="audio-gain">
+            Efekty
+            <input id="audio-sfx-gain" type="range" min="0" max="100" value="75" />
+          </label>
+          <label class="audio-gain">
+            Hudba
+            <input id="audio-bgm-gain" type="range" min="0" max="100" value="40" />
+          </label>
+        </div>
+      </section>
+
+      <aside class="panel" aria-label="Vývojářský panel">
+        <p id="status" class="status">…</p>
+
+        <dl class="facts">
+          <div>
+            <dt>Místnost</dt>
+            <dd id="room-id">—</dd>
+          </div>
+          <div>
+            <dt>Sloupec</dt>
+            <dd id="room-col">—</dd>
+          </div>
+          <div>
+            <dt>Řádek</dt>
+            <dd id="room-row">—</dd>
+          </div>
+          <div>
+            <dt>Předměty</dt>
+            <dd id="item-count">—</dd>
+          </div>
+          <div>
+            <dt>BLOB px</dt>
+            <dd id="blob-xy">—</dd>
+          </div>
+          <div>
+            <dt>BLOB buňka</dt>
+            <dd id="blob-cell">—</dd>
+          </div>
+          <div>
+            <dt>vy</dt>
+            <dd id="blob-vy">—</dd>
+          </div>
+          <div>
+            <dt>Energie $D2CD</dt>
+            <dd id="stat-energy">—</dd>
+          </div>
+          <div>
+            <dt>Plošinky $D2CE</dt>
+            <dd id="stat-platforms">—</dd>
+          </div>
+          <div>
+            <dt>Palba $D2CF</dt>
+            <dd id="stat-firepower">—</dd>
+          </div>
+          <div>
+            <dt>Životy $D2CC</dt>
+            <dd id="stat-lives">—</dd>
+          </div>
+          <div>
+            <dt>Skóre $D413</dt>
+            <dd id="stat-score">—</dd>
+          </div>
+          <div>
+            <dt>Jádra $D2E7</dt>
+            <dd id="stat-cores">—</dd>
+          </div>
+          <div>
+            <dt>Inventář</dt>
+            <dd id="stat-inv">—</dd>
+          </div>
+          <div>
+            <dt>Extra $A350</dt>
+            <dd id="stat-extra">—</dd>
+          </div>
+          <div>
+            <dt>Puls $70</dt>
+            <dd id="stat-pulse">—</dd>
+          </div>
+          <div>
+            <dt>$DD22</dt>
+            <dd id="stat-dd22">—</dd>
+          </div>
+          <div>
+            <dt>Pad $DD9D</dt>
+            <dd id="stat-pad">—</dd>
+          </div>
+          <div>
+            <dt>Teleport</dt>
+            <dd id="stat-teleport">—</dd>
+          </div>
+          <div>
+            <dt>Dveře klíče</dt>
+            <dd id="stat-door">—</dd>
+          </div>
+          <div>
+            <dt>Cheops $CCF1</dt>
+            <dd id="stat-cheops">—</dd>
+          </div>
+          <div>
+            <dt>Přechod $0F</dt>
+            <dd id="stat-passage">—</dd>
+          </div>
+          <div>
+            <dt>Zpráva</dt>
+            <dd id="stat-message">—</dd>
+          </div>
+        </dl>
+
+        <label class="goto-label" for="goto">Přejít na místnost</label>
+        <div class="goto-row">
+          <input id="goto" type="number" min="0" max="511" step="1" value="0" />
+          <button id="go" type="button">Jít</button>
+        </div>
+
+        <label class="check">
+          <input id="overlay" type="checkbox" />
+          Zvýraznit pevné buňky
+          <span class="hint">bit 6, ne 0x64 · pole <code>solid</code></span>
+        </label>
+
+        <section class="cheats" aria-label="Cheat mód">
+          <h2>Cheat (test)</h2>
+          <label class="check">
+            <input id="cheat-god" type="checkbox" />
+            Bez úbytku energie / smrti
+            <span class="hint">přeskočí <code>$CB58</code> i <code>$C350</code> (rostlina, puls, vetřelec)</span>
+          </label>
+          <label class="goto-label" for="cheat-slot">Inventář slot 0–3</label>
+          <div class="goto-row cheat-row">
+            <select id="cheat-slot" aria-label="Slot">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+            </select>
+            <input id="cheat-sprite" type="text" spellcheck="false" placeholder="$0F" aria-label="Sprite" />
+            <button id="cheat-insert" type="button">Vložit</button>
+          </div>
+          <div class="cheat-presets">
+            <button type="button" data-sprite="$0F">$0F klíč</button>
+            <button type="button" data-sprite="$10">$10 nástroj</button>
+            <button type="button" data-sprite="$09">$09</button>
+            <button type="button" data-sprite="$0A">$0A</button>
+            <button type="button" data-sprite="$0B">$0B</button>
+            <button type="button" data-sprite="$0C">$0C</button>
+            <button type="button" data-sprite="$0D">$0D</button>
+            <button type="button" data-sprite="$1A">$1A jádro</button>
+          </div>
+        </section>
+
+        <dl class="facts timing">
+          <div>
+            <dt>Snímek</dt>
+            <dd id="time">—</dd>
+          </div>
+          <div>
+            <dt>Průměr</dt>
+            <dd id="avg">—</dd>
+          </div>
+          <div>
+            <dt>Odhad fps</dt>
+            <dd id="fps">—</dd>
+          </div>
+          <div>
+            <dt>Měřítko</dt>
+            <dd id="scale">—</dd>
+          </div>
+        </dl>
+
+        <p class="keys">
+          Q nahoru (sběr $D09F / nástup na pad $CEAD), A dolů (plošinka $C79F),
+          O vlevo, P vpravo, mezerník palba ($C85A / na padu $CA15). O/P na
+          teleportu spustí zadání 5 znaků; security door bere inventář
+          ($D5FD / klíč <code>$0F</code>). Jádro <code>#199</code>. Cheat v panelu
+          (inventář slot + god). Dev panel: default zapnutý, <code>?dev=0</code>
+          vypne. PageUp / PageDown mění místnost.
+        </p>
+      </aside>
+    </div>
+
+    <script src="bundle.js?v=socket-1"></script>
+  </body>
+</html>

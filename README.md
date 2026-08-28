@@ -100,7 +100,14 @@ npm start
 
 Otevře http://127.0.0.1:8000/viewer/ (TypeScript server v `game/src/server.ts`, port `--port` nebo `PORT`). Q/A/O/P pohybují BLOBem (nahoru sběr / nástup na pad, dolů plošinka), mezerník střílí (na padu `$CA15`). O/P na teleportu otevře zadání 5písmenného kódu. PageUp/PageDown mění místnost. `#168` otevře místnost 168. Panel ukáže `$DD22`, pad a jméno teleportu. `?dev=0` skryje vývojářský panel.
 
-GitHub Pages: workflow `.github/workflows/pages.yml` spustí extract + `npm --prefix game run build` + `pages` a nasadí obsah `docs/` (https://maly.github.io/starquake/).
+GitHub Pages: `docs/` je commitnutý viewer (`index.html`, `bundle.js`, MP3, `out/*.json`). Sestavení:
+
+```powershell
+npm --prefix game run build
+npm --prefix game run pages
+```
+
+Workflow na `master` to samé udělá, zapíše `docs/` do větve a nasadí https://maly.github.io/starquake/.
 
 Porovnání rastru proti `out/rooms/room_<id>.png` a měření času je v `tests/test_viewer.py` (`node viewer/dump.js`). Na tomto stroji vyšel průměr **0,30 ms** na místnost (řádově 3000 snímků/s), což je pod 20 ms potřebnými pro 50 Hz.
 

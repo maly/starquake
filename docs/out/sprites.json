@@ -1,0 +1,2739 @@
+{
+  "spritesheet": "sprites.png",
+  "cell_size": 8,
+  "colour": "Monochrome: ink is opaque white, paper is transparent. Colour is not baked into the PNG; $AA30 / $DB24 supply the attribute at blit time.",
+  "format": "Each sprite is 2\u00d72 cells (16\u00d716 pixels), 32 bytes at $9088+id\u00d732. Bytes are four consecutive 8-byte UDGs in row-major order. There is no row-flag mask and no attribute stream; cells[].attr is null.",
+  "compositing": "$DB24 XOR-blits the four cells onto the existing bitmap, then writes the full attribute byte unless bit 7 (FLASH) of that byte is set. $AA30 always does OR $40 before the call, so bit 6 (solidity / BRIGHT) is set and the collision grid can change. XOR is not a transparency mask: a second blit of the same sprite restores the pixels.",
+  "graphics": [
+    {
+      "id": 0,
+      "ptr": 37000,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            0,
+            0,
+            15,
+            31,
+            31,
+            31,
+            14,
+            54
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            0,
+            0,
+            1,
+            29,
+            62,
+            63,
+            63,
+            60
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            112,
+            224,
+            192,
+            128,
+            0,
+            3,
+            7,
+            7
+          ],
+          "attr": null
+        }
+      ],
+      "x": 0,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-00",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 1,
+      "ptr": 37032,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            3,
+            7,
+            7,
+            135,
+            129,
+            6,
+            206,
+            236
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            192,
+            224,
+            224,
+            225,
+            129,
+            96,
+            115,
+            55
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            92,
+            24,
+            57,
+            53,
+            115,
+            103,
+            135,
+            227
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            46,
+            28,
+            184,
+            180,
+            198,
+            230,
+            225,
+            199
+          ],
+          "attr": null
+        }
+      ],
+      "x": 17,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-01",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 2,
+      "ptr": 37064,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            0,
+            240,
+            248,
+            248,
+            248,
+            112,
+            108
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            14,
+            7,
+            3,
+            1,
+            0,
+            192,
+            224,
+            224
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            0,
+            0,
+            128,
+            184,
+            124,
+            252,
+            252,
+            60
+          ],
+          "attr": null
+        }
+      ],
+      "x": 34,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-02",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 3,
+      "ptr": 37096,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            27,
+            3,
+            1,
+            0,
+            1,
+            119,
+            246,
+            248
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            3,
+            141,
+            221,
+            224,
+            112,
+            182,
+            15,
+            63
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            248,
+            246,
+            119,
+            3,
+            0,
+            1,
+            3,
+            27
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            63,
+            15,
+            150,
+            224,
+            240,
+            61,
+            141,
+            3
+          ],
+          "attr": null
+        }
+      ],
+      "x": 51,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-03",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 4,
+      "ptr": 37128,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            224,
+            224,
+            195,
+            15,
+            31,
+            27,
+            55,
+            55
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            7,
+            7,
+            195,
+            240,
+            248,
+            248,
+            252,
+            252
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            51,
+            51,
+            25,
+            28,
+            15,
+            195,
+            224,
+            224
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            252,
+            252,
+            248,
+            120,
+            240,
+            195,
+            7,
+            7
+          ],
+          "attr": null
+        }
+      ],
+      "x": 68,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-04",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 5,
+      "ptr": 37160,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            192,
+            177,
+            188,
+            31,
+            7,
+            105,
+            240,
+            252
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            216,
+            192,
+            0,
+            0,
+            192,
+            238,
+            111,
+            31
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            252,
+            240,
+            108,
+            14,
+            7,
+            187,
+            177,
+            192
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            31,
+            111,
+            238,
+            192,
+            0,
+            128,
+            192,
+            216
+          ],
+          "attr": null
+        }
+      ],
+      "x": 85,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-05",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 6,
+      "ptr": 37192,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            60,
+            63,
+            63,
+            62,
+            29,
+            1,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            7,
+            7,
+            3,
+            0,
+            128,
+            192,
+            224,
+            112
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            55,
+            15,
+            31,
+            31,
+            31,
+            15,
+            0,
+            0
+          ],
+          "attr": null
+        }
+      ],
+      "x": 102,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-06",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 7,
+      "ptr": 37224,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            227,
+            135,
+            103,
+            99,
+            45,
+            29,
+            56,
+            116
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            199,
+            225,
+            230,
+            206,
+            172,
+            156,
+            24,
+            58
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            236,
+            198,
+            6,
+            129,
+            135,
+            7,
+            7,
+            3
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            55,
+            115,
+            96,
+            129,
+            225,
+            224,
+            224,
+            192
+          ],
+          "attr": null
+        }
+      ],
+      "x": 119,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-07",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 8,
+      "ptr": 37256,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            224,
+            224,
+            192,
+            0,
+            1,
+            3,
+            7,
+            14
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            60,
+            252,
+            252,
+            124,
+            184,
+            128,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            108,
+            112,
+            248,
+            248,
+            248,
+            240,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "attr": null
+        }
+      ],
+      "x": 136,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-08",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 9,
+      "ptr": 37288,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            127,
+            255,
+            216,
+            251,
+            251,
+            251,
+            251,
+            248
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            252,
+            254,
+            54,
+            190,
+            158,
+            158,
+            158,
+            30
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            223,
+            255,
+            73,
+            54,
+            54,
+            54,
+            18,
+            54
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            246,
+            254,
+            36,
+            216,
+            216,
+            216,
+            72,
+            216
+          ],
+          "attr": null
+        }
+      ],
+      "x": 153,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-09",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 10,
+      "ptr": 37320,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            127,
+            255,
+            220,
+            254,
+            254,
+            252,
+            252,
+            252
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            252,
+            254,
+            246,
+            254,
+            254,
+            126,
+            126,
+            126
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            223,
+            255,
+            73,
+            54,
+            54,
+            54,
+            18,
+            54
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            246,
+            254,
+            36,
+            216,
+            216,
+            216,
+            72,
+            216
+          ],
+          "attr": null
+        }
+      ],
+      "x": 170,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-10",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 11,
+      "ptr": 37352,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            127,
+            255,
+            216,
+            255,
+            248,
+            251,
+            248,
+            248
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            252,
+            254,
+            54,
+            190,
+            62,
+            254,
+            62,
+            62
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            223,
+            255,
+            73,
+            54,
+            54,
+            54,
+            18,
+            54
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            246,
+            254,
+            36,
+            216,
+            216,
+            216,
+            72,
+            216
+          ],
+          "attr": null
+        }
+      ],
+      "x": 187,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-11",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 12,
+      "ptr": 37384,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            127,
+            255,
+            223,
+            251,
+            251,
+            248,
+            255,
+            255
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            252,
+            254,
+            118,
+            126,
+            126,
+            62,
+            62,
+            62
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            223,
+            255,
+            73,
+            54,
+            54,
+            54,
+            18,
+            54
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            246,
+            254,
+            36,
+            216,
+            216,
+            216,
+            72,
+            216
+          ],
+          "attr": null
+        }
+      ],
+      "x": 204,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-12",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 13,
+      "ptr": 37416,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            127,
+            255,
+            216,
+            251,
+            240,
+            243,
+            243,
+            240
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            252,
+            254,
+            54,
+            190,
+            30,
+            158,
+            158,
+            30
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            223,
+            255,
+            73,
+            54,
+            54,
+            54,
+            18,
+            54
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            246,
+            254,
+            36,
+            216,
+            216,
+            216,
+            72,
+            216
+          ],
+          "attr": null
+        }
+      ],
+      "x": 221,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-13",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 14,
+      "ptr": 37448,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            127,
+            255,
+            216,
+            249,
+            255,
+            252,
+            255,
+            252
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            252,
+            254,
+            54,
+            62,
+            62,
+            62,
+            254,
+            254
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            220,
+            255,
+            73,
+            54,
+            54,
+            54,
+            18,
+            54
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            246,
+            254,
+            36,
+            216,
+            216,
+            216,
+            72,
+            216
+          ],
+          "attr": null
+        }
+      ],
+      "x": 238,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-14",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 15,
+      "ptr": 37480,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            127,
+            248,
+            255
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            252,
+            62,
+            254
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            252,
+            248,
+            248,
+            226,
+            193,
+            255,
+            127,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            126,
+            62,
+            30,
+            14,
+            6,
+            254,
+            252,
+            0
+          ],
+          "attr": null
+        }
+      ],
+      "x": 255,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-15",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 16,
+      "ptr": 37512,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            0,
+            192,
+            224,
+            240,
+            248,
+            220,
+            203
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            255
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            203,
+            220,
+            248,
+            240,
+            224,
+            192,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            193,
+            62,
+            62,
+            54,
+            0,
+            0,
+            0,
+            0
+          ],
+          "attr": null
+        }
+      ],
+      "x": 272,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-16",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 17,
+      "ptr": 37544,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            3,
+            15,
+            28,
+            30,
+            63,
+            62,
+            59,
+            19
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            128,
+            224,
+            112,
+            240,
+            248,
+            248,
+            184,
+            144
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            31,
+            14,
+            17,
+            59,
+            115,
+            32,
+            65,
+            227
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            240,
+            224,
+            16,
+            184,
+            156,
+            8,
+            4,
+            142
+          ],
+          "attr": null
+        }
+      ],
+      "x": 289,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-17",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 18,
+      "ptr": 37576,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            7,
+            31,
+            60,
+            110,
+            95,
+            222,
+            187,
+            179
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            192,
+            240,
+            120,
+            252,
+            252,
+            254,
+            190,
+            158
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            191,
+            0,
+            94,
+            94,
+            0,
+            191,
+            128,
+            255
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            254,
+            0,
+            244,
+            244,
+            0,
+            254,
+            2,
+            254
+          ],
+          "attr": null
+        }
+      ],
+      "x": 306,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-18",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 19,
+      "ptr": 37608,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            3,
+            6,
+            7,
+            23,
+            52,
+            118,
+            119
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            0,
+            128,
+            192,
+            192,
+            208,
+            88,
+            220,
+            220
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            110,
+            91,
+            51,
+            127,
+            252,
+            219,
+            247,
+            96
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            236,
+            180,
+            152,
+            252,
+            126,
+            182,
+            222,
+            12
+          ],
+          "attr": null
+        }
+      ],
+      "x": 323,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-19",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 20,
+      "ptr": 37640,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            240,
+            247,
+            7,
+            24,
+            11,
+            6,
+            27,
+            12
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            15,
+            239,
+            224,
+            24,
+            208,
+            96,
+            216,
+            48
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            112,
+            223,
+            189,
+            189,
+            189,
+            191,
+            0,
+            95
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            14,
+            251,
+            29,
+            93,
+            29,
+            253,
+            0,
+            250
+          ],
+          "attr": null
+        }
+      ],
+      "x": 340,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-20",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 21,
+      "ptr": 37672,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            8,
+            28,
+            182,
+            99,
+            1,
+            2,
+            5
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            16,
+            56,
+            124,
+            254,
+            206,
+            128,
+            128,
+            192
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            5,
+            5,
+            5,
+            5,
+            8,
+            19,
+            39,
+            79
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            192,
+            192,
+            192,
+            192,
+            32,
+            208,
+            232,
+            244
+          ],
+          "attr": null
+        }
+      ],
+      "x": 357,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-21",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 22,
+      "ptr": 37704,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            3,
+            19,
+            0,
+            50,
+            48,
+            4,
+            1,
+            17
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            64,
+            0,
+            48,
+            48,
+            128,
+            16,
+            128,
+            16
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            4,
+            5,
+            5,
+            5,
+            8,
+            19,
+            39,
+            79
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            64,
+            192,
+            192,
+            192,
+            32,
+            208,
+            232,
+            244
+          ],
+          "attr": null
+        }
+      ],
+      "x": 374,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-22",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 23,
+      "ptr": 37736,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            56,
+            53,
+            13,
+            19,
+            23,
+            32,
+            55,
+            23
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            14,
+            214,
+            216,
+            228,
+            248,
+            20,
+            252,
+            248
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            32,
+            55,
+            23,
+            32,
+            55,
+            23,
+            32,
+            23
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            20,
+            252,
+            248,
+            20,
+            252,
+            248,
+            20,
+            248
+          ],
+          "attr": null
+        }
+      ],
+      "x": 391,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-23",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 24,
+      "ptr": 37768,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            3,
+            7,
+            5,
+            5,
+            2,
+            1,
+            1,
+            1
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            192,
+            224,
+            224,
+            224,
+            64,
+            128,
+            128,
+            128
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            2,
+            5,
+            5,
+            56,
+            71,
+            127,
+            96,
+            63
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            64,
+            224,
+            224,
+            28,
+            226,
+            254,
+            6,
+            252
+          ],
+          "attr": null
+        }
+      ],
+      "x": 408,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-24",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 25,
+      "ptr": 37800,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            1,
+            3,
+            6,
+            14,
+            30,
+            62,
+            126,
+            254
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            0,
+            128,
+            192,
+            96,
+            48,
+            24,
+            12,
+            6
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            255,
+            0,
+            255,
+            127,
+            50,
+            51,
+            48,
+            63
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            254,
+            0,
+            254,
+            28,
+            88,
+            216,
+            24,
+            248
+          ],
+          "attr": null
+        }
+      ],
+      "x": 425,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-25",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 26,
+      "ptr": 37832,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            15,
+            27,
+            23,
+            23,
+            23,
+            23,
+            96,
+            127
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            224,
+            176,
+            240,
+            240,
+            240,
+            240,
+            28,
+            252
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            0,
+            27,
+            25,
+            25,
+            49,
+            49,
+            97,
+            33
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            0,
+            176,
+            152,
+            152,
+            152,
+            152,
+            152,
+            140
+          ],
+          "attr": null
+        }
+      ],
+      "x": 442,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-26",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 27,
+      "ptr": 37864,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            15,
+            48,
+            95,
+            85,
+            170,
+            128,
+            128,
+            191
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            224,
+            24,
+            252,
+            84,
+            170,
+            2,
+            2,
+            254
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            95,
+            95,
+            39,
+            24,
+            48,
+            48,
+            24,
+            56
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            252,
+            252,
+            200,
+            48,
+            24,
+            24,
+            48,
+            56
+          ],
+          "attr": null
+        }
+      ],
+      "x": 459,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-27",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 28,
+      "ptr": 37896,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            0,
+            36,
+            36,
+            255,
+            36,
+            36,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            4,
+            36,
+            164,
+            164,
+            255,
+            164,
+            164,
+            36
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            1,
+            1,
+            1,
+            0,
+            3,
+            4,
+            9,
+            11
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            132,
+            128,
+            128,
+            0,
+            192,
+            224,
+            240,
+            240
+          ],
+          "attr": null
+        }
+      ],
+      "x": 476,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-28",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 29,
+      "ptr": 37928,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            7,
+            31,
+            59,
+            55,
+            55,
+            55,
+            27,
+            13
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            192,
+            240,
+            248,
+            248,
+            248,
+            248,
+            240,
+            224
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            5,
+            5,
+            7,
+            0,
+            5,
+            3,
+            5,
+            2
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            192,
+            192,
+            192,
+            64,
+            192,
+            128,
+            192,
+            128
+          ],
+          "attr": null
+        }
+      ],
+      "x": 493,
+      "y": 0,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-29",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 30,
+      "ptr": 37960,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            255,
+            128,
+            180,
+            138,
+            128,
+            255,
+            252,
+            251
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            254,
+            254,
+            254,
+            254,
+            248,
+            248,
+            126,
+            190
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            219,
+            251,
+            252,
+            255,
+            254,
+            254,
+            254,
+            255
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            190,
+            190,
+            126,
+            254,
+            254,
+            254,
+            254,
+            254
+          ],
+          "attr": null
+        }
+      ],
+      "x": 0,
+      "y": 17,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-30",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 31,
+      "ptr": 37992,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            7,
+            5,
+            7,
+            8,
+            25,
+            0,
+            51,
+            51
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            128,
+            192,
+            192,
+            32,
+            208,
+            8,
+            232,
+            232
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            51,
+            51,
+            51,
+            51,
+            51,
+            32,
+            79,
+            79
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            232,
+            232,
+            232,
+            232,
+            232,
+            8,
+            244,
+            244
+          ],
+          "attr": null
+        }
+      ],
+      "x": 17,
+      "y": 17,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-31",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 32,
+      "ptr": 38024,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            3,
+            6,
+            12,
+            29,
+            59,
+            123,
+            179
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            96,
+            190,
+            108,
+            242,
+            184,
+            60,
+            124,
+            68
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            147,
+            99,
+            3,
+            3,
+            3,
+            3,
+            3,
+            1
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            84,
+            76,
+            68,
+            124,
+            124,
+            124,
+            28,
+            248
+          ],
+          "attr": null
+        }
+      ],
+      "x": 34,
+      "y": 17,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-32",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 33,
+      "ptr": 38056,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            0,
+            67,
+            36,
+            24,
+            0,
+            0,
+            1,
+            3
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            28,
+            190,
+            118,
+            230,
+            212,
+            216,
+            236,
+            140
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            7,
+            14,
+            28,
+            56,
+            112,
+            224,
+            192,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            12,
+            56,
+            96,
+            192,
+            192,
+            204,
+            252,
+            120
+          ],
+          "attr": null
+        }
+      ],
+      "x": 51,
+      "y": 17,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-33",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    },
+    {
+      "id": 34,
+      "ptr": 38088,
+      "cols": 2,
+      "rows": 2,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "data": [
+            131,
+            79,
+            48,
+            63,
+            95,
+            78,
+            134,
+            153
+          ],
+          "attr": null
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "data": [
+            240,
+            192,
+            128,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "data": [
+            161,
+            192,
+            128,
+            128,
+            0,
+            1,
+            1,
+            0
+          ],
+          "attr": null
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "data": [
+            128,
+            192,
+            96,
+            80,
+            48,
+            176,
+            240,
+            224
+          ],
+          "attr": null
+        }
+      ],
+      "x": 68,
+      "y": 17,
+      "width": 16,
+      "height": 16,
+      "kind": "sprite",
+      "set": "sprite-34",
+      "frame": 0,
+      "attr": null,
+      "row_attrs": [],
+      "row_flags": []
+    }
+  ]
+}

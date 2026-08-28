@@ -13,7 +13,7 @@ Poslední commit: `8cf42be`. `tmp_*` a `music/` necommituj.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
 - Zatím **neimplementovat:** Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří (1× v enginu), 1. tick Up bez `$14+` vsune `00 00`. `$6600` skip. Hop `TEMP_JUMP_*`. `$D3C1` mezery u stroje `$0E` ne.
 - Konstanty s ROM adresami do `spec/MOVEMENT.md` a comments v `constants.ts`.
-- `docs/` je výstup GitHub Pages (viewer + `out/*.json`); ROM poznámky jsou v `spec/`.
+- `docs/` je commitnutý výstup GitHub Pages (viewer + `out/*.json`); ROM poznámky jsou v `spec/`. Workflow ho přestaví a commitne.
 - Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`, `tmp_security_probe.py`, `tmp_core_probe.py`, `tmp_score_probe.py`, `tmp_ui_layout_probe.py`, `tmp_ui_verify_probe.py`, `tmp_ui_engine_hud.ts`, `tmp_sfx_probe.py`, `tmp_melody_probe.py` (+ další `tmp_ui_*` / `tmp_sfx_*`).
 
 Ověření:

@@ -1,0 +1,1218 @@
+{
+  "table": 38120,
+  "count": 45,
+  "stride": 4,
+  "room_skip": 199,
+  "initialized": true,
+  "d2c6": [
+    120,
+    123
+  ],
+  "note": "45 collectables after first-visit placement. Byte 0: column in bits 0\u20134, ink in bits 5\u20137. Byte 1: row in bits 0\u20136 (values < 6 mean unplaced), bit 7 is room 256. Byte 2: room low. Byte 3: sprite id for $CE68. Coordinates of records that were unplaced in the snapshot are filled by $AA30 from $90 markers at $96CB and $DAC6 (seeded from the room data address). That step is a function of the room id plus the frozen $D2C6 from game start; visit order does not matter. Collecting ($D16B writes y=$01) and extra $A350 objects still need the engine. snapshot_raw is the four bytes before placement. Records 0\u201319 had their rooms shuffled at new game ($648A); 20\u201344 stay in room $C7 as ROM.",
+  "assignment": {
+    "routine": "0x6351 writes records 0\u201319 via 0x648A; records 20\u201344 stay ROM (room $C7).",
+    "safeguard": "No retry after the shuffle. Items 0\u201319 only land in the 44 rooms listed here, all of which have at least one $90-nibble marker so $AA30 can place them. Sprites $0F and $10 (key / core tool) each pick 1 of 4 rooms; the other 18 records pick 1 of 2. Core-piece rooms at $95F0 are not shuffled.",
+    "specials": [
+      {
+        "sprite": 15,
+        "table": 24144,
+        "candidates": [
+          8,
+          40,
+          168,
+          182
+        ]
+      },
+      {
+        "sprite": 16,
+        "table": 24148,
+        "candidates": [
+          150,
+          198,
+          200,
+          246
+        ]
+      }
+    ],
+    "pairs": [
+      {
+        "index": 0,
+        "table": 24108,
+        "candidates": [
+          436,
+          422
+        ]
+      },
+      {
+        "index": 1,
+        "table": 24110,
+        "candidates": [
+          236,
+          222
+        ]
+      },
+      {
+        "index": 2,
+        "table": 24112,
+        "candidates": [
+          52,
+          16
+        ]
+      },
+      {
+        "index": 3,
+        "table": 24114,
+        "candidates": [
+          502,
+          504
+        ]
+      },
+      {
+        "index": 4,
+        "table": 24116,
+        "candidates": [
+          296,
+          314
+        ]
+      },
+      {
+        "index": 5,
+        "table": 24118,
+        "candidates": [
+          72,
+          106
+        ]
+      },
+      {
+        "index": 6,
+        "table": 24120,
+        "candidates": [
+          310,
+          278
+        ]
+      },
+      {
+        "index": 7,
+        "table": 24122,
+        "candidates": [
+          56,
+          42
+        ]
+      },
+      {
+        "index": 8,
+        "table": 24124,
+        "candidates": [
+          416,
+          352
+        ]
+      },
+      {
+        "index": 9,
+        "table": 24126,
+        "candidates": [
+          140,
+          14
+        ]
+      },
+      {
+        "index": 10,
+        "table": 24128,
+        "candidates": [
+          266,
+          316
+        ]
+      },
+      {
+        "index": 11,
+        "table": 24130,
+        "candidates": [
+          476,
+          482
+        ]
+      },
+      {
+        "index": 12,
+        "table": 24132,
+        "candidates": [
+          84,
+          86
+        ]
+      },
+      {
+        "index": 13,
+        "table": 24134,
+        "candidates": [
+          478,
+          62
+        ]
+      },
+      {
+        "index": 14,
+        "table": 24136,
+        "candidates": [
+          80,
+          82
+        ]
+      },
+      {
+        "index": 15,
+        "table": 24138,
+        "candidates": [
+          226,
+          194
+        ]
+      },
+      {
+        "index": 16,
+        "table": 24140,
+        "candidates": [
+          114,
+          116
+        ]
+      },
+      {
+        "index": 17,
+        "table": 24142,
+        "candidates": [
+          466,
+          372
+        ]
+      }
+    ],
+    "core_slots": [
+      {
+        "index": 0,
+        "room": 190,
+        "flags": 1
+      },
+      {
+        "index": 1,
+        "room": 252,
+        "flags": 1
+      },
+      {
+        "index": 2,
+        "room": 452,
+        "flags": 129
+      },
+      {
+        "index": 3,
+        "room": 482,
+        "flags": 129
+      },
+      {
+        "index": 4,
+        "room": 486,
+        "flags": 129
+      },
+      {
+        "index": 5,
+        "room": 134,
+        "flags": 1
+      },
+      {
+        "index": 6,
+        "room": 9,
+        "flags": 83
+      },
+      {
+        "index": 7,
+        "room": 85,
+        "flags": 67
+      }
+    ]
+  },
+  "items": [
+    {
+      "index": 0,
+      "room": 168,
+      "col": 25,
+      "row": 7,
+      "placed": true,
+      "sprite": 15,
+      "attr_bits": 2,
+      "raw": [
+        89,
+        7,
+        168,
+        15
+      ],
+      "snapshot_raw": [
+        221,
+        0,
+        168,
+        15
+      ],
+      "initialized": true
+    },
+    {
+      "index": 1,
+      "room": 150,
+      "col": 1,
+      "row": 19,
+      "placed": true,
+      "sprite": 16,
+      "attr_bits": 6,
+      "raw": [
+        193,
+        19,
+        150,
+        16
+      ],
+      "snapshot_raw": [
+        173,
+        0,
+        150,
+        16
+      ],
+      "initialized": true
+    },
+    {
+      "index": 2,
+      "room": 436,
+      "col": 25,
+      "row": 7,
+      "placed": true,
+      "sprite": 33,
+      "attr_bits": 4,
+      "raw": [
+        153,
+        135,
+        180,
+        33
+      ],
+      "snapshot_raw": [
+        181,
+        128,
+        180,
+        33
+      ],
+      "initialized": true
+    },
+    {
+      "index": 3,
+      "room": 236,
+      "col": 13,
+      "row": 9,
+      "placed": true,
+      "sprite": 12,
+      "attr_bits": 7,
+      "raw": [
+        237,
+        9,
+        236,
+        12
+      ],
+      "snapshot_raw": [
+        97,
+        0,
+        236,
+        12
+      ],
+      "initialized": true
+    },
+    {
+      "index": 4,
+      "room": 16,
+      "col": 25,
+      "row": 19,
+      "placed": true,
+      "sprite": 8,
+      "attr_bits": 7,
+      "raw": [
+        249,
+        19,
+        16,
+        8
+      ],
+      "snapshot_raw": [
+        115,
+        0,
+        16,
+        8
+      ],
+      "initialized": true
+    },
+    {
+      "index": 5,
+      "room": 504,
+      "col": 5,
+      "row": 13,
+      "placed": true,
+      "sprite": 0,
+      "attr_bits": 4,
+      "raw": [
+        133,
+        141,
+        248,
+        0
+      ],
+      "snapshot_raw": [
+        182,
+        128,
+        248,
+        0
+      ],
+      "initialized": true
+    },
+    {
+      "index": 6,
+      "room": 296,
+      "col": 21,
+      "row": 7,
+      "placed": true,
+      "sprite": 11,
+      "attr_bits": 3,
+      "raw": [
+        117,
+        135,
+        40,
+        11
+      ],
+      "snapshot_raw": [
+        101,
+        128,
+        40,
+        11
+      ],
+      "initialized": true
+    },
+    {
+      "index": 7,
+      "room": 72,
+      "col": 21,
+      "row": 13,
+      "placed": true,
+      "sprite": 9,
+      "attr_bits": 7,
+      "raw": [
+        245,
+        13,
+        72,
+        9
+      ],
+      "snapshot_raw": [
+        133,
+        0,
+        72,
+        9
+      ],
+      "initialized": true
+    },
+    {
+      "index": 8,
+      "room": 278,
+      "col": 17,
+      "row": 19,
+      "placed": true,
+      "sprite": 10,
+      "attr_bits": 7,
+      "raw": [
+        241,
+        147,
+        22,
+        10
+      ],
+      "snapshot_raw": [
+        73,
+        128,
+        22,
+        10
+      ],
+      "initialized": true
+    },
+    {
+      "index": 9,
+      "room": 42,
+      "col": 29,
+      "row": 19,
+      "placed": true,
+      "sprite": 4,
+      "attr_bits": 7,
+      "raw": [
+        253,
+        19,
+        42,
+        4
+      ],
+      "snapshot_raw": [
+        210,
+        0,
+        42,
+        4
+      ],
+      "initialized": true
+    },
+    {
+      "index": 10,
+      "room": 416,
+      "col": 29,
+      "row": 19,
+      "placed": true,
+      "sprite": 5,
+      "attr_bits": 3,
+      "raw": [
+        125,
+        147,
+        160,
+        5
+      ],
+      "snapshot_raw": [
+        193,
+        128,
+        160,
+        5
+      ],
+      "initialized": true
+    },
+    {
+      "index": 11,
+      "room": 14,
+      "col": 5,
+      "row": 16,
+      "placed": true,
+      "sprite": 10,
+      "attr_bits": 2,
+      "raw": [
+        69,
+        16,
+        14,
+        10
+      ],
+      "snapshot_raw": [
+        72,
+        0,
+        14,
+        10
+      ],
+      "initialized": true
+    },
+    {
+      "index": 12,
+      "room": 316,
+      "col": 1,
+      "row": 19,
+      "placed": true,
+      "sprite": 4,
+      "attr_bits": 6,
+      "raw": [
+        193,
+        147,
+        60,
+        4
+      ],
+      "snapshot_raw": [
+        197,
+        128,
+        60,
+        4
+      ],
+      "initialized": true
+    },
+    {
+      "index": 13,
+      "room": 482,
+      "col": 25,
+      "row": 13,
+      "placed": true,
+      "sprite": 5,
+      "attr_bits": 3,
+      "raw": [
+        121,
+        141,
+        226,
+        5
+      ],
+      "snapshot_raw": [
+        232,
+        128,
+        226,
+        5
+      ],
+      "initialized": true
+    },
+    {
+      "index": 14,
+      "room": 86,
+      "col": 25,
+      "row": 13,
+      "placed": true,
+      "sprite": 33,
+      "attr_bits": 2,
+      "raw": [
+        89,
+        13,
+        86,
+        33
+      ],
+      "snapshot_raw": [
+        136,
+        0,
+        86,
+        33
+      ],
+      "initialized": true
+    },
+    {
+      "index": 15,
+      "room": 62,
+      "col": 21,
+      "row": 19,
+      "placed": true,
+      "sprite": 30,
+      "attr_bits": 7,
+      "raw": [
+        245,
+        19,
+        62,
+        30
+      ],
+      "snapshot_raw": [
+        213,
+        0,
+        62,
+        30
+      ],
+      "initialized": true
+    },
+    {
+      "index": 16,
+      "room": 80,
+      "col": 17,
+      "row": 13,
+      "placed": true,
+      "sprite": 26,
+      "attr_bits": 5,
+      "raw": [
+        177,
+        13,
+        80,
+        26
+      ],
+      "snapshot_raw": [
+        97,
+        0,
+        80,
+        26
+      ],
+      "initialized": true
+    },
+    {
+      "index": 17,
+      "room": 194,
+      "col": 5,
+      "row": 19,
+      "placed": true,
+      "sprite": 26,
+      "attr_bits": 7,
+      "raw": [
+        229,
+        19,
+        194,
+        26
+      ],
+      "snapshot_raw": [
+        124,
+        0,
+        194,
+        26
+      ],
+      "initialized": true
+    },
+    {
+      "index": 18,
+      "room": 114,
+      "col": 29,
+      "row": 19,
+      "placed": true,
+      "sprite": 11,
+      "attr_bits": 7,
+      "raw": [
+        253,
+        19,
+        114,
+        11
+      ],
+      "snapshot_raw": [
+        149,
+        0,
+        114,
+        11
+      ],
+      "initialized": true
+    },
+    {
+      "index": 19,
+      "room": 372,
+      "col": 25,
+      "row": 7,
+      "placed": true,
+      "sprite": 27,
+      "attr_bits": 4,
+      "raw": [
+        153,
+        135,
+        116,
+        27
+      ],
+      "snapshot_raw": [
+        101,
+        128,
+        116,
+        27
+      ],
+      "initialized": true
+    },
+    {
+      "index": 20,
+      "room": 199,
+      "col": 12,
+      "row": 10,
+      "placed": true,
+      "sprite": 12,
+      "attr_bits": 6,
+      "raw": [
+        204,
+        10,
+        199,
+        12
+      ],
+      "snapshot_raw": [
+        204,
+        10,
+        199,
+        12
+      ],
+      "initialized": false
+    },
+    {
+      "index": 21,
+      "room": 199,
+      "col": 20,
+      "row": 10,
+      "placed": true,
+      "sprite": 14,
+      "attr_bits": 6,
+      "raw": [
+        212,
+        10,
+        199,
+        14
+      ],
+      "snapshot_raw": [
+        212,
+        10,
+        199,
+        14
+      ],
+      "initialized": false
+    },
+    {
+      "index": 22,
+      "room": 199,
+      "col": 20,
+      "row": 10,
+      "placed": true,
+      "sprite": 14,
+      "attr_bits": 6,
+      "raw": [
+        212,
+        10,
+        199,
+        14
+      ],
+      "snapshot_raw": [
+        212,
+        10,
+        199,
+        14
+      ],
+      "initialized": false
+    },
+    {
+      "index": 23,
+      "room": 199,
+      "col": 12,
+      "row": 10,
+      "placed": true,
+      "sprite": 14,
+      "attr_bits": 6,
+      "raw": [
+        204,
+        10,
+        199,
+        14
+      ],
+      "snapshot_raw": [
+        204,
+        10,
+        199,
+        14
+      ],
+      "initialized": false
+    },
+    {
+      "index": 24,
+      "room": 199,
+      "col": 21,
+      "row": 10,
+      "placed": true,
+      "sprite": 14,
+      "attr_bits": 6,
+      "raw": [
+        213,
+        10,
+        199,
+        14
+      ],
+      "snapshot_raw": [
+        213,
+        10,
+        199,
+        14
+      ],
+      "initialized": false
+    },
+    {
+      "index": 25,
+      "room": 199,
+      "col": 21,
+      "row": 10,
+      "placed": true,
+      "sprite": 14,
+      "attr_bits": 6,
+      "raw": [
+        213,
+        10,
+        199,
+        14
+      ],
+      "snapshot_raw": [
+        213,
+        10,
+        199,
+        14
+      ],
+      "initialized": false
+    },
+    {
+      "index": 26,
+      "room": 199,
+      "col": 21,
+      "row": 10,
+      "placed": true,
+      "sprite": 14,
+      "attr_bits": 6,
+      "raw": [
+        213,
+        10,
+        199,
+        14
+      ],
+      "snapshot_raw": [
+        213,
+        10,
+        199,
+        14
+      ],
+      "initialized": false
+    },
+    {
+      "index": 27,
+      "room": 199,
+      "col": 1,
+      "row": 10,
+      "placed": true,
+      "sprite": 15,
+      "attr_bits": 2,
+      "raw": [
+        65,
+        10,
+        199,
+        15
+      ],
+      "snapshot_raw": [
+        65,
+        10,
+        199,
+        15
+      ],
+      "initialized": false
+    },
+    {
+      "index": 28,
+      "room": 199,
+      "col": 1,
+      "row": 10,
+      "placed": true,
+      "sprite": 16,
+      "attr_bits": 3,
+      "raw": [
+        97,
+        10,
+        199,
+        16
+      ],
+      "snapshot_raw": [
+        97,
+        10,
+        199,
+        16
+      ],
+      "initialized": false
+    },
+    {
+      "index": 29,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 30,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 31,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 32,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 33,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 34,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 35,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 36,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 37,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 38,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 39,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 40,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 41,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 42,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 43,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    },
+    {
+      "index": 44,
+      "room": 199,
+      "col": 31,
+      "row": 10,
+      "placed": true,
+      "sprite": 255,
+      "attr_bits": 7,
+      "raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "snapshot_raw": [
+        255,
+        10,
+        199,
+        255
+      ],
+      "initialized": false
+    }
+  ]
+}

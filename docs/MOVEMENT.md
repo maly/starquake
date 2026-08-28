@@ -158,7 +158,7 @@ Zásah: `$DD22=1` a **v tom samém ticku** `$C761`. Vzdviž: žádná chůze, ž
 
 Póza ROM `$BF88` (Arrow) v `actors.json` není (extract končí u `stars` `$BEC8`). Engine drží poslední walk frame.
 
-Objekt `$0E` (stroj, který staví plošinky) **není** toto pole a je mimo rozsah.
+Objekt `$0E` (nibble `$E0`) **není** toto pole — viz Předměty / `$D09F`.
 
 ## Vznášedlo (`$0C`, `$DD22=2`)
 
@@ -224,7 +224,7 @@ Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA=
 | `$0B` | AABB + tool `$10` | dlaždice `$B0` / clear `$95F0` | implementováno |
 | `$0C` | `$CE82` | pad `$CEAD` | implementováno jinde |
 | `$0D` | `$CE82` | teleport `$CEC4` | implementováno jinde |
-| `$0E` | `$DD29==$10` a stejné Y, jinak `$D1A6` | stroj na plošinky; **ne** refill `$D2CE` | mimo rozsah |
+| `$0E` | `$DD29==$10` a stejné Y, jinak `$D1A6` | stroj: typ `$05`, dvě plošinky `$DBBB` (col (X≫3)−1 a +2, row (`$BF`−Y)≫3+2, life `$02`, vrstvy 3+2); SFX `$10`; **ne** `$D2CE` | implementováno |
 | `$0F` | `$DD23 ∧ $03 ≠ 0`, jinak `$D1A6` | místnost ±1 (`A=$05` RET) | implementováno |
 | `$02`–`$05`, `$0A`, `$10`–`$13` | `CP $14` C | no-op `$D1A6` | no-op |
 | `$14`+ | `$DD31==$01`, jinak `$D1A6` | inventář `$D1CA`, byte1=`$01`; overflow `$D1F8` drop | implementováno |
@@ -269,7 +269,7 @@ Rozbor: [`notes/item-effects.md`](notes/item-effects.md) § 9.
 | `$00`–`$0E`, `$1A`+ | sběratelné do `$D2D2` | inventář (staty beze změny); jádrové ID v `$D2DE` |
 | `$FF` | prázdný záznam | ignorovat |
 
-Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport, `$00` security door, `$0B` socket `$B0`, rostlina `$06`, `$0F` vodorovný přechod (room±1). Není: `$0E` stroj na plošinky.
+Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport, `$00` security door, `$0B` socket `$B0`, rostlina `$06`, `$0F` vodorovný přechod (room±1), `$0E` stroj na plošinky.
 
 ## Security doors (`$00`)
 
@@ -343,7 +343,7 @@ Platný teleport / `$0F` v kroku 6 hned volá `$A426` a zbytek ticku se přesko�
 8. **Přeplněný inventář `$D1CA`.** Pátý předmět: LDDR, `$D2DA` ven, `$D1E1` Y=5→`$32`, `$D236` zpět do aktuální místnosti (`$D267` 2×2 bit6≠`$64`: col−1, jinak col+2 když col`< $1D`, jinak orig). Cheops `$CCF1` je v enginu. Extra `$17`/`$18` taky (`$CCCC` / přetečení `$CCBC`).
 9. **1. tick Up bez `$14+`.** ROM vsune prázdný slot `00 00`; engine ne. Mimo rozsah.
 10. **Póza Arrow `$BF88` ve zdviži** — není v extractu; engine nechá poslední walk frame.
-11. **Objekt `$0E`** (stroj na plošinky) — mimo rozsah; není zelené pole `$64`.
+11. **Objekt `$0E`** — implementováno (`$D09F` / `$D0B3`). Není zelené pole `$64`. `$D3C1` AT+mezery při spuštění engine netiskne.
 12. **`$A426` vs `$C8DD`.** ROM po teleportu střelu neparkuje; engine parkuje v `enterRoom`.
 13. **Engine `skip64` vs `$A132`** (řada Y+1, skip jen Y, exact `$64`) — ponecháno.
 14. **Opakovaný overlay** při drženém Left/Right po příletu na pad / dveře. Viewer má latch do uvolnění.

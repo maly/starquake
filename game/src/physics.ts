@@ -34,6 +34,8 @@ import {
   HEIGHT,
   HOVERPAD_FLY_PX,
   ITEM_COUNT,
+  ITEM_DROP_Y_BASE,
+  ITEM_NEAR,
   LIFT_ATTR,
   LIFT_PX,
   LIFT_X_BIAS,
@@ -66,6 +68,14 @@ import {
   DOOR_MSG_OK,
   DOOR_REASON,
   DOOR_SHIFT_X,
+  MACHINE_COL_DEC,
+  MACHINE_COL_STRIDE,
+  MACHINE_FALL,
+  MACHINE_LAYER_COUNT,
+  MACHINE_LAYER_START,
+  MACHINE_LIFE,
+  MACHINE_ROW_ADD,
+  MACHINE_SFX,
   PASSAGE_REASON,
   PASSAGE_SFX,
   SCORE_FIRST_VISIT,
@@ -754,6 +764,8 @@ function tickBody(prep: Prepared, blob: BlobState, input: Input, world?: World):
     return;
   }
 
+  tryFireMachine(prep, blob, world);
+
   const boardedBefore = world.dd22 === DD22_PAD;
   const code = walkSpecialObjects(prep, blob, input, world);
   if (world.dd22 === DD22_PAD && !boardedBefore) copyPadFromBlob(world, blob);
@@ -807,6 +819,7 @@ export function createWorld(prep: Prepared, room: number): World {
     lives: START_LIVES,
     slots: Array.from({ length: PLATFORM_SLOTS }, () => null),
     slotIndex: 0,
+    machineSpent: [],
     pulseIndex: 0,
     buildLatch: false,
     pickupLatch: false,
@@ -885,6 +898,7 @@ export function enterRoom(prep: Prepared, world: World, room: number, opts?: Ent
   world.pulseIndex = 0;
   world.buildLatch = false;
   world.pickupLatch = false;
+  world.machineSpent = [];
   parkBullet(world);
   /** `$A47E` first visit +250 / clear `$A390` bit. */
   if (a390Unvisited(world.a390, room)) {
@@ -1104,6 +1118,45 @@ function paintPlatformAttr(world: World, col: number, row: number, setBit6: bool
 function writePlatform(world: World, col: number, row: number): void {
   for (let layer = 0; layer < PLATFORM_LAYERS.length; layer++) xorPlatformLayer(world, col, row, layer);
   paintPlatformAttr(world, col, row, false);
+}
+
+function writeMachinePlatform(world: World, col: number, row: number): boolean {
+  const free = world.slots.findIndex((s) => s === null);
+  if (free < 0) return false;
+  let layer = MACHINE_LAYER_START;
+  for (let n = 0; n < MACHINE_LAYER_COUNT; n++) {
+    xorPlatformLayer(world, col, row, layer);
+    layer -= 1;
+  }
+  paintPlatformAttr(world, col, row, false);
+  world.slots[free] = { col, row, life: MACHINE_LIFE, phase: MACHINE_LAYER_COUNT };
+  return true;
+}
+
+/**
+ * `$D09F` type `$0E`: AABB X, exact Y, `$DD29==$10`. Two `$DBBB` 2-cell
+ * platforms at col (X≫3)−1 and +2, screen-row (`$BF`−Y)≫3 + 2. SFX `$10`.
+ */
+function tryFireMachine(prep: Prepared, blob: BlobState, world: World): void {
+  if (blob.fallIndex !== MACHINE_FALL) return;
+  const gx = blob.x;
+  const gy = playYToGame(blob.y);
+  for (const m of prep.machinesByRoom?.[blob.room] ?? []) {
+    const key = `${m.x},${m.y}`;
+    if (world.machineSpent.includes(key)) continue;
+    if (Math.abs(gx - m.x) >= ITEM_NEAR) continue;
+    if (gy !== m.y) continue;
+    world.machineSpent.push(key);
+    requestSfx(world, MACHINE_SFX);
+    const screenRow = ((((ITEM_DROP_Y_BASE - gy) >> 3) + MACHINE_ROW_ADD) & 0x1f);
+    const playRow = screenRow - PLAY_ORIGIN;
+    let col = (((m.x >> 3) - MACHINE_COL_DEC) & 0x1f);
+    for (let n = 0; n < 2; n++) {
+      writeMachinePlatform(world, col, playRow);
+      col = (col + MACHINE_COL_STRIDE) & 0x1f;
+    }
+    return;
+  }
 }
 
 function floorBit6All(prep: Prepared, blob: BlobState, world: World): boolean {

@@ -506,6 +506,26 @@ export const DOOR_MSG_TITLE = "SECURITY  DOOR";
 export const DOOR_MSG_OK = "ACCESS AUTHORISED";
 export const DOOR_MSG_BAD = "ACCESS CODE INVALID";
 
+/**
+ * `$96FC` type `$0E` from nibble `$E0` (`$A9E3` → `$A9F6`).
+ * `$D09F`: `$DD29==$10` and `$DD1E==` object Y, else `$D1A6`.
+ * `$D0B3` type→`$05`; two `$DBBB` slots (`OR $40`, life `$02`); `$DB88` L=3,2; SFX `$10`.
+ * Not `$64`. Does not spend `$D2CE`.
+ */
+export const MACHINE_TYPE = 0x0e;
+export const MACHINE_ATTR_HI = 0xe0;
+export const MACHINE_FALL = 0x10;
+export const MACHINE_LIFE = 0x02;
+/** `$D0B6`: col = (X≫3)−1; second slot +2. */
+export const MACHINE_COL_DEC = 1;
+export const MACHINE_COL_STRIDE = 2;
+/** `$D0C1`: screen-row = (`$BF`−Y)≫3 + 2. */
+export const MACHINE_ROW_ADD = 2;
+export const MACHINE_SFX = 0x10;
+/** `$D103` L=`$03`, D=`$02` → `$DC55` layers 3 then 2. */
+export const MACHINE_LAYER_START = 3;
+export const MACHINE_LAYER_COUNT = 2;
+
 /** $96FC type $0F from nibble $F0. Exact XY + L|R → room ±1, $D2C4=$05. */
 export const PASSAGE_TYPE = 0x0f;
 export const PASSAGE_ATTR_HI = 0xf0;

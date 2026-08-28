@@ -25,6 +25,7 @@ import {
   ITEM_ORIGIN_ROWS,
   KILL_AABB,
   KILL_ATTR_HI,
+  MACHINE_ATTR_HI,
   PASSAGE_ATTR_HI,
   PLAY_ORIGIN,
   ROWS,
@@ -82,6 +83,7 @@ export interface HotspotScan {
   doorsByRoom: Hotspot[][];
   socketsByRoom: SocketHotspot[][];
   passagesByRoom: Hotspot[][];
+  machinesByRoom: Hotspot[][];
 }
 
 function socketRoomId(slot: number): number {
@@ -101,7 +103,7 @@ function socketSlotForRoom(room: number): number {
 /**
  * Replicate $A90F / $AA02 from rooms + blocks + $9740 raw.
  * $C0 → $0C, $D0 → $0D, $60 → $06, $70 → $9635, $80 → $9620, $90 → $96CB,
- * $F0 → $0F passage, raw $01–$0F → type $00 door, $B0 → type $0B socket.
+ * $E0 → $0E machine, $F0 → $0F passage, raw $01–$0F → type $00 door, $B0 → $0B.
  * Drawn attrs never hold those nibbles.
  */
 export function scanHotspots(
@@ -116,6 +118,7 @@ export function scanHotspots(
   const fixedNastiesByRoom = emptyHotspots();
   const doorsByRoom = emptyHotspots();
   const passagesByRoom = emptyHotspots();
+  const machinesByRoom = emptyHotspots();
   const socketsByRoom: SocketHotspot[][] = Array.from({ length: ROOM_COUNT }, () => []);
   const extraMarksByRoom: Array<Array<{ col: number; row: number }>> = Array.from(
     { length: ROOM_COUNT },
@@ -131,6 +134,7 @@ export function scanHotspots(
     doorsByRoom,
     socketsByRoom,
     passagesByRoom,
+    machinesByRoom,
   };
   if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
   for (const room of rooms) {
@@ -168,6 +172,7 @@ export function scanHotspots(
               const hs = cellHotspot(col, row);
               socketsByRoom[id]!.push({ x: hs.x, y: hs.y, slot: sockSlot });
             } else if (hi === PASSAGE_ATTR_HI) passagesByRoom[id]!.push(cellHotspot(col, row));
+            else if (hi === MACHINE_ATTR_HI) machinesByRoom[id]!.push(cellHotspot(col, row));
             else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
               doorsByRoom[id]!.push(cellHotspot(col, row));
             }

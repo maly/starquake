@@ -103,7 +103,7 @@ Sprite u `$94E8`: `$AB80 LD A,$41 / SUB D` s D = zbývající počet smyčky (`$
 | `$14`+ | `$94E8` index `A−$14` | `$DD31==$01` jinak `$D1A6` | inventář, byte1=`$01`, XOR `$47`, komprese `$96FC` | `$D140` / `$D16B` / `$D176` / `$D194` |
 | jinak po `$CE82` sem nejde | `$00` `$01` `$06` `$0B` `$0C` `$0D` | — | viz § 1 | — |
 
-`$0E` bez `$DD29==$10`: objekt zůstane `$0E` (sonda). S podmínkou: typ `$05`, `$DBBB` = `4F 11 00 02 51 11 00 02 …`, zvuk 16, staty stejné. Plný rozbor stroje je mimo rozsah (není `$64`, viz [`attr64.md`](attr64.md) § 6).
+`$0E` bez `$DD29==$10`: objekt zůstane `$0E` (sonda). S podmínkou: typ `$05`, `$DBBB` = `4F 11 00 02 51 11 00 02` (X=`$80` Y=`$47`: col 15\|`$40` a 17\|`$40`, screen-row 17, life `$02`), zvuk `$10`, `$D2CE` beze změny. `$DB88` jen L=3,2 (ne 0..3). Nibble `$E0` v 163, 177, 212 (2×), 482. `$A80A` znovu sestaví `$0E`. `$D3C1` AT+mezery engine netiskne. Není `$64`.
 
 `$14`+ bez Up / s `$DD31≠1`: byte1 `$94E8` se nemění, inventář ne (sonda „no Up“, „DD31=2“ bez předchozího `$D148`).
 
@@ -258,7 +258,7 @@ NEVÍM k přenosu: viz § 9.
 
 ## 9. Nedořešené
 
-1. **Stroj `$0E` UX.** Zápis do `$DBBB` a podmínka `$DD29==$10` (max pádu) + stejné Y jsou v emu. Které místnosti, kolik platforem hráč vidí, jestli se dá spustit jinak než pád — NEVÍM (mimo rozsah).
+1. **Stroj `$0E`.** Implementováno: max pád + exact Y, dvě krátké plošinky. `$D3C1` flash mezerami ne. Jiné spouště než pád ROM nemá.
 2. **`$0F` mapa.** V enginu: 22 místností (11 párů), exact XY + L\|R, room ±1, snap dest `$0F`. `A=$05` = `$D2C4`.
 3. **Typy `$10`–`$13` v live `$96FC`.** Větev `$D13B` je no-op. `$AB80` začíná na `$14`, extra je `$01`. Jestli je někdy zapíše jiný kód — NEVÍM.
 4. **Drop overflow `$D1CA` / `$D236`.** Implementováno (col−1 / col+2 / orig, Y=`$32` jen mezi `$D1E1` a `$D236`). `$D1B3` prázdný Up `00 00` a skip `$D2BE≥4` při `$D2DB≠0` zůstávají mimo.

@@ -630,6 +630,15 @@
   var DOOR_DIGIT_MIN = 9;
   var DOOR_MSG_OK = "ACCESS AUTHORISED";
   var DOOR_MSG_BAD = "ACCESS CODE INVALID";
+  var MACHINE_ATTR_HI = 224;
+  var MACHINE_FALL = 16;
+  var MACHINE_LIFE = 2;
+  var MACHINE_COL_DEC = 1;
+  var MACHINE_COL_STRIDE = 2;
+  var MACHINE_ROW_ADD = 2;
+  var MACHINE_SFX = 16;
+  var MACHINE_LAYER_START = 3;
+  var MACHINE_LAYER_COUNT = 2;
   var PASSAGE_ATTR_HI = 240;
   var PASSAGE_REASON = 5;
   var PASSAGE_SFX = 4;
@@ -998,6 +1007,7 @@
     const fixedNastiesByRoom = emptyHotspots();
     const doorsByRoom = emptyHotspots();
     const passagesByRoom = emptyHotspots();
+    const machinesByRoom = emptyHotspots();
     const socketsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
     const extraMarksByRoom = Array.from(
       { length: ROOM_COUNT },
@@ -1012,7 +1022,8 @@
       extraMarksByRoom,
       doorsByRoom,
       socketsByRoom,
-      passagesByRoom
+      passagesByRoom,
+      machinesByRoom
     };
     if (!rooms.length || !blocks.length || !rawBySub.length) return empty;
     for (const room of rooms) {
@@ -1050,6 +1061,7 @@
                 const hs = cellHotspot(col, row);
                 socketsByRoom[id].push({ x: hs.x, y: hs.y, slot: sockSlot });
               } else if (hi === PASSAGE_ATTR_HI) passagesByRoom[id].push(cellHotspot(col, row));
+              else if (hi === MACHINE_ATTR_HI) machinesByRoom[id].push(cellHotspot(col, row));
               else if (raw >= DOOR_RAW_MIN && raw <= DOOR_RAW_MAX) {
                 doorsByRoom[id].push(cellHotspot(col, row));
               }
@@ -2342,7 +2354,8 @@
       extraMarksByRoom,
       doorsByRoom,
       socketsByRoom,
-      passagesByRoom
+      passagesByRoom,
+      machinesByRoom
     } = hotspotsFromData(data, rooms, blocks);
     return {
       graphics,
@@ -2360,7 +2373,8 @@
       extraMarksByRoom,
       doorsByRoom,
       socketsByRoom,
-      passagesByRoom
+      passagesByRoom,
+      machinesByRoom
     };
   }
   function newBuffers() {
@@ -4022,6 +4036,7 @@
       syncWorldMessage(world, world.ui);
       return;
     }
+    tryFireMachine(prep, blob, world);
     const boardedBefore = world.dd22 === DD22_PAD;
     const code = walkSpecialObjects(prep, blob, input2, world);
     if (world.dd22 === DD22_PAD && !boardedBefore) copyPadFromBlob(world, blob);
@@ -4070,6 +4085,7 @@
       lives: START_LIVES,
       slots: Array.from({ length: PLATFORM_SLOTS }, () => null),
       slotIndex: 0,
+      machineSpent: [],
       pulseIndex: 0,
       buildLatch: false,
       pickupLatch: false,
@@ -4139,6 +4155,7 @@
     world.pulseIndex = 0;
     world.buildLatch = false;
     world.pickupLatch = false;
+    world.machineSpent = [];
     parkBullet(world);
     if (a390Unvisited(world.a390, room)) {
       addScore(world, SCORE_FIRST_VISIT);
@@ -4294,6 +4311,39 @@
   function writePlatform(world, col, row) {
     for (let layer = 0; layer < PLATFORM_LAYERS.length; layer++) xorPlatformLayer(world, col, row, layer);
     paintPlatformAttr(world, col, row, false);
+  }
+  function writeMachinePlatform(world, col, row) {
+    const free = world.slots.findIndex((s) => s === null);
+    if (free < 0) return false;
+    let layer = MACHINE_LAYER_START;
+    for (let n = 0; n < MACHINE_LAYER_COUNT; n++) {
+      xorPlatformLayer(world, col, row, layer);
+      layer -= 1;
+    }
+    paintPlatformAttr(world, col, row, false);
+    world.slots[free] = { col, row, life: MACHINE_LIFE, phase: MACHINE_LAYER_COUNT };
+    return true;
+  }
+  function tryFireMachine(prep, blob, world) {
+    if (blob.fallIndex !== MACHINE_FALL) return;
+    const gx = blob.x;
+    const gy = playYToGame(blob.y);
+    for (const m of prep.machinesByRoom?.[blob.room] ?? []) {
+      const key = `${m.x},${m.y}`;
+      if (world.machineSpent.includes(key)) continue;
+      if (Math.abs(gx - m.x) >= ITEM_NEAR) continue;
+      if (gy !== m.y) continue;
+      world.machineSpent.push(key);
+      requestSfx(world, MACHINE_SFX);
+      const screenRow = (ITEM_DROP_Y_BASE - gy >> 3) + MACHINE_ROW_ADD & 31;
+      const playRow = screenRow - PLAY_ORIGIN;
+      let col = (m.x >> 3) - MACHINE_COL_DEC & 31;
+      for (let n = 0; n < 2; n++) {
+        writeMachinePlatform(world, col, playRow);
+        col = col + MACHINE_COL_STRIDE & 31;
+      }
+      return;
+    }
   }
   function floorBit6All(prep, blob, world) {
     const cols = footColumns(blob.x);

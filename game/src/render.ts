@@ -97,6 +97,7 @@ export function prepare(data: GameData): Prepared {
     doorsByRoom,
     socketsByRoom,
     passagesByRoom,
+    machinesByRoom,
   } = hotspotsFromData(data, rooms, blocks);
   return {
     graphics,
@@ -115,6 +116,7 @@ export function prepare(data: GameData): Prepared {
     doorsByRoom,
     socketsByRoom,
     passagesByRoom,
+    machinesByRoom,
   };
 }
 

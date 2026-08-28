@@ -14,6 +14,7 @@ import {
   LIFT_PX,
   NASTY_COUNT_WITH_PAD,
   ROWS,
+  START_PLATFORMS,
   WALK_PX,
   WALK_RIGHT_SETS,
 } from "./constants";
@@ -592,6 +593,73 @@ describe("hoverpad $CEAD / $C967", () => {
     assert.equal(world.dd22, DD22_WALK);
     assert.equal(blob.x, station.x);
     assert.equal(playYToGame(blob.y), station.y);
+  });
+});
+
+describe("machine $0E $D09F", () => {
+  const mx = 104;
+  const my = 87;
+
+  function withMachine(prep: Prepared): Prepared {
+    const list = Array.from({ length: 512 }, () => [] as Hotspot[]);
+    list[1] = [{ x: mx, y: my }];
+    return { ...prep, machinesByRoom: list };
+  }
+
+  it("max fall + exact Y writes two $DBBB platforms and does not spend $D2CE", () => {
+    const prep = withMachine(emptyWorld());
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = mx;
+    blob.y = gameYToPlay(my) - 4;
+    blob.fallIndex = 0x10;
+    blob.onGround = false;
+    const plat = world.platforms;
+    tick(prep, blob, idleInput(), world);
+    assert.equal(playYToGame(blob.y), my);
+    const filled = world.slots.filter((s) => s !== null);
+    assert.equal(filled.length, 2);
+    assert.equal(filled[0]!.col, 12);
+    assert.equal(filled[1]!.col, 14);
+    assert.equal(filled[0]!.row, 9);
+    assert.equal(filled[0]!.life, 2);
+    assert.equal(world.platforms, plat);
+    assert.equal(world.platforms, START_PLATFORMS);
+    assert.equal(blocksBlob(attrAt(prep, 1, 12, 9, world)), true);
+    assert.ok(world.sfx.includes(0x10));
+  });
+
+  it("does not fire when $DD29 is not $10 or Y misses", () => {
+    const prep = withMachine(emptyWorld());
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = mx;
+    blob.y = gameYToPlay(my);
+    blob.fallIndex = 1;
+    blob.onGround = false;
+    tick(prep, blob, idleInput(), world);
+    assert.equal(world.slots.every((s) => s === null), true);
+
+    blob.fallIndex = 0x10;
+    blob.y = gameYToPlay(my);
+    tick(prep, blob, idleInput(), world);
+    assert.equal(world.slots.every((s) => s === null), true);
+  });
+
+  it("type $05: a second hit in the same room does not add more slots", () => {
+    const prep = withMachine(emptyWorld());
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = mx;
+    blob.y = gameYToPlay(my) - 4;
+    blob.fallIndex = 0x10;
+    blob.onGround = false;
+    tick(prep, blob, idleInput(), world);
+    blob.y = gameYToPlay(my) - 4;
+    blob.fallIndex = 0x10;
+    blob.onGround = false;
+    tick(prep, blob, idleInput(), world);
+    assert.equal(world.slots.filter((s) => s !== null).length, 2);
   });
 });
 

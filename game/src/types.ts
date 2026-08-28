@@ -106,6 +106,8 @@ export interface Prepared {
   doorsByRoom?: Hotspot[][];
   /** Type $0F horizontal passages from nibble $F0. */
   passagesByRoom?: Hotspot[][];
+  /** Type $0E machine from nibble $E0. Pixel XY like `$AA02`. */
+  machinesByRoom?: Hotspot[][];
   /** Type $0B / nibble $B0 sockets; slot indexes into `$95F0`. */
   socketsByRoom?: SocketHotspot[][];
 }
@@ -204,6 +206,8 @@ export interface World {
   lives: number;
   slots: Array<PlatformSlot | null>;
   slotIndex: number;
+  /** `$D0B3` type `$05` for this room visit; `$A80A` rebuilds `$0E`. */
+  machineSpent: string[];
   /** $9634: which of 4 $9635 pulse records $A66C visits this tick. */
   pulseIndex: number;
   buildLatch: boolean;

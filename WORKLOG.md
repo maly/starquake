@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `39b529b`. Working tree: overflow `$D1CA` drop; `tmp_*` sondy necommituj.
+Poslední commit: (doplní se po `git commit` `$0E`). Working tree čistý po stroji `$0E`; `tmp_*` sondy necommituj.
 
 ## Tvrdé meze
 
@@ -11,7 +11,7 @@ Poslední commit: `39b529b`. Working tree: overflow `$D1CA` drop; `tmp_*` sondy 
 - Nesnižuj match thresholdy (emu vs export = 0 pixelů).
 - Collision/static tile export (`rooms.json` `solid` / `$D280` overlay) neměň.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
-- Zatím **neimplementovat:** objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří (1× v enginu), 1. tick Up bez `$14+` vsune `00 00`. `$6600` skip. Hop `TEMP_JUMP_*`.
+- Zatím **neimplementovat:** Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří (1× v enginu), 1. tick Up bez `$14+` vsune `00 00`. `$6600` skip. Hop `TEMP_JUMP_*`. `$D3C1` mezery u stroje `$0E` ne.
 - Konstanty s ROM adresami do `docs/MOVEMENT.md` a comments v `constants.ts`.
 - Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`, `tmp_security_probe.py`, `tmp_core_probe.py`, `tmp_score_probe.py`, `tmp_ui_layout_probe.py`, `tmp_ui_verify_probe.py`, `tmp_ui_engine_hud.ts`, `tmp_sfx_probe.py`, `tmp_melody_probe.py` (+ další `tmp_ui_*` / `tmp_sfx_*`).
 
@@ -30,7 +30,7 @@ npm start
 
 http://127.0.0.1:8000/viewer/ — canvas 256×192 (CSS ×2 → 512×384). `?dev=0` skryje vývojářský panel. Audio strip u canvasu (Zvuk / Hudba / hlasitosti); BGM `viewer/bgm.mp3` (v gitu, stejný soubor jako `music/game-loop.mp3`).
 
-Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přechod `$0F`), mezerník palba, security door inventář + overlay, PageUp/Down místnost. `#8` start extra `$17`, `#13` puls `$70` (1), `#198` dva pulsy `$70`, `#61`/`#236` přechod `$0F`, `#176` dveře, `#199` jádro `$C7`, `#249` výtah, `#15` pad, `#343` EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`. Dump: `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing`.
+Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přechod `$0F`), mezerník palba, security door inventář + overlay, PageUp/Down místnost. `#8` start extra `$17`, `#13` puls `$70` (1), `#198` dva pulsy `$70`, `#61`/`#236` přechod `$0F`, `#176` dveře, `#199` jádro `$C7`, `#249` výtah, `#15` pad, `#343` EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`, `#163`/`#177`/`#212`/`#482` stroj `$0E`. Dump: `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing`.
 
 ## Architektura
 
@@ -38,7 +38,7 @@ Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přec
 |---|---|
 | `game/src/constants.ts` | ROM + `TEMP_JUMP_*` unbound + `TELEPORT_TABLE` + `DD22_*` + lift/pad + smrt A / `$06`/`$70`/`$80` |
 | `game/src/types.ts` | `World` + `EndResult`, doors/sockets, score/core fields, `readDoorCode` |
-| `game/src/objects.ts` | `scanHotspots` (+ doors `$01–$0F`, sockets `$B0`, passages `$F0`), teleport, door code, `$0B` clear |
+| `game/src/objects.ts` | `scanHotspots` (+ doors `$01–$0F`, sockets `$B0`, passages `$F0`, machines `$E0`), teleport, door code, `$0B` clear |
 | `game/src/physics.ts` | tick, `applyDeath`, `applySecurityDoor`, `applyPassage`, `enterRoom` first-visit + `$A6C1` |
 | `game/src/core.ts` | `$D2DE` init, `deliverCoreParts` |
 | `game/src/score.ts` | BCD `$D413`, `$A390`, `composeEndResult` |
@@ -61,7 +61,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 3. palba Blob `$C85A` nebo pad `$CA15`
 4. energy drain `$CB58`
 5. `tickPickup` extra + `$94E8`
-6. `walkSpecialObjects` `$06`/`$00`/`$0B`/`$0C`/`$0D`/`$0F` (door/teleport/passage skip zbytku)
+6. `tryFireMachine` `$0E` pak `walkSpecialObjects` `$06`/`$00`/`$0B`/`$0C`/`$0D`/`$0F` (door/teleport/passage skip zbytku)
 7. `energy==0` → `applyDeath(A=2)`
 8. puls `$70` + AABB (`$9635`)
 9. `tickNasties` (kontakt může `applyDeath`)
@@ -73,7 +73,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 
 - Extract: grafika, bloky, 512 místností, attrs `$EAD3`, solid bit 6 / `$64`, items `$94E8`, actors, `$AA30`.
 - BLOB: ±2 px, pád `$C751`, inkoust + `attr < $40`, 4 směry `$C8F4`. Hop `TEMP_JUMP_*` unbound.
-- Plošinky `$C79F`. Nepřátelé 4 sloty, stampGrafix, park se nekreslí. Home `$9EE2` (Z80 `SUB`/`ADD`, `$DAC1` hrana, OOB ≠ vzduch). Ink 0 → `$9E16` 2…6. S padem `nastyCount=3`.
+- Plošinky `$C79F`. Stroj `$0E` / nibble `$E0`: max pád položí dvě krátké (life `$02`, vrstvy 3+2). Nepřátelé 4 sloty, stampGrafix, park se nekreslí. Home `$9EE2` (Z80 `SUB`/`ADD`, `$DAC1` hrana, OOB ≠ vzduch). Ink 0 → `$9E16` 2…6. S padem `nastyCount=3`.
 - Střelba `$C85A`, předměty `$94E8` (inventář, **ne** refill; overflow `$D1F8` drop zpět) + extra `$A350` / `$CC9A` (`$11`–`$16` tabulka, `$17` `$CCCC`, `$18` lives+1 bez stropu `$7F`, `$19` Cheops `$CCF1` výměna 1–5). Socket `$B0` + nástroj `$10`: `$A807`/`$AB9F` vyrazí 3 buňky (col `(X≫3 ∧ $FC) ∨ 1`) — `#486` je průchozí.
 - Vznášedlo `$0C` / `$C967` / `$CA15`. Teleport `$0D` / `$D036` (5 znaků do rastru, ne `prompt`). Tajný přechod `$0F` / nibble `$F0` (exact XY + L\|R, room±1, snap dest `$0F`, sfx `$04`).
 - Zdviž `$64` / `$DD22=1`. `$D2F0` 2 řady když `(Y+1)∧7=0`, jinak 3 — otvor `$44` v `#249` neposkakuje.
@@ -83,7 +83,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP/Cheops overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; BGM MP3 smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
 
-Ověřeno (working tree): `npm test` 186 pass. Cheops `$CCF1`. Socket `$AB9F`. Overflow `$D1F8`.
+Ověřeno: `npm test` 190 pass (overflow `dd0b6f4` + stroj `$0E`).
 
 ## Otevřené
 
@@ -98,7 +98,7 @@ Ověřeno (working tree): `npm test` 186 pass. Cheops `$CCF1`. Socket `$AB9F`. O
 9. Inventář overflow `$D1CA` — **hotovo** (drop `$D236`, ne `pop()`). Cheops `$CCF1` **hotovo**.
 10. Arrow `$BF88` ve zdviži — není v extractu.
 11. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
-12. Objekt `$0E` (auto-plošiny při dopadu).
+12. Objekt `$0E` — **hotovo** (max pád `$DD29==$10` + exact Y; dvě plošinky life `$02`).
 13. Spectrum end bitmap, hi-score `$64FA`, `$64A0` scramble. Melodie `$6600` skip. `$A41B`/`$A57B` je v `audio/channel.ts`.
 14. Puls `$70` / `$DB88` — **opraveno persist XOR.** Engine dřív každý snímek *přepisoval* aktuální L6/L7 (vypadalo to jako všechny fáze najednou). ROM `$DB88`/`$DB50` vrstvy XORuje do display file: toggle L5 A=`$47`, při flag≠0 `$A6BD[timer∧3]`. `xorInk` = delta, blit `^=` na terrain. `#13` jeden, `#198` dva.
 15. Door/TP overlay: chybí digit-sprite animace `$D78B` / ikony `$25`/`$26`/`$24` (text OK); SFX házení cifer `$D679`/`$D70E` proto taky ne.
@@ -106,6 +106,10 @@ Ověřeno (working tree): `npm test` 186 pass. Cheops `$CCF1`. Socket `$AB9F`. O
 16. Inventář ve statusu: XOR blit vs přesné `$DB24` timing; HUD redraw každý frame (ROM chrome jen `$A426`).
 
 ## Sezení
+
+### 2026-08-28 — stroj `$0E` / `$D0B3`
+
+Nibble `$E0` → typ `$0E` (místnosti 163, 177, 212×2, 482). `$DD29==$10` a `$DD1E==` Y objektu: typ `$05`, SFX `$10`, dvě `$DBBB` (col (X≫3)−1 a +2, screen-row +2, `OR $40`, life `$02`, `$DB88` L=3,2). `$D2CE` beze změny. `$A80A` znovu `$0E`. `$D3C1` AT+mezery ne.
 
 ### 2026-08-28 — overflow `$D1CA` / `$D1F8`
 

@@ -284,6 +284,23 @@ const PASSAGE_ROOMS = [
   362,
 ] as const;
 
+describe("machine $0E nibble $E0", () => {
+  it("scanHotspots finds $E0 in rooms 163, 177, 212, 482", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const found: number[] = [];
+    for (let id = 0; id < 512; id++) {
+      if ((prep.machinesByRoom?.[id] ?? []).length) found.push(id);
+    }
+    assert.deepEqual(found, [163, 177, 212, 482]);
+    const a163 = prep.machinesByRoom![163]!;
+    assert.equal(a163.length, 1);
+    assert.equal(a163[0]!.x, 13 * 8);
+    assert.equal(a163[0]!.y, (((0x18 - 13) << 3) - 1) & 0xff);
+    assert.equal(prep.machinesByRoom![212]!.length, 2);
+  });
+});
+
 describe("horizontal passage $0F $D117", () => {
   it("scanHotspots finds $F0 in 22 rooms including 61 and 236", () => {
     const prep = loadPrep();

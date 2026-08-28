@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `caaa8db`. Working tree: Cheops `$CCF1` výměna; `tmp_*` sondy necommituj.
+Poslední commit: `39b529b`. Working tree: overflow `$D1CA` drop; `tmp_*` sondy necommituj.
 
 ## Tvrdé meze
 
@@ -11,7 +11,7 @@ Poslední commit: `caaa8db`. Working tree: Cheops `$CCF1` výměna; `tmp_*` sond
 - Nesnižuj match thresholdy (emu vs export = 0 pixelů).
 - Collision/static tile export (`rooms.json` `solid` / `$D280` overlay) neměň.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
-- Zatím **neimplementovat:** drop přeplněného inventáře `$D1CA`, objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří (1× v enginu). `$6600` skip. Hop `TEMP_JUMP_*`.
+- Zatím **neimplementovat:** objekt `$0E` (stroj na plošinky — **není** zelené pole), Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří (1× v enginu), 1. tick Up bez `$14+` vsune `00 00`. `$6600` skip. Hop `TEMP_JUMP_*`.
 - Konstanty s ROM adresami do `docs/MOVEMENT.md` a comments v `constants.ts`.
 - Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`, `tmp_security_probe.py`, `tmp_core_probe.py`, `tmp_score_probe.py`, `tmp_ui_layout_probe.py`, `tmp_ui_verify_probe.py`, `tmp_ui_engine_hud.ts`, `tmp_sfx_probe.py`, `tmp_melody_probe.py` (+ další `tmp_ui_*` / `tmp_sfx_*`).
 
@@ -44,7 +44,7 @@ Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přec
 | `game/src/score.ts` | BCD `$D413`, `$A390`, `composeEndResult` |
 | `game/src/projectiles.ts` | `tickFire` `$C85A`, `tickPadFire` `$CA15` |
 | `game/src/entities.ts` | nasties, `$9F78` guardians, `$C6` cache wipe, kill score |
-| `game/src/items.ts` | `$94E8` inventář; extra `$CC9A` / `$CCCC`; Cheops slot/offers |
+| `game/src/items.ts` | `$94E8` inventář + overflow `$D1F8`; extra `$CC9A` / `$CCCC`; Cheops slot/offers |
 | `game/src/render.ts` | `prepare()` hotspots, stamp pad, `blitPulses` `$DB88` (playfield-local) |
 | `game/src/ui/*` | screen 32×24, font `$ADD4`, chrome UDG, `$D425`/`$D463`, print `$D3C1`, door/TP/Cheops overlay |
 | `game/src/dump.ts` | + `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing` |
@@ -74,7 +74,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - Extract: grafika, bloky, 512 místností, attrs `$EAD3`, solid bit 6 / `$64`, items `$94E8`, actors, `$AA30`.
 - BLOB: ±2 px, pád `$C751`, inkoust + `attr < $40`, 4 směry `$C8F4`. Hop `TEMP_JUMP_*` unbound.
 - Plošinky `$C79F`. Nepřátelé 4 sloty, stampGrafix, park se nekreslí. Home `$9EE2` (Z80 `SUB`/`ADD`, `$DAC1` hrana, OOB ≠ vzduch). Ink 0 → `$9E16` 2…6. S padem `nastyCount=3`.
-- Střelba `$C85A`, předměty `$94E8` (inventář, **ne** refill) + extra `$A350` / `$CC9A` (`$11`–`$16` tabulka, `$17` `$CCCC`, `$18` lives+1 bez stropu `$7F`, `$19` Cheops `$CCF1` výměna 1–5).
+- Střelba `$C85A`, předměty `$94E8` (inventář, **ne** refill; overflow `$D1F8` drop zpět) + extra `$A350` / `$CC9A` (`$11`–`$16` tabulka, `$17` `$CCCC`, `$18` lives+1 bez stropu `$7F`, `$19` Cheops `$CCF1` výměna 1–5). Socket `$B0` + nástroj `$10`: `$A807`/`$AB9F` vyrazí 3 buňky (col `(X≫3 ∧ $FC) ∨ 1`) — `#486` je průchozí.
 - Vznášedlo `$0C` / `$C967` / `$CA15`. Teleport `$0D` / `$D036` (5 znaků do rastru, ne `prompt`). Tajný přechod `$0F` / nibble `$F0` (exact XY + L\|R, room±1, snap dest `$0F`, sfx `$04`).
 - Zdviž `$64` / `$DD22=1`. `$D2F0` 2 řady když `(Y+1)∧7=0`, jinak 3 — otvor `$44` v `#249` neposkakuje.
 - Energie `$CB58` −1 při wrap `$78` (ROM `C=$04`; HUD 1 px = 4 energie). `$DD30` start 0, energie `$7F`. Obtěžující `$DD30 += $0A` **1×/tick** (ROM až 4×). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
@@ -83,7 +83,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP/Cheops overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; BGM MP3 smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
 
-Ověřeno (working tree): `npm test` 174 pass. Cheops `$CCF1`.
+Ověřeno (working tree): `npm test` 186 pass. Cheops `$CCF1`. Socket `$AB9F`. Overflow `$D1F8`.
 
 ## Otevřené
 
@@ -95,7 +95,7 @@ Ověřeno (working tree): `npm test` 174 pass. Cheops `$CCF1`.
 6. Live `$DAC6` po `$A80A` — engine seed `$7530+id×12`. Extra spawn, pad bounce i perioda `$70` z `dac0` po spawn vetřelců.
 7. Vetřelci i pad: 4 GRAFIX fáze z `world.frames / 2`; live ptr / `$AFC8` beze změny (kresba `+$30`).
 8. Extra `$17`/`$18` v enginu. 1. tick Up bez `$14+` vsune `00 00` — mimo rozsah.
-9. Inventář overflow `$D1CA`. Cheops `$CCF1` **hotovo**.
+9. Inventář overflow `$D1CA` — **hotovo** (drop `$D236`, ne `pop()`). Cheops `$CCF1` **hotovo**.
 10. Arrow `$BF88` ve zdviži — není v extractu.
 11. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
 12. Objekt `$0E` (auto-plošiny při dopadu).
@@ -106,6 +106,10 @@ Ověřeno (working tree): `npm test` 174 pass. Cheops `$CCF1`.
 16. Inventář ve statusu: XOR blit vs přesné `$DB24` timing; HUD redraw každý frame (ROM chrome jen `$A426`).
 
 ## Sezení
+
+### 2026-08-28 — overflow `$D1CA` / `$D1F8`
+
+Pátý `$94E8` se po LDDR ocitne v `$D2DA`. `$D1E1` stáhne Y=5 na `$32`; `$D236` ten záznam položí do aktuální místnosti. `$D267` 2×2 (bit 6, ne `$64`): col−1, jinak col+2 (col `< $1D`), jinak sloupec BloBa; screen-row `($BF−Y)≫3`. Y=`$32` je jen mezi remapem a zápisem (sonda `tmp_overflow_probe.py`). Engine drží `$94E8` index u slotu, pop nejstarší, `collected=0`, přesun `itemsByRoom`. Prázdný Up `00 00` a skip `$D2BE≥4` **ne**.
 
 ### 2026-08-28 — viewer cheat (test)
 

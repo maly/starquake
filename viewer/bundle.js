@@ -537,6 +537,8 @@
   var ITEM_NEAR = 15;
   var INVENTORY_SLOTS = 4;
   var ITEM_ORIGIN_ROWS = 24;
+  var ITEM_DROP_Y_BASE = 191;
+  var ITEM_DROP_RIGHT_MIN = 29;
   var A350_BYTES = 128;
   var EXTRA_MIN_DAC = 85;
   var EXTRA_SPRITE_BASE = 17;
@@ -2180,6 +2182,65 @@
     if (!it) world.inventory[slot] = { sprite: spr, attr: 0 };
     else it.sprite = spr;
   }
+  function playAttr(prep, world, room, col, playRow) {
+    if (col < 0 || playRow < 0 || col >= COLS || playRow >= ROWS) return CLEAR_ATTR;
+    const fromWorld = world.terrain.attr[playRow * COLS + col];
+    if (fromWorld !== void 0) return fromWorld;
+    return prep.rooms[room]?.attributes[playRow]?.[col] ?? CLEAR_ATTR;
+  }
+  function dropCellClear(prep, world, room, col, screenRow) {
+    const playRow = screenRow - PLAY_ORIGIN;
+    for (const dc of [0, 1]) {
+      for (const dr of [0, 1]) {
+        const attr = playAttr(prep, world, room, col + dc, playRow + dr);
+        if ((attr & 64) === 0) return false;
+        if (attr === LIFT_ATTR) return false;
+      }
+    }
+    return true;
+  }
+  function overflowDropCell(prep, blob, world) {
+    const gameY = GAME_Y_ORIGIN - blob.y;
+    let col = blob.x >> 3 & 31;
+    const row = ITEM_DROP_Y_BASE - gameY >> 3 & 31;
+    if (col >= 1 && dropCellClear(prep, world, blob.room, col - 1, row)) {
+      return { col: col - 1, row };
+    }
+    if (col < ITEM_DROP_RIGHT_MIN && dropCellClear(prep, world, blob.room, col + 2, row)) {
+      return { col: col + 2, row };
+    }
+    return { col, row };
+  }
+  function findItem(prep, index) {
+    for (const list of prep.itemsByRoom) {
+      const hit = list.find((it) => it.index === index);
+      if (hit) return hit;
+    }
+    return void 0;
+  }
+  function dropOverflowItem(prep, blob, world, dropped) {
+    if (dropped.index === void 0) return;
+    const item = findItem(prep, dropped.index);
+    if (!item) return;
+    const dest = overflowDropCell(prep, blob, world);
+    const fromRoom = item.room;
+    if (fromRoom !== blob.room) {
+      const old = prep.itemsByRoom[fromRoom];
+      if (old) {
+        const i = old.indexOf(item);
+        if (i >= 0) old.splice(i, 1);
+      }
+      if (blob.room >= 0 && blob.room < ROOM_COUNT) {
+        (prep.itemsByRoom[blob.room] ??= []).push(item);
+      }
+    }
+    item.room = blob.room;
+    item.col = dest.col & 31;
+    item.row = dest.row & 127;
+    item.sprite = dropped.sprite & 255;
+    item.placed = true;
+    world.collected[dropped.index] = 0;
+  }
   function collectTableItem(prep, blob, world) {
     const list = prep.itemsByRoom[blob.room] ?? [];
     const bx = blob.x;
@@ -2191,8 +2252,10 @@
       const pos = itemGamePos(it);
       if (!nearItem(bx, by, pos.x, pos.y)) continue;
       world.collected[it.index] = 1;
-      world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits });
-      if (world.inventory.length > 4) world.inventory.pop();
+      world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits, index: it.index });
+      if (world.inventory.length > INVENTORY_SLOTS) {
+        dropOverflowItem(prep, blob, world, world.inventory.pop());
+      }
       requestSfx(world, 12);
       return;
     }

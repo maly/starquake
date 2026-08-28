@@ -217,13 +217,19 @@ Sonda `$CCCC`:
 | `$D16B` | byte1=`$01` (řádek < 6 → `$AB68` nekreslí) | `$D16B` | po `$D1E1` Y=1→2 |
 | inventář | 4 sloty, nový na začátek (LDDR `$0A` z `$D2D9`→`$D2DB`) | `$D1CF` | `{sprite, attr}` |
 | `$D1CA` bez sběru | **1. tick Up** (`$DD31=1`) i bez `$14+` vloží `00 00` dopředu | `$D1B3 CP $00 / JP Z $D2B9` | sonda `$CB58` prázdný seznam: `0C 03 0D 03 0E 03` → `00 00 0C 03 0D 03 0E 03`, zvuk `$0C` |
-| overflow | `$D2DB≠0` po posunu → drop zpět `$94E8` / `$A7FE` | `$D1F8` / `$D200` | mimo rozsah; sonda 4 plné + `$1A` → inv `1A 03 0C 03 0D 03 0E 03`, `$D2DA=0F 03` |
+| overflow | `$D2DB≠0` po posunu → drop zpět `$94E8` / `$A7FE` | `$D1F8` / `$D200` | implementováno; sonda 4 plné + `$1A` → inv `1A 03 0C 03 0D 03 0E 03`, `$D2DA=0F 03` |
 | Cheops | extra `$19`, ne `$D09F` | `$CCF1` | implementováno (výměna 1–5) |
 | kód `$D693` | sprite `$0F` v inventáři zkrátí minihru | `$D693 CP $0F` | mimo rozsah |
 | jádro `$C7` / `$0B` | `$CE82 CP $0B`, nástroj `$10` | `$CE8C` | mimo rozsah |
 | security door | typ `$00` | `$CBDC` | mimo rozsah |
 
-`$D1E1`: hledá v `$94E9` Y∈{5,4,3,2,1} a přičte 1 (Y=5 → `$32`). Souvisí s overflow značek, mimo rozsah.
+`$D1E1`: hledá v `$94E9` Y∈{5,4,3,2,1} a přičte 1 (Y=5 → `$32` přechodně). `$D236` ten záznam přepíše na drop XY (Y=`$32` v tabulce nezůstane).
+
+### Overflow drop `$D1F8` / `$D236`
+
+Po LDDR je pátý pár v `$D2DA`/`$D2DB`. `$D2DB≠0` → `INC ($D2BE)`, sloupec `(X≫3)`, screen-row `($BF−Y)≫3` (`$D20F`). `$D267` 2×2 v `$5800`: bit 6 **a** ne `$64`. Pořadí: col≥1 a A=0 vlevo → col−1; jinak col `< $1D` a A=0 vpravo → col+2; jinak původní col. `$D2A6` D=`$32` najde nejstarší nesený `$94E8`; byte0 `(AND $E0)∨col`, byte1 room-hi∨row, byte2 room.lo, byte3 sprite z `$D2DA`; `$CE68`/`$DB24` attr `$D2DB+$40`; `$A7FE`=`$AA02` typ `$14+index`. Sonda (`tmp_overflow_probe.py`): volné `$47` col−1, stejný screen-row; `$07`/`$64` vlevo → col+2; obě strany zablokované → col BloBa; col=0 přeskočí vlevo; col≥`$1D` přeskočí vpravo.
+
+Engine: unshift s `$94E8` indexem; při 5. slotu pop nejstarší, `collected=0`, přesun `itemsByRoom` do aktuální místnosti. Y-markery 2…5/`$32` se neukládají — nejstarší = poslední inventární slot. 1. Up prázdný `00 00` (`$D1B3`) **ne**. `$D1C2` skip když `$D2DB≠0` a `$D2BE≥4` (po předchozím overflow v plné místnosti by ROM nový sběr nevložila) engine neemuluje — každý pátý sběr dropne.
 
 ---
 
@@ -244,6 +250,7 @@ Existující tabulka extra `$11`–`$19` a `EXTRA_EFFECTS` je z `$CC9A`, **ne** 
 | `$0E` | stroj, ne refill `$D2CE` | `$D09F` |
 | `$0F` | horizontální přechod | `$D117` |
 | 1. Up bez předmětu | vsune prázdný slot | `$D1B3` |
+| overflow drop XY | col−1 / col+2 / orig, row `($BF−Y)≫3` | `$D200` / `$D267` |
 
 NEVÍM k přenosu: viz § 9.
 
@@ -254,7 +261,7 @@ NEVÍM k přenosu: viz § 9.
 1. **Stroj `$0E` UX.** Zápis do `$DBBB` a podmínka `$DD29==$10` (max pádu) + stejné Y jsou v emu. Které místnosti, kolik platforem hráč vidí, jestli se dá spustit jinak než pád — NEVÍM (mimo rozsah).
 2. **`$0F` mapa.** V enginu: 22 místností (11 párů), exact XY + L\|R, room ±1, snap dest `$0F`. `A=$05` = `$D2C4`.
 3. **Typy `$10`–`$13` v live `$96FC`.** Větev `$D13B` je no-op. `$AB80` začíná na `$14`, extra je `$01`. Jestli je někdy zapíše jiný kód — NEVÍM.
-4. **Drop overflow `$D1CA` / `$D236`.** Sonda vidí `$D2DA` = vytlačený slot a `$D1E1` Y remap. Přesné XY zpět do místnosti a Y=`$32` — NEVÍM do hloubky (mimo rozsah).
+4. **Drop overflow `$D1CA` / `$D236`.** Implementováno (col−1 / col+2 / orig, Y=`$32` jen mezi `$D1E1` a `$D236`). `$D1B3` prázdný Up `00 00` a skip `$D2BE≥4` při `$D2DB≠0` zůstávají mimo.
 5. **Cheops výměna `$CCF1`–`$CDFB`.** Implementováno: 2ciferný kód BC=`$0F0D`, slot `$CD32`, 4× `$D2DE` bit7 + original, klávesy 1–5, `$A801` po úspěchu. Digit-roll `$D78B` jako u dveří ne.
 6. **`$D693` / jádro `$C7` / security `$CBDC`.** Jen že `$D09F` tam neskáče.
 7. **Skóre při nenulovém `$D419`.** Sběr pracovní cifry nesází; kdyby je nastavil jiný kód ve stejném ticku, `$D1F5` by je přičetl. Za jakých ticků to nastane při sběru — NEVÍM (typicky `$D419` nula).

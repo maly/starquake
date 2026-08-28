@@ -6,6 +6,8 @@ import {
   COLS,
   EXTRA_CHEOPS,
   ITEM_COUNT,
+  LIFT_ATTR,
+  PLAY_ORIGIN,
   ROWS,
   START_ENERGY,
   START_FIREPOWER,
@@ -160,6 +162,132 @@ describe("collect $D09F / $D16B", () => {
     tick(prep, blob, { ...idle(), up: true }, world);
     tick(prep, blob, { ...idle(), up: true }, world);
     assert.equal(world.collected[2] + world.collected[3], 1);
+  });
+});
+
+/** Screen-row 15 / col 10 → game-Y $47, same as tmp_overflow_probe.py. */
+const DROP_COL = 10;
+const DROP_ROW = 15;
+
+function carried(index: number, sprite: number, room = 2): Item {
+  return placed({ index, room, sprite, attr_bits: 3, col: 0, row: 8 });
+}
+
+function fillFour(world: World, items: Item[]): void {
+  world.inventory = items.map((it) => ({ sprite: it.sprite, attr: it.attr_bits, index: it.index }));
+  for (const it of items) world.collected[it.index] = 1;
+}
+
+function poke2x2(world: World, col: number, screenRow: number, attr: number): void {
+  const playRow = screenRow - PLAY_ORIGIN;
+  for (const dc of [0, 1]) {
+    for (const dr of [0, 1]) {
+      world.terrain.attr[(playRow + dr) * COLS + (col + dc)] = attr;
+    }
+  }
+}
+
+function pickFifth(prep: ReturnType<typeof grid>, world: World, fifth: Item) {
+  const blob = spawnBlob(prep, fifth.room, world);
+  const pos = itemGamePos(fifth);
+  blob.x = pos.x;
+  blob.y = 143 - pos.y;
+  tick(prep, blob, { ...idle(), up: true }, world);
+  return blob;
+}
+
+describe("inventory overflow $D1CA / $D1F8", () => {
+  function fourCarried(base = 10): Item[] {
+    return [0x0c, 0x0d, 0x0e, 0x0f].map((sprite, i) => carried(base + i, sprite));
+  }
+
+  it("drops the oldest $94E8 back at col−1 when $D267 is clear ($47)", () => {
+    const held = fourCarried();
+    const fifth = placed({ index: 0, room: 1, sprite: 0x1a, attr_bits: 3, col: DROP_COL, row: DROP_ROW });
+    const prep = grid([...held, fifth]);
+    const world = createWorld(prep, 1);
+    fillFour(world, held);
+    pickFifth(prep, world, fifth);
+    assert.equal(world.collected[0], 1);
+    assert.deepEqual(
+      world.inventory.map((it) => it.sprite),
+      [0x1a, 0x0c, 0x0d, 0x0e],
+    );
+    assert.equal(world.collected[13], 0);
+    assert.equal(held[3]!.room, 1);
+    assert.equal(held[3]!.col, DROP_COL - 1);
+    assert.equal(held[3]!.row, DROP_ROW);
+    assert.ok(prep.itemsByRoom[1]!.includes(held[3]!));
+  });
+
+  it("uses col+2 when the left 2×2 is solid or $64", () => {
+    const held = fourCarried();
+    const fifth = placed({ index: 0, room: 1, sprite: 0x1a, attr_bits: 3, col: DROP_COL, row: DROP_ROW });
+    const prep = grid([...held, fifth]);
+    const world = createWorld(prep, 1);
+    fillFour(world, held);
+    poke2x2(world, DROP_COL - 1, DROP_ROW, 0x07);
+    pickFifth(prep, world, fifth);
+    assert.equal(held[3]!.col, DROP_COL + 2);
+    assert.equal(held[3]!.row, DROP_ROW);
+
+    const fifth64 = placed({ index: 1, room: 1, sprite: 0x1b, attr_bits: 3, col: DROP_COL, row: DROP_ROW });
+    const held64 = [0x0c, 0x0d, 0x0e, 0x0f].map((sprite, i) => carried(20 + i, sprite));
+    const prep64 = grid([...held64, fifth64]);
+    const world64 = createWorld(prep64, 1);
+    fillFour(world64, held64);
+    poke2x2(world64, DROP_COL - 1, DROP_ROW, LIFT_ATTR);
+    pickFifth(prep64, world64, fifth64);
+    assert.equal(held64[3]!.col, DROP_COL + 2);
+  });
+
+  it("keeps the blob column when both $D267 probes fail", () => {
+    const held = fourCarried();
+    const fifth = placed({ index: 0, room: 1, sprite: 0x1a, attr_bits: 3, col: DROP_COL, row: DROP_ROW });
+    const prep = grid([...held, fifth]);
+    const world = createWorld(prep, 1);
+    fillFour(world, held);
+    poke2x2(world, DROP_COL - 1, DROP_ROW, 0x07);
+    poke2x2(world, DROP_COL + 2, DROP_ROW, 0x07);
+    pickFifth(prep, world, fifth);
+    assert.equal(held[3]!.col, DROP_COL);
+    assert.equal(held[3]!.row, DROP_ROW);
+  });
+
+  it("skips left at col 0 and right when col ≥ $1D", () => {
+    const held = fourCarried();
+    const fifth = placed({ index: 0, room: 1, sprite: 0x1a, attr_bits: 3, col: 0, row: DROP_ROW });
+    const prep = grid([...held, fifth]);
+    const world = createWorld(prep, 1);
+    fillFour(world, held);
+    pickFifth(prep, world, fifth);
+    assert.equal(held[3]!.col, 2);
+
+    const heldR = [0x0c, 0x0d, 0x0e, 0x0f].map((sprite, i) => carried(30 + i, sprite));
+    const fifthR = placed({ index: 1, room: 1, sprite: 0x1b, attr_bits: 3, col: 0x1d, row: DROP_ROW });
+    const prepR = grid([...heldR, fifthR]);
+    const worldR = createWorld(prepR, 1);
+    fillFour(worldR, heldR);
+    poke2x2(worldR, 0x1d - 1, DROP_ROW, 0x07);
+    pickFifth(prepR, worldR, fifthR);
+    assert.equal(heldR[3]!.col, 0x1d);
+  });
+
+  it("lets the dropped item be picked up again", () => {
+    const held = fourCarried();
+    const fifth = placed({ index: 0, room: 1, sprite: 0x1a, attr_bits: 3, col: DROP_COL, row: DROP_ROW });
+    const prep = grid([...held, fifth]);
+    const world = createWorld(prep, 1);
+    fillFour(world, held);
+    pickFifth(prep, world, fifth);
+    world.pickupLatch = false;
+    const blob = spawnBlob(prep, 1, world);
+    const pos = itemGamePos(held[3]!);
+    blob.x = pos.x;
+    blob.y = 143 - pos.y;
+    tick(prep, blob, { ...idle(), up: true }, world);
+    assert.equal(world.collected[13], 1);
+    assert.equal(world.inventory[0]?.sprite, 0x0f);
   });
 });
 

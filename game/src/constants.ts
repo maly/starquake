@@ -348,6 +348,14 @@ export const ITEM_NEAR = 0x0f;
 export const ITEM_TYPE_BASE = 0x14;
 export const INVENTORY_SLOTS = 4;
 export const ITEM_ORIGIN_ROWS = 0x18;
+/**
+ * `$D1E1` ages carried Y 1→2…5; Y=5 becomes `$32`, then `$D236` relocates
+ * that `$94E8` row (not a permanent Y). `$D20F` screen row = (`$BF`−`$DD1E`)≫3.
+ */
+export const ITEM_OVERFLOW_Y = 0x32;
+export const ITEM_DROP_Y_BASE = 0xbf;
+/** `$D227 CP $1D`: skip the right-hand `$D267` probe when blob col ≥ `$1D`. */
+export const ITEM_DROP_RIGHT_MIN = 0x1d;
 
 /** $A350: 128 bytes, one bit per room. $AAB6 spawns extra 2×2; $A801 clears. */
 export const A350 = 0xa350;

@@ -7,6 +7,8 @@ import {
   CHEOPS_SKIP_MAX,
   CHEOPS_SKIP_MIN,
   CHEOPS_SPRITE_MASK,
+  CLEAR_ATTR,
+  COLS,
   EXTRA_CHEOPS,
   EXTRA_DAC_ROLLS,
   EXTRA_EFFECTS,
@@ -15,9 +17,16 @@ import {
   EXTRA_MIN_DAC,
   EXTRA_SPRITE_BASE,
   GAME_Y_ORIGIN,
+  INVENTORY_SLOTS,
+  ITEM_DROP_RIGHT_MIN,
+  ITEM_DROP_Y_BASE,
   ITEM_NEAR,
   ITEM_ORIGIN_ROWS,
+  LIFT_ATTR,
+  PLAY_ORIGIN,
+  ROOM_COUNT,
   ROOM_SKIP,
+  ROWS,
   STAT_CAP,
 } from "./constants";
 import { requestSfx } from "./audio/effects";
@@ -215,6 +224,76 @@ export function applyCheopsChoice(world: World, slot: number, offers: number[], 
   else it.sprite = spr;
 }
 
+function playAttr(prep: Prepared, world: World, room: number, col: number, playRow: number): number {
+  if (col < 0 || playRow < 0 || col >= COLS || playRow >= ROWS) return CLEAR_ATTR;
+  const fromWorld = world.terrain.attr[playRow * COLS + col];
+  if (fromWorld !== undefined) return fromWorld;
+  return prep.rooms[room]?.attributes[playRow]?.[col] ?? CLEAR_ATTR;
+}
+
+/** `$D267`: 2×2 at (col, screen-row); A=0 when every cell has bit 6 and is not `$64`. */
+function dropCellClear(prep: Prepared, world: World, room: number, col: number, screenRow: number): boolean {
+  const playRow = screenRow - PLAY_ORIGIN;
+  for (const dc of [0, 1]) {
+    for (const dr of [0, 1]) {
+      const attr = playAttr(prep, world, room, col + dc, playRow + dr);
+      if ((attr & 0x40) === 0) return false;
+      if (attr === LIFT_ATTR) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * `$D204`–`$D235`: blob cell, then left col−1 if `$D267` clear, else col+2
+ * when col `< $1D`, else the original column. Row is (`$BF`−`$DD1E`)≫3.
+ */
+export function overflowDropCell(prep: Prepared, blob: BlobState, world: World): { col: number; row: number } {
+  const gameY = GAME_Y_ORIGIN - blob.y;
+  let col = (blob.x >> 3) & 0x1f;
+  const row = ((ITEM_DROP_Y_BASE - gameY) >> 3) & 0x1f;
+  if (col >= 1 && dropCellClear(prep, world, blob.room, col - 1, row)) {
+    return { col: col - 1, row };
+  }
+  if (col < ITEM_DROP_RIGHT_MIN && dropCellClear(prep, world, blob.room, col + 2, row)) {
+    return { col: col + 2, row };
+  }
+  return { col, row };
+}
+
+function findItem(prep: Prepared, index: number): Item | undefined {
+  for (const list of prep.itemsByRoom) {
+    const hit = list.find((it) => it.index === index);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** `$D236`: rewrite the overflowed `$94E8` row into the current room and `$AA02`. */
+function dropOverflowItem(prep: Prepared, blob: BlobState, world: World, dropped: InventoryItem): void {
+  if (dropped.index === undefined) return;
+  const item = findItem(prep, dropped.index);
+  if (!item) return;
+  const dest = overflowDropCell(prep, blob, world);
+  const fromRoom = item.room;
+  if (fromRoom !== blob.room) {
+    const old = prep.itemsByRoom[fromRoom];
+    if (old) {
+      const i = old.indexOf(item);
+      if (i >= 0) old.splice(i, 1);
+    }
+    if (blob.room >= 0 && blob.room < ROOM_COUNT) {
+      (prep.itemsByRoom[blob.room] ??= []).push(item);
+    }
+  }
+  item.room = blob.room;
+  item.col = dest.col & 0x1f;
+  item.row = dest.row & 0x7f;
+  item.sprite = dropped.sprite & 0xff;
+  item.placed = true;
+  world.collected[dropped.index] = 0;
+}
+
 function collectTableItem(prep: Prepared, blob: BlobState, world: World): void {
   const list = prep.itemsByRoom[blob.room] ?? [];
   const bx = blob.x;
@@ -226,8 +305,10 @@ function collectTableItem(prep: Prepared, blob: BlobState, world: World): void {
     const pos = itemGamePos(it);
     if (!nearItem(bx, by, pos.x, pos.y)) continue;
     world.collected[it.index] = 1;
-    world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits });
-    if (world.inventory.length > 4) world.inventory.pop();
+    world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits, index: it.index });
+    if (world.inventory.length > INVENTORY_SLOTS) {
+      dropOverflowItem(prep, blob, world, world.inventory.pop()!);
+    }
     requestSfx(world, 0x0c);
     return;
   }

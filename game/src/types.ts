@@ -182,6 +182,8 @@ export interface EntityCache {
 export interface InventoryItem {
   sprite: number;
   attr: number;
+  /** `$94E8` index; needed to drop the overflowed slot back (`$D236`). */
+  index?: number;
 }
 
 /** Extra 2×2 from $AAB6. X/Y are $DD1D/$DD1E (pixel X, Y from the bottom). */

@@ -19,7 +19,7 @@ npm start
 
 Pak http://127.0.0.1:8000/viewer/ — server je `game/src/server.ts` (port `8000`, nebo `--port` / `PORT`). Obsluhuje `/viewer/` a `/out/`.
 
-`index.html` tahá `../out/rooms.json`, `graphics.json`, `blocks.json`, `sprites.json` a `items.json`. Obrázky místností nepoužívá. Otevření souboru přes `file://` fetch zablokuje.
+`index.html` tahá `out/rooms.json` (a další JSON) vedle stránky. Lokální server mapuje `/viewer/out/` na `out/`. Obrázky místností nepoužívá. Otevření souboru přes `file://` fetch zablokuje.
 
 Nejdřív musí existovat export:
 

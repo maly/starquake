@@ -14,7 +14,7 @@ Nástroje: čtení `game/src/audio/*` + hooky, `npm --prefix game test`, `npm --
 | 3 | BGM smyčka, nezávislý mute/gain, vypnutí hudby nechá SFX; chybějící `viewer/bgm.mp3` neshodí hru | **PASS** |
 | 4 | Zvuk po prvním vstupu (unlock + pending); běh ≪ 20 ms/snímek (`dump.js --timing`) | **PASS** |
 | 5 | Suite zelená (`npm test` / `build` / pytest) | **PASS** |
-| 6 | `docs/MOVEMENT.md` doplněný o zvuk + nedořešené | **PASS** |
+| 6 | `spec/MOVEMENT.md` doplněný o zvuk + nedořešené | **PASS** |
 
 ---
 
@@ -166,4 +166,4 @@ Sekce „Zvuk `$D7C0`“ (tabulka A + 5 B, hooky, BGM, **nedořešené:** `$A41B
 - `game/src/audio/{effects,synth,player,melody}.ts`
 - `viewer/index.html` (`#audio-strip`), `viewer/style.css` (`body.dev-off .panel`)
 - `node viewer/dump.js --timing --repeat 80` → JSON výše
-- `docs/notes/sound-effects.md`, `sound-impl.md`, `docs/MOVEMENT.md`
+- `spec/notes/sound-effects.md`, `sound-impl.md`, `spec/MOVEMENT.md`

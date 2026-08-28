@@ -67,5 +67,5 @@ Pokrýt aspoň: krok, smrt energie (`$13`+`$0F`), smrt terén `$10` jen `$13`, k
 
 ## Dokumenty po implementaci
 
-Do `docs/MOVEMENT.md` sekce zvuk: tabulka A, 5 bajtů, vzorec periody, call map, **nedořešené:** `$A41B`, `$6600`, digit-roll SFX, jitter IM1.
+Do `spec/MOVEMENT.md` sekce zvuk: tabulka A, 5 bajtů, vzorec periody, call map, **nedořešené:** `$A41B`, `$6600`, digit-roll SFX, jitter IM1.
 }

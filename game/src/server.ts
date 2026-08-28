@@ -34,6 +34,11 @@ function resolvePublic(urlPath: string, root: string): string | null {
   if (raw === "/viewer") raw = "/viewer/";
   if (raw.startsWith("/viewer/")) {
     const rest = raw.slice("/viewer/".length);
+    if (rest === "out" || rest.startsWith("out/")) {
+      const file = path.resolve(root, "out", rest.slice("out".length).replace(/^\//, "") || "");
+      if (file === path.join(root, "out")) return null;
+      return under(path.join(root, "out"), file) ? file : null;
+    }
     const file = path.resolve(root, "viewer", rest === "" ? "index.html" : rest);
     return under(path.join(root, "viewer"), file) || file === path.join(root, "viewer", "index.html")
       ? file

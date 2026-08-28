@@ -38,6 +38,9 @@ describe("static server", () => {
       const json = (await data.json()) as { rooms: unknown[] };
       assert.equal(json.rooms.length, 512);
 
+      const beside = await fetch(new URL("out/rooms.json", url), { method: "HEAD" });
+      assert.equal(beside.status, 200);
+
       const traversal = await fetch(`http://127.0.0.1:${port}/out/../game/package.json`);
       assert.equal(traversal.status, 404);
 

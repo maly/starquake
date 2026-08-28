@@ -46,7 +46,7 @@ Vytvoří:
 | `out/actors.png` / `actors.json` | GRAFIX/BLOB snímky (postava, vznášedlo, vetřelci) |
 | `out/items.json` | 45 záznamů `$94E8` po prvním vstupu (souřadnice předpočítané, sebrání a extra objekty zůstávají stavové) |
 
-Formát souborů: [`docs/FORMAT.md`](docs/FORMAT.md). Celá pohyblivá vrstva není statická mapa 512 místností, počáteční polohy předmětů v `$94E8` ale ano — rozbor `$AA30`: [`docs/AA30.md`](docs/AA30.md).
+Formát souborů: [`spec/FORMAT.md`](spec/FORMAT.md). Celá pohyblivá vrstva není statická mapa 512 místností, počáteční polohy předmětů v `$94E8` ale ano — rozbor `$AA30`: [`spec/AA30.md`](spec/AA30.md).
 
 ## Render místností
 
@@ -88,17 +88,19 @@ npm test
 
 Sestaví `viewer/bundle.js` a `viewer/dump.js`, spustí typovou kontrolu a unit testy pohybu. Python `pytest tests/test_viewer.py` dál porovnává rastr proti PNG.
 
-Konstanty pohybu: [`docs/MOVEMENT.md`](docs/MOVEMENT.md).
+Konstanty pohybu: [`spec/MOVEMENT.md`](spec/MOVEMENT.md).
 
 ## Prohlížeč mapy
 
-Statická stránka v `viewer/`. Čte JSON z `out/`, ne PNG. Vnitřní plátno je 256×144, zvětšení je celočíselné přes CSS (`image-rendering: pixelated`), jeden `putImageData` na snímek.
+Statická stránka v `viewer/` (GitHub Pages skládá kopii do `docs/`). Čte JSON z `out/` vedle `index.html` (`out/rooms.json`, lokálně i `/viewer/out/`). Ne PNG. Vnitřní plátno je 256×144, zvětšení je celočíselné přes CSS (`image-rendering: pixelated`), jeden `putImageData` na snímek.
 
 ```powershell
 npm start
 ```
 
 Otevře http://127.0.0.1:8000/viewer/ (TypeScript server v `game/src/server.ts`, port `--port` nebo `PORT`). Q/A/O/P pohybují BLOBem (nahoru sběr / nástup na pad, dolů plošinka), mezerník střílí (na padu `$CA15`). O/P na teleportu otevře zadání 5písmenného kódu. PageUp/PageDown mění místnost. `#168` otevře místnost 168. Panel ukáže `$DD22`, pad a jméno teleportu. `?dev=0` skryje vývojářský panel.
+
+GitHub Pages: workflow `.github/workflows/pages.yml` spustí extract + `npm --prefix game run build` + `pages` a nasadí obsah `docs/` (https://maly.github.io/starquake/).
 
 Porovnání rastru proti `out/rooms/room_<id>.png` a měření času je v `tests/test_viewer.py` (`node viewer/dump.js`). Na tomto stroji vyšel průměr **0,30 ms** na místnost (řádově 3000 snímků/s), což je pod 20 ms potřebnými pro 50 Hz.
 

@@ -112,7 +112,7 @@ tests/test_items.py tests/test_transport.py tests/test_death.py tests/test_goal.
 2. `drawStatus` **nekouše** world stats na `$7F` (to dělá `clampWorldStats`); vizuál bary ano. Emu `$D425` zapisuje strop do paměti.
 3. Inventář se sprity: ATTR/bitmap slotů vs `$DB24` v tomto běhu neporovnán buňka-po-buňce.
 4. `$D4E9` inkrementální update jedné buňky baru — engine spoléhá na plný `drawStatus` každý frame (dostačuje vizuálně, jiná cesta než ROM).
-5. `docs/notes/ui-messages.md` open Q #5 stále zmiňuje starý `window.prompt` u teleportu — **zastaralé** vůči aktuálnímu kódu; ponecháno (verify doc to opravuje fakticky).
+5. `spec/notes/ui-messages.md` open Q #5 stále zmiňuje starý `window.prompt` u teleportu — **zastaralé** vůči aktuálnímu kódu; ponecháno (verify doc to opravuje fakticky).
 
 ## Soubory důkazů
 

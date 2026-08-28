@@ -11,4 +11,7 @@ venv/
 .coverage
 htmlcov/
 *.png
-!docs/**
+!spec/**
+# generated GitHub Pages (npm --prefix game run pages)
+/docs/*
+!/docs/.nojekyll

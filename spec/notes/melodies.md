@@ -177,7 +177,7 @@ Default `$DA01 LD DE,($6A34)` je start id 3; `$D9DF` ho vždy přepíše.
 
 ## 4. Vztah k 50 Hz smyčce
 
-Herní snímek (`docs/MOVEMENT.md`): `$C54F CALL $D9C8` → `$A418 JP $A57B` → **`$A5DC HALT`** → kresba `$DF70` / `$D8B1` / … `$A415`. `HALT` čeká na IM1 (~50 Hz). `FRAMES` `$5C78` zvedá ISR.
+Herní snímek (`spec/MOVEMENT.md`): `$C54F CALL $D9C8` → `$A418 JP $A57B` → **`$A5DC HALT`** → kresba `$DF70` / `$D8B1` / … `$A415`. `HALT` čeká na IM1 (~50 Hz). `FRAMES` `$5C78` zvedá ISR.
 
 `$D9DE` **`HALT` nevolá**. Místo toho `DI` + CPU smyčka. Důsledky:
 

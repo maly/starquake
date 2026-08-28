@@ -31,7 +31,8 @@ import { beginMenuUi, feedMenuKey } from "./ui/menu";
 import { drawUiOverlay, feedCheopsKey, feedTeleportKey, idleUi, isUiBlocking } from "./ui/overlay";
 import { PLAY_Y0, clearScreen, newScreenBuffers, pastePlayfield } from "./ui/screen";
 
-const DATA_BASE = "../out";
+/** Same-origin `out/` next to the page (Pages `docs/out`, local `/viewer/out`). */
+const DATA_BASE = "out";
 
 const keys = { left: false, right: false, up: false, down: false, fire: false };
 
@@ -424,7 +425,7 @@ void boot().catch((err: Error) => {
   const el = document.getElementById("status");
   if (el) {
     el.textContent =
-      "Nelze načíst data. python -m http.server 8000 z kořene repozitáře, /viewer/ (" + err.message + ")";
+      "Nelze načíst data. npm start z kořene repozitáře, /viewer/ (" + err.message + ")";
     el.className = "status error";
   }
 });

@@ -12,7 +12,8 @@ Poslední commit: `8cf42be`. `tmp_*` a `music/` necommituj.
 - Collision/static tile export (`rooms.json` `solid` / `$D280` overlay) neměň.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
 - Zatím **neimplementovat:** Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří (1× v enginu), 1. tick Up bez `$14+` vsune `00 00`. `$6600` skip. Hop `TEMP_JUMP_*`. `$D3C1` mezery u stroje `$0E` ne.
-- Konstanty s ROM adresami do `docs/MOVEMENT.md` a comments v `constants.ts`.
+- Konstanty s ROM adresami do `spec/MOVEMENT.md` a comments v `constants.ts`.
+- `docs/` je výstup GitHub Pages (viewer + `out/*.json`); ROM poznámky jsou v `spec/`.
 - Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`, `tmp_security_probe.py`, `tmp_core_probe.py`, `tmp_score_probe.py`, `tmp_ui_layout_probe.py`, `tmp_ui_verify_probe.py`, `tmp_ui_engine_hud.ts`, `tmp_sfx_probe.py`, `tmp_melody_probe.py` (+ další `tmp_ui_*` / `tmp_sfx_*`).
 
 Ověření:
@@ -52,7 +53,7 @@ Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přec
 
 Souřadnice: `$DD1D` X zleva, `$DD1E` Y odspodu; playY = `143 − gameY` (playfield-local). Compose: playfield Y += 48. Start Blob: X=`$88` Y=`$3F`. Entity Y je game-Y.
 
-Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`, `pulse-spark.md`, `item-effects.md`, `security-doors.md`, `core.md`, `endgame-score.md`, `ui-layout.md`, `ui-text.md`, `ui-messages.md`, `ui-verify.md`, `sound-effects.md`, `melodies.md`, `sound-impl.md`, `sound-verify.md`. Konstanty: `docs/MOVEMENT.md`.
+Rozbory: `spec/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md`, `kill-terrain.md`, `kill-enemies.md`, `pulse-spark.md`, `item-effects.md`, `security-doors.md`, `core.md`, `endgame-score.md`, `ui-layout.md`, `ui-text.md`, `ui-messages.md`, `ui-verify.md`, `sound-effects.md`, `melodies.md`, `sound-impl.md`, `sound-verify.md`. Konstanty: `spec/MOVEMENT.md`.
 
 ### Tick
 
@@ -83,7 +84,7 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP/Cheops overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; menu `intro.mp3`, hra `bgm.mp3` smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
 
-Ověřeno: `npm test` 211 pass. HEAD `8cf42be`.
+Ověřeno: `npm test` 212 pass. HEAD `8cf42be` (Pages workflow na working tree).
 
 ## Otevřené
 
@@ -106,6 +107,10 @@ Ověřeno: `npm test` 211 pass. HEAD `8cf42be`.
 16. Inventář ve statusu: XOR blit vs přesné `$DB24` timing; HUD redraw každý frame (ROM chrome jen `$A426`).
 
 ## Sezení
+
+### 2026-08-28 — GitHub Pages `docs/`
+
+ROM poznámky `docs/` → `spec/`. `docs/` je výstup vieweru (`assemble-pages`). Workflow extract + build + deploy Pages. Lokálně `DATA_BASE=out` přes `/viewer/out/`.
 
 ### 2026-08-28 — `$6399` panel ze živého `$D2DE`
 
@@ -149,7 +154,7 @@ Extra `$19` + Up: overlay CHEOPS KEY CODE, `$D5FD` A=2 BC=`$0F0D` (inventář 2 
 
 ### 2026-08-28 — puls `$DB88` persist XOR
 
-Kořen: `$A66C` volá `$DB88` (XOR na obrazovku), ne replace. Replace aktuální L6/L7 kreslil hustý blob („stack fází“). Testy ten model držely. `xorInk` teď persistuje L5 toggl + anim XOR; dvě L7 se vyruší; perioda 8 on/off se vrátí na prázdno. Bundle přestavěn. Rozbor: `docs/notes/pulse-spark.md`.
+Kořen: `$A66C` volá `$DB88` (XOR na obrazovku), ne replace. Replace aktuální L6/L7 kreslil hustý blob („stack fází“). Testy ten model držely. `xorInk` teď persistuje L5 toggl + anim XOR; dvě L7 se vyruší; perioda 8 on/off se vrátí na prázdno. Bundle přestavěn. Rozbor: `spec/notes/pulse-spark.md`.
 
 `$A41B`/`$A57B` zapojeno: `channel.ts`, hooky palba/pád/dopad/plošinka/oblaka/spawn/kill/ambient. PCM 20 ms / tick.
 
@@ -170,7 +175,7 @@ Orchestrátor: paralelní rozbory SFX / melodie → rozhodnutí sporů → imple
 2. Kanál `$A41B`/`$A57B` (palba/pád/plošinka) **není** `$D7C0` — mimo toto zadání.
 3. `$D7C0` v ROM busy-wait; engine hraje asynchronně (50 Hz se nesmí zastavit). ROM smyčky `B=n CALL` u overlay/jádra = jeden `requestSfx` na fázi.
 
-Rozbory: `docs/notes/sound-effects.md`, `melodies.md`. Rozhodnutí: `sound-impl.md`. Verify: `sound-verify.md` (`all_pass`). Bez commitu. MP3 dodá zadavatel (`viewer/bgm.mp3`).
+Rozbory: `spec/notes/sound-effects.md`, `melodies.md`. Rozhodnutí: `sound-impl.md`. Verify: `sound-verify.md` (`all_pass`). Bez commitu. MP3 dodá zadavatel (`viewer/bgm.mp3`).
 
 ### 2026-08-27 — puls `$DB88` — vzdáváme, odloženo
 
@@ -195,7 +200,7 @@ Orchestrátor: 3 paralelní rozbory → rozhodnutí sporů → implementace → 
 2. Hint „`$D5FD` = čtení znaků“ je **špatně**. `$D5FD` = inventářová minihra dveří (3×`$09`–`$0D`); klávesnici čte `$D5C8` u teleportu (5 znaků).
 3. Display: logicky 256×192, CSS ×2 → 512×384 (výhrada uživatele).
 
-Rozbory: `docs/notes/ui-layout.md`, `ui-text.md`, `ui-messages.md`. Verify: `ui-verify.md` (0 mismatch HUD vs emu). Bez commitu.
+Rozbory: `spec/notes/ui-layout.md`, `ui-text.md`, `ui-messages.md`. Verify: `ui-verify.md` (0 mismatch HUD vs emu). Bez commitu.
 
 ### 2026-08-26 — scéna jádra `$A6C1` (koule / Blob / `$C6`)
 

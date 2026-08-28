@@ -5298,7 +5298,7 @@
   }
 
   // src/main.ts
-  var DATA_BASE = "../out";
+  var DATA_BASE = "out";
   var keys = { left: false, right: false, up: false, down: false, fire: false };
   function input() {
     return { left: keys.left, right: keys.right, up: keys.up, down: keys.down, fire: keys.fire };
@@ -5638,7 +5638,7 @@
   void boot().catch((err) => {
     const el = document.getElementById("status");
     if (el) {
-      el.textContent = "Nelze na\u010D\xEDst data. python -m http.server 8000 z ko\u0159ene repozit\xE1\u0159e, /viewer/ (" + err.message + ")";
+      el.textContent = "Nelze na\u010D\xEDst data. npm start z ko\u0159ene repozit\xE1\u0159e, /viewer/ (" + err.message + ")";
       el.className = "status error";
     }
   });

@@ -90,6 +90,10 @@ export interface Prepared {
   blocks: number[][];
   rooms: Room[];
   itemsByRoom: Item[][];
+  /** Live `$94E8` (45). */
+  itemTable?: Item[];
+  /** Snapshot copy for `$6351` reset. */
+  itemTemplate?: Item[];
   /** Object $0C stations per room, last one is $D2CA. */
   stationsByRoom?: Hotspot[][];
   /** Object $0D teleports per room. */
@@ -214,6 +218,8 @@ export interface World {
   pickupLatch: boolean;
   dac0: number;
   dac: DacState;
+  /** `$D2C6` freeze of FRAMES at new game (`$636F`). */
+  d2c6: number;
   entities: Entity[];
   entityCache: EntityCache | null;
   cacheRoom: number;
@@ -278,6 +284,8 @@ export interface World {
   frames: number;
   /** `$D2DE` nine core IDs; bit7 = still needed. */
   d2de: number[];
+  /** Original `$D2DE` after `$6399` (bit7 set); panel keeps these after delivery overwrites the slot with 0…8. */
+  d2deNeed: number[];
   /** `$D2E7` cores left (start 9). */
   coresLeft: number;
   /** `$D2E8` even-delivery pairs / core guardians (0…5). */

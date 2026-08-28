@@ -1,5 +1,7 @@
 import {
   CELL,
+  CHEOPS_DIGIT_COL,
+  CHEOPS_DIGIT_ROW,
   CHEOPS_MSG_CODE,
   CHEOPS_MSG_EXCHANGE,
   CHEOPS_MSG_HINT,
@@ -7,13 +9,42 @@ import {
   CHEOPS_OFFERS,
   CHEOPS_SFX_INTRO,
   CHEOPS_SFX_PICK,
+  D5FD_ATTR_OK,
+  D5FD_ATTR_WAIT,
+  D5FD_DIGIT_STRIDE,
+  D5FD_FAIL_FLASH,
+  D5FD_INTRO_HALT,
+  D5FD_INV_COL0,
+  D5FD_INV_ROW,
+  D5FD_MATCH_FLASH,
+  D5FD_OK_FLASH,
+  D5FD_PAUSE,
+  D5FD_ROLL,
+  D5FD_SFX_MATCH,
+  D5FD_SFX_ROLL_BASE,
+  DOOR_DIGIT_COL,
+  DOOR_DIGIT_ROW,
+  DOOR_KEY_SPRITE,
   DOOR_MSG_BAD,
   DOOR_MSG_OK,
+  INTRO_TITLE,
+  MENU_GOODBYE,
+  MENU_QUIT_MSG,
+  DOOR_SINGLE_WILDCARD,
+  DOOR_UDG_COL_L,
+  DOOR_UDG_COL_R,
+  DOOR_UDG_LEFT,
+  DOOR_UDG_RIGHT,
+  DOOR_UDG_ROW,
   TELEPORT_MSG_BAD,
   TELEPORT_MSG_OK,
   TELEPORT_NAME_LEN,
+  TELEPORT_UDG,
+  TELEPORT_UDG_COL,
+  TELEPORT_UDG_ROW,
 } from "../constants";
 import { requestSfx } from "../audio/effects";
+import { dacStep } from "../entities";
 import {
   applyCheopsChoice,
   pickCheopsSlot,
@@ -28,6 +59,7 @@ import {
   teleportNameForRoom,
 } from "../objects";
 import type { Prepared, World } from "../types";
+import { drawMenuOverlay, type MenuUi } from "./menu";
 import { newPrintState, printMessage } from "./print";
 import { cellIndex, clearPlayfield, SCREEN_COLS, type ScreenBuffers } from "./screen";
 
@@ -45,16 +77,29 @@ export const MSG_DASHES = "- - - - -";
 export const MSG_TP_OK = "NOW TELEPORTING";
 export const MSG_TP_BAD = "CODE NOT RECOGNISED";
 
-export type UiKind = "none" | "door" | "teleport" | "cheops";
+export type UiKind = "none" | "door" | "teleport" | "cheops" | "menu";
+
+/** Shared `$D5FD` phases before the caller-specific result text. */
+export type D5fdPhase = "intro" | "roll" | "match" | "pause" | "result" | "done";
 
 export interface DoorUi {
   kind: "door";
-  phase: "intro" | "result" | "done";
+  phase: D5fdPhase;
   ok: boolean;
   /** Bit0 of `$DD23` when the door was opened (Right=1 → X+`$30`). */
   openRight: boolean;
   ticks: number;
   digits: number[];
+  digitIndex: number;
+  /** Slot flashed by `$D64C` (`($DAC0)∧$1F % N`). */
+  rollSlot: number;
+  /** `$D589` ink after `$D55F`. */
+  ink: number;
+  /** Pair flags `$03` then `$07` after a match. */
+  flags: number[];
+  matched: boolean[];
+  /** HUD column of the inventory 2×2 flashed at `$D6F6`. */
+  invCols: number[];
 }
 
 export interface TeleportUi {
@@ -71,17 +116,23 @@ export interface TeleportUi {
 
 export interface CheopsUi {
   kind: "cheops";
-  phase: "intro" | "result" | "exchange" | "done";
+  phase: D5fdPhase | "exchange";
   ok: boolean;
   chosen: boolean;
   ticks: number;
   digits: number[];
+  digitIndex: number;
+  rollSlot: number;
+  ink: number;
+  flags: number[];
+  matched: boolean[];
+  invCols: number[];
   slot: number;
   given: number;
   offers: number[];
 }
 
-export type UiState = { kind: "none" } | DoorUi | TeleportUi | CheopsUi;
+export type UiState = { kind: "none" } | DoorUi | TeleportUi | CheopsUi | MenuUi;
 
 export function idleUi(): UiState {
   return { kind: "none" };
@@ -92,17 +143,73 @@ function printAt(buf: ScreenBuffers, row: number, col: number, text: string, ink
   printMessage(buf, newPrintState(), bytes);
 }
 
+/** `$D689`/`$D6AB`: which digits match, and the HUD col of the slot that covered them. */
+function planDigitMatches(world: World, digits: number[]): { matched: boolean[]; invCols: number[] } {
+  const matched = digits.map(() => false);
+  const invCols = digits.map(() => D5FD_INV_COL0);
+  const used = world.inventory.map(() => false);
+  for (let d = 0; d < digits.length; d++) {
+    let hit = -1;
+    for (let i = 0; i < world.inventory.length && i < 4; i++) {
+      if (used[i]) continue;
+      if ((world.inventory[i]!.sprite & 0xff) === DOOR_KEY_SPRITE) {
+        hit = i;
+        break;
+      }
+    }
+    if (hit < 0) {
+      for (let i = 0; i < world.inventory.length && i < 4; i++) {
+        if (used[i]) continue;
+        if ((world.inventory[i]!.sprite & 0xff) === (digits[d]! & 0xff)) {
+          hit = i;
+          used[i] = true;
+          break;
+        }
+      }
+    }
+    if (hit < 0) {
+      for (let i = 0; i < world.inventory.length && i < 4; i++) {
+        if (used[i]) continue;
+        if ((world.inventory[i]!.sprite & 0xff) === DOOR_SINGLE_WILDCARD) {
+          hit = i;
+          used[i] = true;
+          break;
+        }
+      }
+    }
+    if (hit >= 0) {
+      matched[d] = true;
+      invCols[d] = D5FD_INV_COL0 + hit * 2;
+    }
+  }
+  return { matched, invCols };
+}
+
+function d5fdFields(world: World, digits: number[]) {
+  const { matched, invCols } = planDigitMatches(world, digits);
+  return {
+    digitIndex: 0,
+    rollSlot: 0,
+    ink: 7,
+    flags: digits.map(() => D5FD_ATTR_WAIT),
+    matched,
+    invCols,
+  };
+}
+
 /** Door overlay intro: titles; result comes from inventory (`$D5FD`), not a typed code. */
 export function beginDoorUi(world: World, room: number, openRight: boolean): DoorUi {
   const ok = doorKeysAccepted(world, room);
   requestSfx(world, 0x08);
+  const digits = expectedDoorCode(room);
   return {
     kind: "door",
     phase: "intro",
     ok,
     openRight,
     ticks: 0,
-    digits: expectedDoorCode(room),
+    digits,
+    ...d5fdFields(world, digits),
   };
 }
 
@@ -123,13 +230,15 @@ export function beginTeleportUi(room: number, world?: World): TeleportUi {
 /** `$CCF1`: CHEOPS KEY CODE then `$D5FD` A=2. Exchange after OK. */
 export function beginCheopsUi(world: World, room: number): CheopsUi {
   requestSfx(world, CHEOPS_SFX_INTRO);
+  const digits = expectedCheopsCode(room);
   return {
     kind: "cheops",
     phase: "intro",
     ok: cheopsKeysAccepted(world, room),
     chosen: false,
     ticks: 0,
-    digits: expectedCheopsCode(room),
+    digits,
+    ...d5fdFields(world, digits),
     slot: 0,
     given: 0,
     offers: [],
@@ -145,35 +254,23 @@ function enterCheopsExchange(ui: CheopsUi, world: World): void {
   ui.ticks = 0;
 }
 
-export function drawDoorOverlay(buf: ScreenBuffers, ui: DoorUi): void {
-  clearPlayfield(buf);
-  printAt(buf, 8, 9, MSG_SECURITY_DOOR);
-  printAt(buf, 15, 10, MSG_ACCESS_CODE);
-  if (ui.phase === "result" || ui.phase === "done") {
-    if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
-    else printAt(buf, 21, 6, MSG_ACCESS_BAD);
-  }
-}
-
-export function drawTeleportOverlay(buf: ScreenBuffers, ui: TeleportUi): void {
-  clearPlayfield(buf);
-  printAt(buf, 8, 4, MSG_ENTERED);
-  printAt(buf, 10, 8, MSG_TELEPORT);
-  printAt(buf, 12, 6, MSG_CODE_PREFIX + ui.ownName.slice(0, TELEPORT_NAME_LEN));
-  printAt(buf, 14, 8, MSG_ENTER_TP);
-  printAt(buf, 16, 8, MSG_DEST_CODE);
-  if (ui.phase === "prompt" || ui.phase === "input") {
-    printAt(buf, 19, 12, MSG_DASHES);
-    // echo typed chars as "X " over the dashes
-    let col = 12;
-    for (let i = 0; i < ui.buffer.length; i++) {
-      printAt(buf, 19, col, ui.buffer[i]! + " ");
-      col += 2;
-    }
-  }
-  if (ui.phase === "result" || ui.phase === "done") {
-    if (ui.ok) printAt(buf, 21, 9, MSG_TP_OK);
-    else printAt(buf, 21, 6, MSG_TP_BAD);
+function blitGraphic(
+  buf: ScreenBuffers,
+  prep: Prepared | undefined,
+  id: number,
+  row: number,
+  col: number,
+): void {
+  const graphic = prep?.graphics[id];
+  if (!graphic) return;
+  for (const cell of graphic.cells) {
+    const cy = row + cell.row;
+    const cx = col + cell.col;
+    if (cy < 0 || cy >= 24 || cx < 0 || cx >= SCREEN_COLS) continue;
+    const idx = cellIndex(cy, cx);
+    const dst = idx * CELL;
+    for (let py = 0; py < CELL; py++) buf.data[dst + py] = cell.data[py]!;
+    if (cell.attr != null) buf.attr[idx] = cell.attr & 0xff;
   }
 }
 
@@ -191,11 +288,88 @@ function blitSprite(buf: ScreenBuffers, prep: Prepared | undefined, spriteId: nu
   }
 }
 
+function digitAttr(
+  ui: { phase: string; digitIndex: number; rollSlot: number; ink: number; flags: number[] },
+  i: number,
+): number {
+  if (ui.phase === "roll" && i === ui.rollSlot) return ui.ink & 7;
+  if (ui.phase === "match" && i === ui.digitIndex) return (ui.ink & 7) | 2;
+  return ui.flags[i] ?? D5FD_ATTR_WAIT;
+}
+
+function drawDigitRoll(
+  buf: ScreenBuffers,
+  prep: Prepared | undefined,
+  ui: {
+    phase: string;
+    digits: number[];
+    digitIndex: number;
+    rollSlot: number;
+    ink: number;
+    flags: number[];
+    invCols: number[];
+  },
+  row: number,
+  col0: number,
+): void {
+  if (ui.phase === "intro") return;
+  for (let i = 0; i < ui.digits.length; i++) {
+    blitSprite(buf, prep, ui.digits[i]!, row, col0 + i * D5FD_DIGIT_STRIDE, digitAttr(ui, i));
+  }
+  if (ui.phase === "match") {
+    const col = ui.invCols[ui.digitIndex] ?? D5FD_INV_COL0;
+    const attr = (ui.ink & 7) | 2;
+    for (let dy = 0; dy < 2; dy++) {
+      for (let dx = 0; dx < 2; dx++) {
+        const idx = cellIndex(D5FD_INV_ROW + dy, col + dx);
+        if (idx >= 0 && idx < buf.attr.length) buf.attr[idx] = attr;
+      }
+    }
+  }
+}
+
+export function drawDoorOverlay(buf: ScreenBuffers, ui: DoorUi, prep?: Prepared): void {
+  clearPlayfield(buf);
+  printAt(buf, 8, 9, MSG_SECURITY_DOOR);
+  printAt(buf, 15, 10, MSG_ACCESS_CODE);
+  blitGraphic(buf, prep, DOOR_UDG_LEFT, DOOR_UDG_ROW, DOOR_UDG_COL_L);
+  blitGraphic(buf, prep, DOOR_UDG_RIGHT, DOOR_UDG_ROW, DOOR_UDG_COL_R);
+  drawDigitRoll(buf, prep, ui, DOOR_DIGIT_ROW, DOOR_DIGIT_COL);
+  if (ui.phase === "result" || ui.phase === "done") {
+    if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
+    else printAt(buf, 21, 6, MSG_ACCESS_BAD);
+  }
+}
+
+export function drawTeleportOverlay(buf: ScreenBuffers, ui: TeleportUi, prep?: Prepared): void {
+  clearPlayfield(buf);
+  printAt(buf, 8, 4, MSG_ENTERED);
+  printAt(buf, 10, 8, MSG_TELEPORT);
+  printAt(buf, 12, 6, MSG_CODE_PREFIX + ui.ownName.slice(0, TELEPORT_NAME_LEN));
+  blitGraphic(buf, prep, TELEPORT_UDG, TELEPORT_UDG_ROW, TELEPORT_UDG_COL);
+  printAt(buf, 14, 8, MSG_ENTER_TP);
+  printAt(buf, 16, 8, MSG_DEST_CODE);
+  if (ui.phase === "prompt" || ui.phase === "input") {
+    printAt(buf, 19, 12, MSG_DASHES);
+    // echo typed chars as "X " over the dashes
+    let col = 12;
+    for (let i = 0; i < ui.buffer.length; i++) {
+      printAt(buf, 19, col, ui.buffer[i]! + " ");
+      col += 2;
+    }
+  }
+  if (ui.phase === "result" || ui.phase === "done") {
+    if (ui.ok) printAt(buf, 21, 9, MSG_TP_OK);
+    else printAt(buf, 21, 6, MSG_TP_BAD);
+  }
+}
+
 export function drawCheopsOverlay(buf: ScreenBuffers, ui: CheopsUi, prep?: Prepared): void {
   clearPlayfield(buf);
   printAt(buf, 9, 6, CHEOPS_MSG_TITLE);
-  if (ui.phase === "intro" || ui.phase === "result") {
+  if (ui.phase === "intro" || ui.phase === "roll" || ui.phase === "match" || ui.phase === "pause" || ui.phase === "result") {
     printAt(buf, 13, 9, CHEOPS_MSG_CODE);
+    drawDigitRoll(buf, prep, ui, CHEOPS_DIGIT_ROW, CHEOPS_DIGIT_COL);
   }
   if (ui.phase === "result") {
     if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
@@ -214,9 +388,87 @@ export function drawCheopsOverlay(buf: ScreenBuffers, ui: CheopsUi, prep?: Prepa
 }
 
 export function drawUiOverlay(buf: ScreenBuffers, ui: UiState, prep?: Prepared): void {
-  if (ui.kind === "door") drawDoorOverlay(buf, ui);
-  else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui);
+  if (ui.kind === "door") drawDoorOverlay(buf, ui, prep);
+  else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui, prep);
   else if (ui.kind === "cheops") drawCheopsOverlay(buf, ui, prep);
+  else if (ui.kind === "menu") drawMenuOverlay(buf, ui, prep);
+}
+
+interface D5fdUi {
+  phase: D5fdPhase | "exchange";
+  ticks: number;
+  digits: number[];
+  digitIndex: number;
+  rollSlot: number;
+  ink: number;
+  flags: number[];
+  matched: boolean[];
+  ok: boolean;
+}
+
+function nextD5fdInk(world: World, prev: number): number {
+  dacStep(world.dac);
+  let a = ((world.dac.dac0 >> 8) & 0x3f);
+  while (a >= 6) a -= 6;
+  a = (a + 2) & 0xff;
+  if (a === (prev & 0xff)) a ^= 1;
+  return a;
+}
+
+function advanceDigit(ui: D5fdUi): void {
+  ui.digitIndex += 1;
+  ui.ticks = 0;
+  if (ui.digitIndex >= ui.digits.length) ui.phase = "pause";
+  else ui.phase = "roll";
+}
+
+/** `$D64C`…`$D723` then HALT `$14` then result. Returns true when result text should start. */
+function tickD5fd(ui: D5fdUi, world?: World): boolean {
+  if (ui.phase === "result" || ui.phase === "done" || ui.phase === "exchange") return false;
+  ui.ticks += 1;
+  if (ui.phase === "intro") {
+    if (ui.ticks >= D5FD_INTRO_HALT) {
+      ui.phase = "roll";
+      ui.ticks = 0;
+      ui.digitIndex = 0;
+    }
+    return false;
+  }
+  if (ui.phase === "roll") {
+    if (world) {
+      ui.ink = nextD5fdInk(world, ui.ink);
+      const n = ui.digits.length || 1;
+      let slot = world.dac.dac0 & 0x1f;
+      while (slot >= n) slot -= n;
+      ui.rollSlot = slot;
+      requestSfx(world, ((world.dac.dac0 >> 8) & 3) + D5FD_SFX_ROLL_BASE);
+    }
+    if (ui.ticks >= D5FD_ROLL) {
+      if (ui.matched[ui.digitIndex]) {
+        ui.phase = "match";
+        ui.ticks = 0;
+        ui.flags[ui.digitIndex] = D5FD_ATTR_OK;
+        if (world) requestSfx(world, D5FD_SFX_MATCH);
+      } else {
+        advanceDigit(ui);
+      }
+    }
+    return false;
+  }
+  if (ui.phase === "match") {
+    ui.ink = ((ui.ink ^ 7) | 2) & 0xff;
+    if (world) requestSfx(world, D5FD_SFX_MATCH);
+    if (ui.ticks >= D5FD_MATCH_FLASH) advanceDigit(ui);
+    return false;
+  }
+  if (ui.phase === "pause") {
+    if (ui.ticks >= D5FD_PAUSE) {
+      ui.phase = "result";
+      ui.ticks = 0;
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -224,21 +476,16 @@ export function drawUiOverlay(buf: ScreenBuffers, ui: UiState, prep?: Prepared):
  * and clear the UI.
  */
 export function tickDoorUi(ui: DoorUi, world?: World): boolean {
-  ui.ticks += 1;
-  if (ui.phase === "intro" && ui.ticks >= 25) {
-    ui.phase = "result";
-    ui.ticks = 0;
-    if (world) {
-      if (ui.ok) {
-        requestSfx(world, 0x0a);
-        requestSfx(world, 0x0f);
-      } else {
-        requestSfx(world, 0x0f);
-      }
+  if (tickD5fd(ui, world) && world) {
+    if (ui.ok) requestSfx(world, 0x0a);
+    requestSfx(world, 0x0f);
+  }
+  if (ui.phase === "result") {
+    ui.ticks += 1;
+    if (ui.ticks >= (ui.ok ? D5FD_OK_FLASH : D5FD_FAIL_FLASH)) {
+      ui.phase = "done";
+      return true;
     }
-  } else if (ui.phase === "result" && ui.ticks >= 40) {
-    ui.phase = "done";
-    return true;
   }
   return ui.phase === "done";
 }
@@ -246,18 +493,17 @@ export function tickDoorUi(ui: DoorUi, world?: World): boolean {
 export function tickCheopsUi(ui: CheopsUi, world?: World): boolean {
   if (ui.phase === "done") return true;
   if (ui.phase === "exchange") return false;
-  ui.ticks += 1;
-  if (ui.phase === "intro" && ui.ticks >= 25) {
-    ui.phase = "result";
-    ui.ticks = 0;
-    if (world) requestSfx(world, 0x0f);
-  } else if (ui.phase === "result" && ui.ticks >= 40) {
-    if (ui.ok && world) {
-      enterCheopsExchange(ui, world);
-      return false;
+  if (tickD5fd(ui, world) && world) requestSfx(world, 0x0f);
+  if (ui.phase === "result") {
+    ui.ticks += 1;
+    if (ui.ticks >= (ui.ok ? D5FD_OK_FLASH : D5FD_FAIL_FLASH)) {
+      if (ui.ok && world) {
+        enterCheopsExchange(ui, world);
+        return false;
+      }
+      ui.phase = "done";
+      return true;
     }
-    ui.phase = "done";
-    return true;
   }
   return false;
 }
@@ -378,6 +624,9 @@ export function syncWorldMessage(world: World, ui: UiState): void {
     } else {
       world.message = CHEOPS_MSG_CODE;
     }
+  } else if (ui.kind === "menu") {
+    world.message =
+      ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
   }
 }
 

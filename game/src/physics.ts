@@ -63,6 +63,7 @@ import {
   START_FIREPOWER,
   START_LIVES,
   START_PLATFORMS,
+  DOOR_D2C6,
   CORE_ROOM,
   DOOR_MSG_BAD,
   DOOR_MSG_OK,
@@ -91,7 +92,7 @@ import {
 } from "./constants";
 import { deliverCoreParts, initCoreState, initSocketFlags, tickCoreCeremony } from "./core";
 import { copyPadFromBlob, enterNasties, syncHoverpad, tickEnergyDrain, tickNasties } from "./entities";
-import { clearA350Bit, spawnExtra, tickPickup } from "./items";
+import { clearA350Bit, placeCollectiblesInRoom, shuffleCollectibles, spawnExtra, tickPickup } from "./items";
 import {
   evaluateTeleport,
   firstPassage,
@@ -756,7 +757,9 @@ function tickBody(prep: Prepared, blob: BlobState, input: Input, world?: World):
 
   tickEnergyDrain(world);
 
-  const pickupInput = stationed ? { ...input, up: false } : input;
+  // `$C761` / `$CB36` RES 3,$DD23 — Up is gone before `$CB8A` / `$CCF1`.
+  const pickupInput =
+    stationed || world.dd22 === DD22_PAD || world.dd22 === DD22_LIFT ? { ...input, up: false } : input;
   if (tickPickup(prep, blob, pickupInput, world) === "cheops") {
     world.teleportLatch = true;
     world.ui = beginCheopsUi(world, blob.room);
@@ -809,7 +812,14 @@ function tickBody(prep: Prepared, blob: BlobState, input: Input, world?: World):
   if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = ((blob.room % ROOM_COUNT) + ROOM_COUNT) % ROOM_COUNT;
 }
 
-export function createWorld(prep: Prepared, room: number): World {
+export interface CreateWorldOpts {
+  /** `$6351` shuffle of `$94E8` 0–19 from FRAMES. */
+  shuffleItems?: boolean;
+  /** Spectrum `FRAMES` `$5C78` freeze (`$636F`). */
+  frames?: number;
+}
+
+export function createWorld(prep: Prepared, room: number, opts?: CreateWorldOpts): World {
   const core = initCoreState();
   const world: World = {
     terrain: newBuffers(),
@@ -825,6 +835,7 @@ export function createWorld(prep: Prepared, room: number): World {
     pickupLatch: false,
     dac0: 0,
     dac: { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 },
+    d2c6: opts?.frames ?? DOOR_D2C6,
     entities: [],
     entityCache: null,
     cacheRoom: -1,
@@ -860,6 +871,7 @@ export function createWorld(prep: Prepared, room: number): World {
     visitedCount: 0,
     frames: 0,
     d2de: core.d2de,
+    d2deNeed: core.d2deNeed,
     coresLeft: core.coresLeft,
     corePairs: core.corePairs,
     corePhase: null,
@@ -878,6 +890,10 @@ export function createWorld(prep: Prepared, room: number): World {
     chan: emptyChan(),
     buzz: [],
   };
+  if (opts?.shuffleItems) {
+    world.dac = { dac0: world.d2c6, dac2: 0, dac4: 0, db19: 3, db1a: 3 };
+    shuffleCollectibles(prep, world);
+  }
   enterRoom(prep, world, room);
   return world;
 }
@@ -900,6 +916,7 @@ export function enterRoom(prep: Prepared, world: World, room: number, opts?: Ent
   world.pickupLatch = false;
   world.machineSpent = [];
   parkBullet(world);
+  placeCollectiblesInRoom(prep, world, room);
   /** `$A47E` first visit +250 / clear `$A390` bit. */
   if (a390Unvisited(world.a390, room)) {
     addScore(world, SCORE_FIRST_VISIT);

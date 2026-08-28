@@ -18,6 +18,10 @@ import {
   EXTRA_SPRITE_BASE,
   GAME_Y_ORIGIN,
   INVENTORY_SLOTS,
+  ITEM_KEY_ROOMS,
+  ITEM_PAIR_ROOMS,
+  ITEM_SHUFFLE,
+  ITEM_TOOL_ROOMS,
   ITEM_DROP_RIGHT_MIN,
   ITEM_DROP_Y_BASE,
   ITEM_NEAR,
@@ -33,6 +37,131 @@ import { requestSfx } from "./audio/effects";
 import { dacStep, seedDac } from "./entities";
 import type { BlobState } from "./physics";
 import type { InventoryItem, Item, Prepared, World } from "./types";
+
+export function rebuildItemIndex(prep: Prepared): void {
+  prep.itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
+  for (const it of prep.itemTable ?? []) {
+    if (it.sprite === 0xff) continue;
+    if (!it.placed) continue;
+    if ((it.row & 0x7f) < PLAY_ORIGIN) continue;
+    if (it.room === ROOM_SKIP) continue;
+    if (it.room >= 0 && it.room < ROOM_COUNT) prep.itemsByRoom[it.room]!.push(it);
+  }
+}
+
+function rrca3(a: number): number {
+  let v = a & 0xff;
+  for (let i = 0; i < 3; i++) v = ((v >> 1) | ((v & 1) << 7)) & 0xff;
+  return v;
+}
+
+function dacReduce(a: number, n: number): number {
+  let v = a & 0xff;
+  const e = n & 0xff;
+  if (e === 0) return 0;
+  do v = (v - e) & 0xff;
+  while (v >= e);
+  return v;
+}
+
+function rollCoreSprites(world: World): void {
+  const slots = Array.from({ length: 9 }, () => 0);
+  for (let n = 5; n > 0; n--) {
+    let sprite = 0;
+    for (;;) {
+      dacStep(world.dac);
+      let a = world.dac.dac0 & 0xff;
+      while (a >= 0x0f) a -= 0x0f;
+      a = (a + 0x89) & 0xff;
+      if (a >= 0x8f) a = (a + 0x0b) & 0xff;
+      if (slots.includes(a)) continue;
+      sprite = a;
+      break;
+    }
+    let slot = 0;
+    for (;;) {
+      dacStep(world.dac);
+      let e = world.dac.dac0 & 0xff;
+      while (e >= 9) e -= 9;
+      e = (e + 9) & 0xff;
+      while (e >= 9) e -= 9;
+      slot = e;
+      if (slots[slot] === 0) break;
+    }
+    slots[slot] = sprite;
+  }
+  for (let b = 9; b > 0; b--) {
+    if (slots[9 - b] === 0) slots[9 - b] = (0x89 - b) & 0xff;
+  }
+  world.d2de = slots;
+  world.d2deNeed = slots.slice();
+}
+
+function writeShuffled(prep: Prepared, index: number, room: number, sprite: number): void {
+  const src = prep.itemTemplate?.[index] ?? prep.itemTable?.[index];
+  const it = prep.itemTable?.[index];
+  if (!it) return;
+  it.room = room & 0x1ff;
+  it.sprite = sprite & 0xff;
+  it.placed = false;
+  it.attr_bits = (src?.attr_bits ?? 0) & 7;
+  it.col = (it.attr_bits << 5) & 0xe0;
+  it.row = (room >> 8) & 1 ? 0x80 : 0;
+}
+
+/** `$6351` / `$648A`: records 0–19 get a new room+sprite from FRAMES/`$DAC6`. */
+export function shuffleCollectibles(prep: Prepared, world: World): void {
+  if (!prep.itemTable || prep.itemTable.length < ITEM_SHUFFLE) return;
+  if (prep.itemTemplate) {
+    prep.itemTable = prep.itemTemplate.map((it) => ({ ...it, raw: [...(it.raw ?? [])] }));
+  }
+  dacStep(world.dac);
+  writeShuffled(prep, 0, ITEM_KEY_ROOMS[world.dac.dac0 & 3]!, 0x0f);
+  dacStep(world.dac);
+  writeShuffled(prep, 1, ITEM_TOOL_ROOMS[world.dac.dac0 & 3]!, 0x10);
+  rollCoreSprites(world);
+  let c = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    dacStep(world.dac);
+    c = world.dac.dac0 & 7;
+    for (let j = 0; j < 9; j++) {
+      c = (c + 1) % 9;
+      let sprite = (world.d2de[c] ?? 0) & 0x7f;
+      if (pass === 1 && ((world.dac.dac0 >> 8) & 0xff) >= 0x96) sprite = (sprite & 7) + 0x1a;
+      sprite &= 0x7f;
+      dacStep(world.dac);
+      const pair = ITEM_PAIR_ROOMS[pass * 9 + j]!;
+      const room = (world.dac.dac0 & 0xff) < 0x7f ? pair[0]! : pair[1]!;
+      writeShuffled(prep, 2 + pass * 9 + j, room, sprite);
+    }
+  }
+  rebuildItemIndex(prep);
+}
+
+/** `$AA57`: one unplaced `$94E8` row for this room onto a `$90` marker. */
+export function placeCollectiblesInRoom(prep: Prepared, world: World, room: number): void {
+  if (room === ROOM_SKIP) return;
+  const marks = prep.extraMarksByRoom?.[room] ?? [];
+  if (!marks.length || !prep.itemTable) return;
+  world.dac = seedDac(room);
+  const slot = dacReduce(((world.dac.dac0 >> 8) ^ (world.d2c6 >> 8)) & 0x7f, marks.length);
+  const mark = marks[slot]!;
+  for (const it of prep.itemTable) {
+    if (it.index >= ITEM_SHUFFLE) continue;
+    if ((it.row & 0x7f) !== 0) continue;
+    if (it.room !== room) continue;
+    let mix = ((world.dac.dac2 & 0xff) ^ (world.d2c6 & 0xff)) & 0x3f;
+    mix = dacReduce(mix, 6);
+    mix = (mix + 2) & 0xff;
+    const attr = rrca3(mix) & 0xe0;
+    it.col = (mark.col & 0x1f) | attr;
+    it.row = (it.row & 0x80) | (mark.row & 0x7f);
+    it.placed = (it.row & 0x7f) >= PLAY_ORIGIN;
+    it.attr_bits = attr >> 5;
+    rebuildItemIndex(prep);
+    break;
+  }
+}
 
 export function itemGamePos(item: Item): { x: number; y: number } {
   const col = item.col & 0x1f;

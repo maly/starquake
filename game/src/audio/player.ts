@@ -1,13 +1,14 @@
 import type { World } from "../types";
 import { SFX_HANG } from "./effects";
 import { SFX_SAMPLE_RATE, sfxPcm } from "./synth";
+import { BGM_INTRO_URL, BGM_LOOP_URL, musicUrlFor } from "./tracks";
 
 const LS_MUTED = "starquake.audio.muted";
 const LS_BGM_MUTED = "starquake.audio.bgmMuted";
 const LS_SFX_GAIN = "starquake.audio.sfxGain";
 const LS_BGM_GAIN = "starquake.audio.bgmGain";
 
-const BGM_URL = "bgm.mp3";
+const MUSIC_URLS = [BGM_INTRO_URL, BGM_LOOP_URL] as const;
 
 function clamp01(n: number): number {
   if (!Number.isFinite(n)) return 0;
@@ -43,8 +44,8 @@ let bgmGainValue = readNum(LS_BGM_GAIN, 0.4);
 let ctx: AudioContext | null = null;
 let sfxGain: GainNode | null = null;
 let bgmGain: GainNode | null = null;
-let bgmEl: HTMLAudioElement | null = null;
-let bgmSource: MediaElementAudioSourceNode | null = null;
+const musicEls = new Map<string, HTMLAudioElement>();
+let musicUrl: string = BGM_LOOP_URL;
 let unlocked = false;
 let nextSfxAt = 0;
 let resumeWait: Promise<void> | null = null;
@@ -72,30 +73,51 @@ function audioContextCtor(): typeof AudioContext | null {
 function applyGains(): void {
   if (sfxGain) sfxGain.gain.value = muted ? 0 : sfxGainValue;
   if (bgmGain) bgmGain.gain.value = muted || bgmMuted ? 0 : bgmGainValue;
-  if (!bgmEl) return;
-  if (muted || bgmMuted || !unlocked) {
-    bgmEl.pause();
-    return;
+  const want = muted || bgmMuted || !unlocked ? null : musicUrl;
+  for (const [url, el] of musicEls) {
+    if (url === want) {
+      const p = el.play();
+      if (p && typeof p.catch === "function") p.catch(() => undefined);
+    } else {
+      el.pause();
+    }
   }
-  const p = bgmEl.play();
-  if (p && typeof p.catch === "function") p.catch(() => undefined);
 }
 
-function setupBgm(ac: AudioContext): void {
-  if (bgmEl) return;
-  const el = new Audio(BGM_URL);
+function attachTrack(ac: AudioContext, url: string): void {
+  if (musicEls.has(url)) return;
+  const el = new Audio(url);
   el.loop = true;
   el.preload = "auto";
   el.addEventListener("error", () => {
-    console.warn("starquake: bgm.mp3 missing or unreadable; BGM silent");
+    console.warn(`starquake: ${url} missing or unreadable; BGM silent`);
   });
-  bgmEl = el;
+  musicEls.set(url, el);
   try {
-    bgmSource = ac.createMediaElementSource(el);
-    bgmSource.connect(bgmGain ?? ac.destination);
+    ac.createMediaElementSource(el).connect(bgmGain ?? ac.destination);
   } catch {
-    console.warn("starquake: cannot attach bgm.mp3 to AudioContext; BGM silent");
+    console.warn(`starquake: cannot attach ${url} to AudioContext; BGM silent`);
   }
+}
+
+function setupBgm(ac: AudioContext): void {
+  for (const url of MUSIC_URLS) attachTrack(ac, url);
+}
+
+/** Pick intro `$5E81`/`$666D` vs in-game loop. Missing file stays silent. */
+export function syncMusic(world: World): void {
+  const next = musicUrlFor(world.ui);
+  if (next !== musicUrl) {
+    const prev = musicEls.get(musicUrl);
+    if (prev) {
+      prev.pause();
+      prev.currentTime = 0;
+    }
+    musicUrl = next;
+    const incoming = musicEls.get(next);
+    if (incoming) incoming.currentTime = 0;
+  }
+  applyGains();
 }
 
 function ensureCtx(): AudioContext | null {

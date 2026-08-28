@@ -25,9 +25,11 @@ export function initSocketFlags(): number[] {
   return CORE_SOCKET_TABLE.map(([, flags]) => flags & 0xff);
 }
 
-export function initCoreState(): { d2de: number[]; coresLeft: number; corePairs: number } {
+export function initCoreState(): { d2de: number[]; d2deNeed: number[]; coresLeft: number; corePairs: number } {
+  const d2de = CORE_D2DE_INIT.map((v) => v & 0xff);
   return {
-    d2de: CORE_D2DE_INIT.map((v) => v & 0xff),
+    d2de,
+    d2deNeed: d2de.slice(),
     coresLeft: CORE_LEFT_INIT,
     corePairs: CORE_PAIRS_INIT,
   };

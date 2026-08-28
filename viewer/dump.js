@@ -205,6 +205,29 @@ var BULLET_HIT = 14;
 var STAT_CAP = 127;
 var START_LIVES = 4;
 var ITEM_COUNT = 45;
+var ITEM_SHUFFLE = 20;
+var ITEM_KEY_ROOMS = [8, 40, 168, 182];
+var ITEM_TOOL_ROOMS = [150, 198, 200, 246];
+var ITEM_PAIR_ROOMS = [
+  [436, 422],
+  [236, 222],
+  [52, 16],
+  [502, 504],
+  [296, 314],
+  [72, 106],
+  [310, 278],
+  [56, 42],
+  [416, 352],
+  [140, 14],
+  [266, 316],
+  [476, 482],
+  [84, 86],
+  [478, 62],
+  [80, 82],
+  [226, 194],
+  [114, 116],
+  [466, 372]
+];
 var ITEM_NEAR = 15;
 var INVENTORY_SLOTS = 4;
 var ITEM_ORIGIN_ROWS = 24;
@@ -298,6 +321,20 @@ var DOOR_SINGLE_WILDCARD = 14;
 var DOOR_DIGIT_MIN = 9;
 var DOOR_MSG_OK = "ACCESS AUTHORISED";
 var DOOR_MSG_BAD = "ACCESS CODE INVALID";
+var D5FD_INTRO_HALT = 15;
+var D5FD_ROLL = 25;
+var D5FD_MATCH_FLASH = 10;
+var D5FD_PAUSE = 20;
+var D5FD_OK_FLASH = 35;
+var D5FD_FAIL_FLASH = 40;
+var D5FD_ATTR_WAIT = 3;
+var D5FD_ATTR_OK = 7;
+var D5FD_SFX_ROLL_BASE = 12;
+var D5FD_SFX_MATCH = 3;
+var MENU_QUIT_MSG = "QUIT THE GAME";
+var MENU_GOODBYE = "SAY GOODBYE TO OLLY...";
+var INTRO_TITLE = "FLIGHT COMPUTER REPORT";
+var D5FD_INV_COL0 = 21;
 var MACHINE_ATTR_HI = 224;
 var MACHINE_FALL = 16;
 var MACHINE_LIFE = 2;
@@ -1635,6 +1672,123 @@ function tickEnergyDrain(world) {
 }
 
 // src/items.ts
+function rebuildItemIndex(prep2) {
+  prep2.itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
+  for (const it of prep2.itemTable ?? []) {
+    if (it.sprite === 255) continue;
+    if (!it.placed) continue;
+    if ((it.row & 127) < PLAY_ORIGIN) continue;
+    if (it.room === ROOM_SKIP) continue;
+    if (it.room >= 0 && it.room < ROOM_COUNT) prep2.itemsByRoom[it.room].push(it);
+  }
+}
+function rrca3(a) {
+  let v = a & 255;
+  for (let i = 0; i < 3; i++) v = (v >> 1 | (v & 1) << 7) & 255;
+  return v;
+}
+function dacReduce(a, n) {
+  let v = a & 255;
+  const e = n & 255;
+  if (e === 0) return 0;
+  do
+    v = v - e & 255;
+  while (v >= e);
+  return v;
+}
+function rollCoreSprites(world) {
+  const slots = Array.from({ length: 9 }, () => 0);
+  for (let n = 5; n > 0; n--) {
+    let sprite = 0;
+    for (; ; ) {
+      dacStep(world.dac);
+      let a = world.dac.dac0 & 255;
+      while (a >= 15) a -= 15;
+      a = a + 137 & 255;
+      if (a >= 143) a = a + 11 & 255;
+      if (slots.includes(a)) continue;
+      sprite = a;
+      break;
+    }
+    let slot = 0;
+    for (; ; ) {
+      dacStep(world.dac);
+      let e = world.dac.dac0 & 255;
+      while (e >= 9) e -= 9;
+      e = e + 9 & 255;
+      while (e >= 9) e -= 9;
+      slot = e;
+      if (slots[slot] === 0) break;
+    }
+    slots[slot] = sprite;
+  }
+  for (let b = 9; b > 0; b--) {
+    if (slots[9 - b] === 0) slots[9 - b] = 137 - b & 255;
+  }
+  world.d2de = slots;
+  world.d2deNeed = slots.slice();
+}
+function writeShuffled(prep2, index, room2, sprite) {
+  const src = prep2.itemTemplate?.[index] ?? prep2.itemTable?.[index];
+  const it = prep2.itemTable?.[index];
+  if (!it) return;
+  it.room = room2 & 511;
+  it.sprite = sprite & 255;
+  it.placed = false;
+  it.attr_bits = (src?.attr_bits ?? 0) & 7;
+  it.col = it.attr_bits << 5 & 224;
+  it.row = room2 >> 8 & 1 ? 128 : 0;
+}
+function shuffleCollectibles(prep2, world) {
+  if (!prep2.itemTable || prep2.itemTable.length < ITEM_SHUFFLE) return;
+  if (prep2.itemTemplate) {
+    prep2.itemTable = prep2.itemTemplate.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
+  }
+  dacStep(world.dac);
+  writeShuffled(prep2, 0, ITEM_KEY_ROOMS[world.dac.dac0 & 3], 15);
+  dacStep(world.dac);
+  writeShuffled(prep2, 1, ITEM_TOOL_ROOMS[world.dac.dac0 & 3], 16);
+  rollCoreSprites(world);
+  let c = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    dacStep(world.dac);
+    c = world.dac.dac0 & 7;
+    for (let j = 0; j < 9; j++) {
+      c = (c + 1) % 9;
+      let sprite = (world.d2de[c] ?? 0) & 127;
+      if (pass === 1 && (world.dac.dac0 >> 8 & 255) >= 150) sprite = (sprite & 7) + 26;
+      sprite &= 127;
+      dacStep(world.dac);
+      const pair = ITEM_PAIR_ROOMS[pass * 9 + j];
+      const room2 = (world.dac.dac0 & 255) < 127 ? pair[0] : pair[1];
+      writeShuffled(prep2, 2 + pass * 9 + j, room2, sprite);
+    }
+  }
+  rebuildItemIndex(prep2);
+}
+function placeCollectiblesInRoom(prep2, world, room2) {
+  if (room2 === ROOM_SKIP) return;
+  const marks = prep2.extraMarksByRoom?.[room2] ?? [];
+  if (!marks.length || !prep2.itemTable) return;
+  world.dac = seedDac(room2);
+  const slot = dacReduce((world.dac.dac0 >> 8 ^ world.d2c6 >> 8) & 127, marks.length);
+  const mark = marks[slot];
+  for (const it of prep2.itemTable) {
+    if (it.index >= ITEM_SHUFFLE) continue;
+    if ((it.row & 127) !== 0) continue;
+    if (it.room !== room2) continue;
+    let mix = (world.dac.dac2 & 255 ^ world.d2c6 & 255) & 63;
+    mix = dacReduce(mix, 6);
+    mix = mix + 2 & 255;
+    const attr = rrca3(mix) & 224;
+    it.col = mark.col & 31 | attr;
+    it.row = it.row & 128 | mark.row & 127;
+    it.placed = (it.row & 127) >= PLAY_ORIGIN;
+    it.attr_bits = attr >> 5;
+    rebuildItemIndex(prep2);
+    break;
+  }
+}
 function itemGamePos(item) {
   const col = item.col & 31;
   const row = item.row & 127;
@@ -1884,8 +2038,10 @@ function initSocketFlags() {
   return CORE_SOCKET_TABLE.map(([, flags]) => flags & 255);
 }
 function initCoreState() {
+  const d2de = CORE_D2DE_INIT.map((v) => v & 255);
   return {
-    d2de: CORE_D2DE_INIT.map((v) => v & 255),
+    d2de,
+    d2deNeed: d2de.slice(),
     coresLeft: CORE_LEFT_INIT,
     corePairs: CORE_PAIRS_INIT
   };
@@ -2008,14 +2164,9 @@ function prepare(data) {
     }
   }
   const blocks = data.blocks.blocks.map((b) => b.subblocks);
+  const itemTable = data.items.items.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
+  const itemTemplate = itemTable.map((it) => ({ ...it, raw: [...it.raw] }));
   const itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
-  for (const it of data.items.items) {
-    if (it.sprite === 255) continue;
-    if (!it.placed) continue;
-    if ((it.row & 127) < PLAY_ORIGIN) continue;
-    if (it.room === ROOM_SKIP) continue;
-    if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
-  }
   const rooms = data.rooms.rooms;
   const {
     stationsByRoom,
@@ -2029,7 +2180,7 @@ function prepare(data) {
     passagesByRoom,
     machinesByRoom
   } = hotspotsFromData(data, rooms, blocks);
-  return {
+  const prep2 = {
     graphics,
     sprites,
     actorsBySet,
@@ -2037,6 +2188,8 @@ function prepare(data) {
     blocks,
     rooms,
     itemsByRoom,
+    itemTable,
+    itemTemplate,
     stationsByRoom,
     teleportsByRoom,
     killsByRoom,
@@ -2048,6 +2201,8 @@ function prepare(data) {
     passagesByRoom,
     machinesByRoom
   };
+  rebuildItemIndex(prep2);
+  return prep2;
 }
 function newBuffers() {
   return {
@@ -2173,10 +2328,10 @@ function blitCorePanel(prep2, buf2, world, roomId) {
   for (let i = 0; i < CORE_SLOTS; i++) {
     const r = i / 3 | 0;
     const c = i % 3;
-    const need = CORE_D2DE_INIT[i];
-    const live = world.d2de[i] ?? need;
+    const live = world.d2de[i] ?? 0;
     const pending = (live & 128) !== 0;
-    const sprite = need & 127;
+    const origin = world.d2deNeed[i] ?? CORE_D2DE_INIT[i] ?? live;
+    const sprite = (pending ? live : origin) & 127;
     let ink = CORE_PANEL_INK_DONE;
     if (pending) {
       ink = blinkOn ? CORE_PANEL_INK_PENDING : (world.frames + i & 3) + 2;
@@ -2898,16 +3053,69 @@ var DISPLAY_H2 = SCREEN_H2 * 2;
 function idleUi() {
   return { kind: "none" };
 }
+function planDigitMatches(world, digits) {
+  const matched = digits.map(() => false);
+  const invCols = digits.map(() => D5FD_INV_COL0);
+  const used = world.inventory.map(() => false);
+  for (let d = 0; d < digits.length; d++) {
+    let hit = -1;
+    for (let i = 0; i < world.inventory.length && i < 4; i++) {
+      if (used[i]) continue;
+      if ((world.inventory[i].sprite & 255) === DOOR_KEY_SPRITE) {
+        hit = i;
+        break;
+      }
+    }
+    if (hit < 0) {
+      for (let i = 0; i < world.inventory.length && i < 4; i++) {
+        if (used[i]) continue;
+        if ((world.inventory[i].sprite & 255) === (digits[d] & 255)) {
+          hit = i;
+          used[i] = true;
+          break;
+        }
+      }
+    }
+    if (hit < 0) {
+      for (let i = 0; i < world.inventory.length && i < 4; i++) {
+        if (used[i]) continue;
+        if ((world.inventory[i].sprite & 255) === DOOR_SINGLE_WILDCARD) {
+          hit = i;
+          used[i] = true;
+          break;
+        }
+      }
+    }
+    if (hit >= 0) {
+      matched[d] = true;
+      invCols[d] = D5FD_INV_COL0 + hit * 2;
+    }
+  }
+  return { matched, invCols };
+}
+function d5fdFields(world, digits) {
+  const { matched, invCols } = planDigitMatches(world, digits);
+  return {
+    digitIndex: 0,
+    rollSlot: 0,
+    ink: 7,
+    flags: digits.map(() => D5FD_ATTR_WAIT),
+    matched,
+    invCols
+  };
+}
 function beginDoorUi(world, room2, openRight) {
   const ok = doorKeysAccepted(world, room2);
   requestSfx(world, 8);
+  const digits = expectedDoorCode(room2);
   return {
     kind: "door",
     phase: "intro",
     ok,
     openRight,
     ticks: 0,
-    digits: expectedDoorCode(room2)
+    digits,
+    ...d5fdFields(world, digits)
   };
 }
 function beginTeleportUi(room2, world) {
@@ -2925,13 +3133,15 @@ function beginTeleportUi(room2, world) {
 }
 function beginCheopsUi(world, room2) {
   requestSfx(world, CHEOPS_SFX_INTRO);
+  const digits = expectedCheopsCode(room2);
   return {
     kind: "cheops",
     phase: "intro",
     ok: cheopsKeysAccepted(world, room2),
     chosen: false,
     ticks: 0,
-    digits: expectedCheopsCode(room2),
+    digits,
+    ...d5fdFields(world, digits),
     slot: 0,
     given: 0,
     offers: []
@@ -2945,40 +3155,95 @@ function enterCheopsExchange(ui, world) {
   ui.phase = "exchange";
   ui.ticks = 0;
 }
-function tickDoorUi(ui, world) {
+function nextD5fdInk(world, prev) {
+  dacStep(world.dac);
+  let a = world.dac.dac0 >> 8 & 63;
+  while (a >= 6) a -= 6;
+  a = a + 2 & 255;
+  if (a === (prev & 255)) a ^= 1;
+  return a;
+}
+function advanceDigit(ui) {
+  ui.digitIndex += 1;
+  ui.ticks = 0;
+  if (ui.digitIndex >= ui.digits.length) ui.phase = "pause";
+  else ui.phase = "roll";
+}
+function tickD5fd(ui, world) {
+  if (ui.phase === "result" || ui.phase === "done" || ui.phase === "exchange") return false;
   ui.ticks += 1;
-  if (ui.phase === "intro" && ui.ticks >= 25) {
-    ui.phase = "result";
-    ui.ticks = 0;
+  if (ui.phase === "intro") {
+    if (ui.ticks >= D5FD_INTRO_HALT) {
+      ui.phase = "roll";
+      ui.ticks = 0;
+      ui.digitIndex = 0;
+    }
+    return false;
+  }
+  if (ui.phase === "roll") {
     if (world) {
-      if (ui.ok) {
-        requestSfx(world, 10);
-        requestSfx(world, 15);
+      ui.ink = nextD5fdInk(world, ui.ink);
+      const n = ui.digits.length || 1;
+      let slot = world.dac.dac0 & 31;
+      while (slot >= n) slot -= n;
+      ui.rollSlot = slot;
+      requestSfx(world, (world.dac.dac0 >> 8 & 3) + D5FD_SFX_ROLL_BASE);
+    }
+    if (ui.ticks >= D5FD_ROLL) {
+      if (ui.matched[ui.digitIndex]) {
+        ui.phase = "match";
+        ui.ticks = 0;
+        ui.flags[ui.digitIndex] = D5FD_ATTR_OK;
+        if (world) requestSfx(world, D5FD_SFX_MATCH);
       } else {
-        requestSfx(world, 15);
+        advanceDigit(ui);
       }
     }
-  } else if (ui.phase === "result" && ui.ticks >= 40) {
-    ui.phase = "done";
-    return true;
+    return false;
+  }
+  if (ui.phase === "match") {
+    ui.ink = (ui.ink ^ 7 | 2) & 255;
+    if (world) requestSfx(world, D5FD_SFX_MATCH);
+    if (ui.ticks >= D5FD_MATCH_FLASH) advanceDigit(ui);
+    return false;
+  }
+  if (ui.phase === "pause") {
+    if (ui.ticks >= D5FD_PAUSE) {
+      ui.phase = "result";
+      ui.ticks = 0;
+      return true;
+    }
+  }
+  return false;
+}
+function tickDoorUi(ui, world) {
+  if (tickD5fd(ui, world) && world) {
+    if (ui.ok) requestSfx(world, 10);
+    requestSfx(world, 15);
+  }
+  if (ui.phase === "result") {
+    ui.ticks += 1;
+    if (ui.ticks >= (ui.ok ? D5FD_OK_FLASH : D5FD_FAIL_FLASH)) {
+      ui.phase = "done";
+      return true;
+    }
   }
   return ui.phase === "done";
 }
 function tickCheopsUi(ui, world) {
   if (ui.phase === "done") return true;
   if (ui.phase === "exchange") return false;
-  ui.ticks += 1;
-  if (ui.phase === "intro" && ui.ticks >= 25) {
-    ui.phase = "result";
-    ui.ticks = 0;
-    if (world) requestSfx(world, 15);
-  } else if (ui.phase === "result" && ui.ticks >= 40) {
-    if (ui.ok && world) {
-      enterCheopsExchange(ui, world);
-      return false;
+  if (tickD5fd(ui, world) && world) requestSfx(world, 15);
+  if (ui.phase === "result") {
+    ui.ticks += 1;
+    if (ui.ticks >= (ui.ok ? D5FD_OK_FLASH : D5FD_FAIL_FLASH)) {
+      if (ui.ok && world) {
+        enterCheopsExchange(ui, world);
+        return false;
+      }
+      ui.phase = "done";
+      return true;
     }
-    ui.phase = "done";
-    return true;
   }
   return false;
 }
@@ -3027,6 +3292,8 @@ function syncWorldMessage(world, ui) {
     } else {
       world.message = CHEOPS_MSG_CODE;
     }
+  } else if (ui.kind === "menu") {
+    world.message = ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
   }
 }
 function isUiBlocking(ui) {
@@ -3491,7 +3758,7 @@ function tickBody(prep2, blob, input, world) {
   if (world.dd22 === DD22_PAD) tickPadFire(prep2, blob, !!input.fire, world);
   else tickFire(prep2, blob, !!input.fire, world);
   tickEnergyDrain(world);
-  const pickupInput = stationed ? { ...input, up: false } : input;
+  const pickupInput = stationed || world.dd22 === DD22_PAD || world.dd22 === DD22_LIFT ? { ...input, up: false } : input;
   if (tickPickup(prep2, blob, pickupInput, world) === "cheops") {
     world.teleportLatch = true;
     world.ui = beginCheopsUi(world, blob.room);
@@ -3537,7 +3804,7 @@ function tickBody(prep2, blob, input, world) {
   applyRoomExit(prep2, blob, steer.right && !steer.left, steer.left && !steer.right, world);
   if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
 }
-function createWorld(prep2, room2) {
+function createWorld(prep2, room2, opts) {
   const core = initCoreState();
   const world = {
     terrain: newBuffers(),
@@ -3553,6 +3820,7 @@ function createWorld(prep2, room2) {
     pickupLatch: false,
     dac0: 0,
     dac: { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 },
+    d2c6: opts?.frames ?? DOOR_D2C6,
     entities: [],
     entityCache: null,
     cacheRoom: -1,
@@ -3588,6 +3856,7 @@ function createWorld(prep2, room2) {
     visitedCount: 0,
     frames: 0,
     d2de: core.d2de,
+    d2deNeed: core.d2deNeed,
     coresLeft: core.coresLeft,
     corePairs: core.corePairs,
     corePhase: null,
@@ -3606,6 +3875,10 @@ function createWorld(prep2, room2) {
     chan: emptyChan(),
     buzz: []
   };
+  if (opts?.shuffleItems) {
+    world.dac = { dac0: world.d2c6, dac2: 0, dac4: 0, db19: 3, db1a: 3 };
+    shuffleCollectibles(prep2, world);
+  }
   enterRoom(prep2, world, room2);
   return world;
 }
@@ -3619,6 +3892,7 @@ function enterRoom(prep2, world, room2, opts) {
   world.pickupLatch = false;
   world.machineSpent = [];
   parkBullet(world);
+  placeCollectiblesInRoom(prep2, world, room2);
   if (a390Unvisited(world.a390, room2)) {
     addScore(world, SCORE_FIRST_VISIT);
     clearA390Bit(world.a390, room2);
@@ -4291,7 +4565,7 @@ if (has("--door-test")) {
   const before = { x: blob.x, y: playYToGame(blob.y), room: blob.room, nastyCount: world.nastyCount };
   const input = { left: false, right: true, up: false, down: false, fire: false };
   tick(prep, blob, input, world);
-  for (let i = 0; i < 80 && world.ui.kind !== "none"; i++) tick(prep, blob, input, world);
+  for (let i = 0; i < 400 && world.ui.kind !== "none"; i++) tick(prep, blob, input, world);
   process.stdout.write(
     JSON.stringify({
       room: room2,

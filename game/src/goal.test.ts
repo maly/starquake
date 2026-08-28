@@ -64,7 +64,7 @@ describe("security doors $00", () => {
     const open = { left: false, right: true, up: false, down: false, fire: false };
     tick(prep, blob, open, world);
     assert.equal(world.ui.kind, "door");
-    for (let i = 0; i < 80; i++) tick(prep, blob, open, world);
+    for (let i = 0; i < 400; i++) tick(prep, blob, open, world);
     assert.equal(world.ui.kind, "none");
     assert.equal(blob.x, (left.x + DOOR_SHIFT_X) & 0xff);
     assert.equal(world.d2c4, DOOR_REASON);
@@ -99,7 +99,7 @@ describe("security doors $00", () => {
     world.inventory = [];
     const open = { left: false, right: true, up: false, down: false, fire: false };
     tick(prep, blob, open, world);
-    for (let i = 0; i < 80; i++) tick(prep, blob, open, world);
+    for (let i = 0; i < 400; i++) tick(prep, blob, open, world);
     assert.equal(blob.x, 128);
     assert.equal(world.d2c4, DOOR_REASON);
     assert.match(world.message, /INVALID/i);
@@ -117,7 +117,7 @@ describe("security doors $00", () => {
     world.inventory = need.map((sprite) => ({ sprite, attr: 3 }));
     const open = { left: false, right: true, up: false, down: false, fire: false };
     tick(prep, blob, open, world);
-    for (let i = 0; i < 80; i++) tick(prep, blob, open, world);
+    for (let i = 0; i < 400; i++) tick(prep, blob, open, world);
     assert.equal(blob.x, (128 + DOOR_SHIFT_X) & 0xff);
     assert.match(world.message, /AUTHORISED/i);
   });
@@ -183,6 +183,20 @@ describe("core panel $A78D / $C4AB", () => {
     assert.notEqual(pendAttr & 7, 7);
     assert.ok((buf.data[(row0 * 32 + doneCol) * 8]! | buf.data[(row0 * 32 + doneCol + 1) * 8]!) !== 0);
     assert.ok((buf.data[(row0 * 32 + pendCol) * 8]! | buf.data[(row0 * 32 + pendCol + 1) * 8]!) !== 0);
+  });
+
+  it("pending cells use live $D2DE, not snapshot CORE_D2DE_INIT", () => {
+    const prep = loadPrep();
+    if (!prep) return;
+    const world = createWorld(prep, CORE_ROOM);
+    world.frames = 8;
+    world.d2de = [0x8b, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80];
+    const live = newBuffers();
+    blitCorePanel(prep, live, world, CORE_ROOM);
+    world.d2de = CORE_D2DE_INIT.map((v) => v);
+    const snap = newBuffers();
+    blitCorePanel(prep, snap, world, CORE_ROOM);
+    assert.notDeepEqual(Array.from(live.data), Array.from(snap.data));
   });
 });
 

@@ -26,6 +26,12 @@ describe("static server", () => {
       const js = await fetch(new URL("bundle.js", url));
       assert.equal(js.status, 200);
 
+      const intro = await fetch(new URL("intro.mp3", url), { method: "HEAD" });
+      assert.equal(intro.status, 200);
+      assert.equal((intro.headers.get("content-type") ?? "").includes("mpeg"), true);
+      const bgm = await fetch(new URL("bgm.mp3", url), { method: "HEAD" });
+      assert.equal(bgm.status, 200);
+
       const data = await fetch(`http://127.0.0.1:${port}/out/rooms.json`);
       assert.equal(data.status, 200);
       assert.equal((data.headers.get("content-type") ?? "").includes("json"), true);

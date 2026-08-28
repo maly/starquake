@@ -4,8 +4,12 @@ import path from "node:path";
 import { describe, it } from "node:test";
 import {
   COLS,
+  DD22_PAD,
   EXTRA_CHEOPS,
   ITEM_COUNT,
+  ITEM_KEY_ROOMS,
+  ITEM_PAIR_ROOMS,
+  ITEM_TOOL_ROOMS,
   LIFT_ATTR,
   PLAY_ORIGIN,
   ROWS,
@@ -520,6 +524,19 @@ describe("extra $A350 / $CC9A", () => {
     assert.equal(world.cheops, false);
   });
 
+  it("Up on extra $19 while boarded ($DD22=2) does not start Cheops ($CB36 RES 3)", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    world.dd22 = DD22_PAD;
+    world.extra = { sprite: EXTRA_CHEOPS, ink: 6, col: 4, row: 8, x: 40, y: 70 };
+    blob.x = 40;
+    blob.y = 143 - 70;
+    tick(prep, blob, { ...idle(), up: true }, world);
+    assert.equal(world.ui.kind, "none");
+    assert.ok(world.extra);
+  });
+
   it("AABB overlap without Up does not start Cheops", () => {
     const prep = grid();
     const world = createWorld(prep, 1);
@@ -545,7 +562,10 @@ describe("extra $A350 / $CC9A", () => {
     ];
     tick(prep, blob, { ...idle(), up: true }, world);
     assert.equal(world.ui.kind, "cheops");
-    for (let i = 0; i < 65; i++) tick(prep, blob, idle(), world);
+    for (let i = 0; i < 400; i++) {
+      tick(prep, blob, idle(), world);
+      if (world.ui.kind === "cheops" && world.ui.phase === "exchange") break;
+    }
     assert.equal(world.ui.kind, "cheops");
     if (world.ui.kind !== "cheops") throw new Error("expected cheops ui");
     const offer0 = world.ui.offers[0]!;
@@ -600,5 +620,76 @@ describe("collected table size", () => {
     assert.equal(world.collected.length, ITEM_COUNT);
     assert.equal(world.energy, START_ENERGY);
     assert.equal(world.platforms, START_PLATFORMS);
+  });
+});
+
+describe("$6351 / $648A new-game shuffle", () => {
+  function shufflePrep(): Prepared {
+    const prep = grid();
+    prep.itemTable = Array.from({ length: ITEM_COUNT }, (_, i) => ({
+      index: i,
+      room: 199,
+      col: 0,
+      row: i < 20 ? 0 : 10,
+      placed: i >= 20,
+      sprite: i < 20 ? 0x00 : 0xff,
+      attr_bits: 2,
+      raw: [0, 0, 199, i < 20 ? 0 : 0xff],
+    }));
+    prep.itemTemplate = prep.itemTable.map((it) => ({ ...it }));
+    prep.extraMarksByRoom = Array.from({ length: 512 }, () => []);
+    const rooms = new Set<number>([...ITEM_KEY_ROOMS, ...ITEM_TOOL_ROOMS]);
+    for (const [a, b] of ITEM_PAIR_ROOMS) {
+      rooms.add(a);
+      rooms.add(b);
+    }
+    for (const r of rooms) prep.extraMarksByRoom[r] = [
+      { col: 10, row: 12 },
+      { col: 20, row: 12 },
+    ];
+    return prep;
+  }
+
+  it("puts $0F/$10 in the $5E50/$5E54 lists; two FRAMES seeds differ", () => {
+    const a = shufflePrep();
+    const b = shufflePrep();
+    createWorld(a, 8, { shuffleItems: true, frames: 0x1111 });
+    createWorld(b, 8, { shuffleItems: true, frames: 0xeeee });
+    const key = a.itemTable!.find((it) => it.index < 20 && (it.sprite & 0x7f) === 0x0f);
+    const tool = a.itemTable!.find((it) => it.index < 20 && (it.sprite & 0x7f) === 0x10);
+    assert.ok(key && ITEM_KEY_ROOMS.includes(key.room as (typeof ITEM_KEY_ROOMS)[number]));
+    assert.ok(tool && ITEM_TOOL_ROOMS.includes(tool.room as (typeof ITEM_TOOL_ROOMS)[number]));
+    const sig = (p: Prepared) =>
+      p.itemTable!.slice(0, 20).map((it) => `${it.room}:${it.sprite}`).join(",");
+    assert.notEqual(sig(a), sig(b));
+  });
+
+  it("$6399 rolls a different $D2DE for different FRAMES", () => {
+    const a = createWorld(shufflePrep(), 8, { shuffleItems: true, frames: 0x1111 });
+    const b = createWorld(shufflePrep(), 8, { shuffleItems: true, frames: 0xeeee });
+    assert.notDeepEqual(a.d2de, b.d2de);
+    assert.equal(a.d2de.length, 9);
+    assert.ok(a.d2de.every((v) => (v & 0x80) !== 0));
+  });
+
+  it("same FRAMES seed repeats the assignment", () => {
+    const a = shufflePrep();
+    const b = shufflePrep();
+    createWorld(a, 8, { shuffleItems: true, frames: 0x7b78 });
+    createWorld(b, 8, { shuffleItems: true, frames: 0x7b78 });
+    assert.deepEqual(
+      a.itemTable!.slice(0, 20).map((it) => [it.room, it.sprite]),
+      b.itemTable!.slice(0, 20).map((it) => [it.room, it.sprite]),
+    );
+  });
+
+  it("$AA30 places an unplaced record on a $90 marker at first enter", () => {
+    const prep = shufflePrep();
+    const world = createWorld(prep, 8, { shuffleItems: true, frames: 0x1111 });
+    const rec = prep.itemTable![0]!;
+    if (rec.room !== 8) enterRoom(prep, world, rec.room);
+    assert.equal(rec.placed, true);
+    assert.ok([10, 20].includes(rec.col & 0x1f));
+    assert.equal(rec.row & 0x7f, 12);
   });
 });

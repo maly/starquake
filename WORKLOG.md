@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `4948d6c`. Working tree čistý po stroji `$0E`; `tmp_*` sondy necommituj.
+Poslední commit: `62a915f`. `tmp_*` a `music/` necommituj.
 
 ## Tvrdé meze
 
@@ -28,7 +28,7 @@ python -m pytest tests/test_viewer.py tests/test_enemies.py tests/test_fire.py t
 npm start
 ```
 
-http://127.0.0.1:8000/viewer/ — canvas 256×192 (CSS ×2 → 512×384). `?dev=0` skryje vývojářský panel. Audio strip u canvasu (Zvuk / Hudba / hlasitosti); BGM `viewer/bgm.mp3` (v gitu, stejný soubor jako `music/game-loop.mp3`).
+http://127.0.0.1:8000/viewer/ — nejdřív menu `$5E81` (`0` start, `#room` přeskočí menu). Canvas 256×192 (CSS ×2 → 512×384). `?dev=0` skryje vývojářský panel. Audio strip u canvasu (Zvuk / Hudba / hlasitosti); menu/intro `viewer/intro.mp3`, hra `viewer/bgm.mp3` (smyčka = `music/game-loop.mp3`). `music/` necommituj.
 
 Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přechod `$0F`), mezerník palba, security door inventář + overlay, PageUp/Down místnost. `#8` start extra `$17`, `#13` puls `$70` (1), `#198` dva pulsy `$70`, `#61`/`#236` přechod `$0F`, `#176` dveře, `#199` jádro `$C7`, `#249` výtah, `#15` pad, `#343` EXIAL, `#49` rostlina `$06`, `#52` badalien2, `#253` `$9F05`, `#163`/`#177`/`#212`/`#482` stroj `$0E`. Dump: `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing`.
 
@@ -46,9 +46,9 @@ Q/A/O/P chůze (Q sběr/nástup na pad, A plošinka, O/P teleport / tajný přec
 | `game/src/entities.ts` | nasties, `$9F78` guardians, `$C6` cache wipe, kill score |
 | `game/src/items.ts` | `$94E8` inventář + overflow `$D1F8`; extra `$CC9A` / `$CCCC`; Cheops slot/offers |
 | `game/src/render.ts` | `prepare()` hotspots, stamp pad, `blitPulses` `$DB88` (playfield-local) |
-| `game/src/ui/*` | screen 32×24, font `$ADD4`, chrome UDG, `$D425`/`$D463`, print `$D3C1`, door/TP/Cheops overlay |
+| `game/src/ui/*` | screen 32×24, font `$ADD4`, chrome UDG, `$D425`/`$D463`, print `$D3C1`, door/TP/Cheops overlay, menu `$5E81` |
 | `game/src/dump.ts` | + `--door-test`, `--passage-test`, `--victory-test`, `--end-test`, `--timing` |
-| `game/src/audio/*` | `$D7C0` `world.sfx`; `$A57B` `world.buzz`; `$6600` skip; BGM MP3 |
+| `game/src/audio/*` | `$D7C0` `world.sfx`; `$A57B` `world.buzz`; `$6600` skip; MP3 intro vs smyčka |
 
 Souřadnice: `$DD1D` X zleva, `$DD1E` Y odspodu; playY = `143 − gameY` (playfield-local). Compose: playfield Y += 48. Start Blob: X=`$88` Y=`$3F`. Entity Y je game-Y.
 
@@ -81,9 +81,9 @@ Rozbory: `docs/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - `$9F05` nibble `$80` → živý `$B2C8` AI 6. Perioda spawnu 4…8. AI 5 dir=0 / RRCA, AI 3 zapisuje 8-směr. `$A2B9` = `$08,$09,$01,$05,$04,$06,$02,$0A`.
 - Security doors typ `$00` (raw `$01`–`$0F`), klíč `$0F` / inventář; jádro `$C7` doručení `$A6C1` (9×`$D2DE`), výhra `$D2E8==5`; skóre + společný `EndResult` (HTML overlay).
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP/Cheops overlay v rastru; `?dev=0`.
-- Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; BGM MP3 smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
+- Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; menu `intro.mp3`, hra `bgm.mp3` smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
 
-Ověřeno: `npm test` 190 pass. HEAD `4948d6c` (stroj `$0E`; overflow `dd0b6f4`).
+Ověřeno: `npm test` 211 pass. HEAD `62a915f`.
 
 ## Otevřené
 
@@ -101,11 +101,35 @@ Ověřeno: `npm test` 190 pass. HEAD `4948d6c` (stroj `$0E`; overflow `dd0b6f4`)
 12. Objekt `$0E` — **hotovo** (max pád `$DD29==$10` + exact Y; dvě plošinky life `$02`).
 13. Spectrum end bitmap, hi-score `$64FA`, `$64A0` scramble. Melodie `$6600` skip. `$A41B`/`$A57B` je v `audio/channel.ts`.
 14. Puls `$70` / `$DB88` — **opraveno persist XOR.** Engine dřív každý snímek *přepisoval* aktuální L6/L7 (vypadalo to jako všechny fáze najednou). ROM `$DB88`/`$DB50` vrstvy XORuje do display file: toggle L5 A=`$47`, při flag≠0 `$A6BD[timer∧3]`. `xorInk` = delta, blit `^=` na terrain. `#13` jeden, `#198` dva.
-15. Door/TP overlay: chybí digit-sprite animace `$D78B` / ikony `$25`/`$26`/`$24` (text OK); SFX házení cifer `$D679`/`$D70E` proto taky ne.
-17. BGM `viewer/bgm.mp3` je v gitu (stejný soubor jako `music/game-loop.mp3`).
+15. Door/TP overlay: ikony `$25`/`$26`/`$24` + `$D5FD` digit-roll `$D78B` / SFX `$D679`/`$D70E`. XOR animace `$D78B` na živém display (engine kreslí znovu z clear) a `$D58A` INK flash textu jsou zjednodušené.
+17. BGM: `viewer/intro.mp3` na `$5E81`/`$666D`, `viewer/bgm.mp3` ve hře (stejný soubor jako `music/game-loop.mp3`). `music/` necommituj.
 16. Inventář ve statusu: XOR blit vs přesné `$DB24` timing; HUD redraw každý frame (ROM chrome jen `$A426`).
 
 ## Sezení
+
+### 2026-08-28 — `$6399` panel ze živého `$D2DE`
+
+Nová hra z menu už losovala `$D2DE` (`rollCoreSprites`), ale 3×3 v `$C7` kreslila snapshot `CORE_D2DE_INIT`. Teď pending buňky berou `world.d2de`; po doručení (slot = 0…8) ikona z `d2deNeed`. `#room` dál snapshot.
+
+### 2026-08-28 — intro MP3 na title/menu
+
+`$6600` dál skip. Title/menu/intro (`world.ui.kind === "menu"`) hraje `viewer/intro.mp3`; po startu hry `viewer/bgm.mp3`. Oba loop, společný BGM gain/mute. Chybějící soubor = ticho. Zdroj `music/intro.mp3` je jiný hash než `music/game-loop.mp3` — `music/` necommituj.
+
+### 2026-08-28 — Cheops ne na padu
+
+`$CCF1` chce `$DD23` bit 3. Pad `$CB36` a zdviž `$C761` ten bit maže před `$CB8A`. Engine nechával Up v `tickPickup` i při `$DD22=2`.
+
+### 2026-08-28 — `$6351` shuffle `$94E8`
+
+Doje: `items.json` je jeden snapshot. Nová hra z menu teď losuje záznamy 0–19 (`$648A` + `$D2DE`), XY `$AA30` na `$90` marker. Seed = FRAMES (`Date.now`). `#room` shuffle nepoužije.
+
+### 2026-08-28 — title/menu `$5E81`
+
+Obrazovka před hrou: `STARQUAKE` + UDG `$90`, bannery `$8A`/`$8B`/`$8C`–`$8F`, nohy `$88`/`$89`. Volby 1–5 (default `$5E58`=`$04` OPAQM, INK 7 vs 3), `6` no-op, `0` → intro `$666D`, další klávesa → místnost **8** XY `$88,$3F`. Čísla přes `ev.code` Digit/Numpad (QWERTZ). `Q` quit Y/N / Olly `$56`. Tune `$6600` skip. Hash `#n` menu přeskočí (dev).
+
+### 2026-08-28 — overlay `$D78B` / ikony `$EA65`
+
+Dveře: `$EA65` L=`$25` BC=`$0A0C`, L=`$26` C=`$10`. Teleport: L=`$24` BC=`$0917`. `$D5FD`: HALT `$0F` → per cifra roll `$19` (`$DAC6` + ink `$D55F` + SFX `$D679`) → match flash `$0A` + `$D70E` `$03` → HALT `$14` → result `$23`/`$28` (SFX `$0A`/`$0F` jednou, ne ×N). Sprity `$9088` na BC dveře `$110B` / Cheops `$0F0D`, stride 4. Overlay kreslí z clear (XOR `$DB24` na prázdno = copy).
 
 ### 2026-08-28 — stroj `$0E` / `$D0B3`
 

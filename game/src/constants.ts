@@ -343,6 +343,33 @@ export const START_LIVES = 4;
 export const ITEM_TABLE = 0x94e8;
 export const ITEM_COUNT = 0x2d;
 export const ITEM_STRIDE = 4;
+/** `$6351` / `$648A` rewrite records 0–19; 20–44 stay `$C7`. */
+export const ITEM_SHUFFLE = 20;
+/** `$5E50` unpacked (`RL E`): sprite `$0F`. */
+export const ITEM_KEY_ROOMS = [8, 40, 168, 182] as const;
+/** `$5E54`: sprite `$10`. */
+export const ITEM_TOOL_ROOMS = [150, 198, 200, 246] as const;
+/** `$5E2C` 18 pairs (unpacked room numbers). */
+export const ITEM_PAIR_ROOMS: ReadonlyArray<readonly [number, number]> = [
+  [436, 422],
+  [236, 222],
+  [52, 16],
+  [502, 504],
+  [296, 314],
+  [72, 106],
+  [310, 278],
+  [56, 42],
+  [416, 352],
+  [140, 14],
+  [266, 316],
+  [476, 482],
+  [84, 86],
+  [478, 62],
+  [80, 82],
+  [226, 194],
+  [114, 116],
+  [466, 372],
+];
 export const ITEM_COLLECTED_Y = 0x01;
 export const ITEM_NEAR = 0x0f;
 export const ITEM_TYPE_BASE = 0x14;
@@ -505,6 +532,86 @@ export const DOOR_DIGIT_MAX = 0x0d;
 export const DOOR_MSG_TITLE = "SECURITY  DOOR";
 export const DOOR_MSG_OK = "ACCESS AUTHORISED";
 export const DOOR_MSG_BAD = "ACCESS CODE INVALID";
+/** `$CC14` `$EA65`: L=`$25` at BC=`$0A0C`, L=`$26` at C=`$10`. */
+export const DOOR_UDG_LEFT = 0x25;
+export const DOOR_UDG_RIGHT = 0x26;
+export const DOOR_UDG_ROW = 0x0a;
+export const DOOR_UDG_COL_L = 0x0c;
+export const DOOR_UDG_COL_R = 0x10;
+/** `$CF09` `$EA65`: L=`$24` at BC=`$0917`. */
+export const TELEPORT_UDG = 0x24;
+export const TELEPORT_UDG_ROW = 0x09;
+export const TELEPORT_UDG_COL = 0x17;
+/**
+ * `$D5FD` inventory minigame (doors A=3 BC=`$110B`, Cheops A=2 BC=`$0F0D`).
+ * One 50 Hz tick per HALT / inner `$D64C` / `$D6E8` iteration.
+ */
+export const D5FD_INTRO_HALT = 0x0f;
+export const D5FD_ROLL = 0x19;
+export const D5FD_MATCH_FLASH = 0x0a;
+export const D5FD_PAUSE = 0x14;
+export const D5FD_OK_FLASH = 0x23;
+export const D5FD_FAIL_FLASH = 0x28;
+export const D5FD_DIGIT_STRIDE = 4;
+export const D5FD_ATTR_WAIT = 0x03;
+export const D5FD_ATTR_OK = 0x07;
+/** `$D679`: `($DAC1)∧3 + $0C`. `$D70E` match = `$03`. */
+export const D5FD_SFX_ROLL_BASE = 0x0c;
+export const D5FD_SFX_MATCH = 0x03;
+/** `$D5F4` doors: B=`$11` C=`$0B`. Cheops from `CHEOPS_CODE_BC`. */
+export const DOOR_DIGIT_ROW = 0x11;
+export const DOOR_DIGIT_COL = 0x0b;
+export const CHEOPS_DIGIT_ROW = 0x0f;
+export const CHEOPS_DIGIT_COL = 0x0d;
+
+/**
+ * Main menu `$5E81`. Tune `$6600` B=3 skipped (MP3). Define-keys `$6194` skipped.
+ * Default control `$5E58`=`$04` (keyboard `OPAQM`).
+ */
+export const MENU_CONTROL_DEFAULT = 0x04;
+export const MENU_INK_SELECTED = 0x07;
+export const MENU_INK_IDLE = 0x03;
+export const MENU_INK_STATIC = 0x04;
+export const MENU_TITLE_ROW = 0x03;
+export const MENU_TITLE_COL = 0x07;
+/** `$5E71` first UDG (`$90` between STARQUAKE letters). */
+export const MENU_TITLE_UDG90 = [0x00, 0x00, 0x00, 0x18, 0x18, 0x00, 0x00, 0x00] as const;
+export const MENU_TITLE = "STARQUAKE";
+export const MENU_KEYS_4 = "OPAQM";
+export const MENU_KEYS_5 = "QWERT";
+export const MENU_BAR_H = 0x8a;
+export const MENU_BAR_V = 0x8b;
+export const MENU_FOOT_L = 0x88;
+export const MENU_FOOT_R = 0x89;
+export const MENU_FOOT_ROW = 0x16;
+export const MENU_FOOT_COL_L = 0x09;
+export const MENU_FOOT_COL_R = 0x11;
+export const MENU_SFX_SELECT = 0x0c;
+export const MENU_QUIT_MSG = "QUIT THE GAME";
+export const MENU_QUIT_HINT = "ARE YOU SURE...";
+export const MENU_QUIT_YN = "Y OR N...";
+export const MENU_GOODBYE = "SAY GOODBYE TO OLLY...";
+export const MENU_OLLY_UDG = 0x56;
+export const MENU_OLLY_ROW = 0x0c;
+export const MENU_OLLY_COL = 0x0c;
+/** `$6661`: col, row, graphic. */
+export const MENU_CORNERS: ReadonlyArray<readonly [number, number, number]> = [
+  [0x00, 0x00, 0x8c],
+  [0x1e, 0x00, 0x8d],
+  [0x00, 0x16, 0x8e],
+  [0x1e, 0x16, 0x8f],
+];
+/** `$666D` intro (ROM typos kept). Tune `$6600` B=4 skipped. */
+export const INTRO_TITLE = "FLIGHT COMPUTER REPORT";
+export const INTRO_LINE2 = "TOUCHDOWN IMMINENT PREPARE";
+export const INTRO_LINE3 = "FOR MISSION STARQUAKE...";
+export const INTRO_LINE4 = "CRASH... BANG... SMASH...";
+export const INTRO_LINE5 = "TOUCTHDOWN";
+export const INTRO_LINE6 = "COMTHUTER MALTHUNCTION";
+export const INTRO_LINE7 = "MALFUNNYTHINKIN ...";
+/** `$D6F6` inventory 2×2: row 1, col `$D2D2−$D2BD` = 21. */
+export const D5FD_INV_ROW = 1;
+export const D5FD_INV_COL0 = 0x15;
 
 /**
  * `$96FC` type `$0E` from nibble `$E0` (`$A9E3` → `$A9F6`).

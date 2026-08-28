@@ -210,6 +210,8 @@ ROM `$A426` **nevolá** `$C8DD`. Engine parkuje střelu při každém `enterRoom
 
 Interakce `$CB8A` (seznam `$96FC`) → `$CC5A` / `$CE82` / `$D09F`. Blízkost: \|dx\|<`$0F` \|dy\|<`$0F` v souřadnicích `$DD1D`/`$DD1E`. Pixel z buňky: X=`col≪3`, Y=`($18−row)≪3 − 1` (`$AA02`).
 
+Nová hra (`0` z menu) volá `$6351`/`$648A`: záznamy 0–19 dostanou jinou místnost+sprite (`$0F` z `[8,40,168,182]`, `$10` z `[150,198,200,246]`, 18 párů `$5E2C`). XY až při prvním vstupu `$AA30` na marker `$90`. `#room` (dev) nechává snapshot `items.json`. `$D2C6` z FRAMES.
+
 `$94E8` typ v seznamu = `$14+index` (`$AB80 LD A,$41 / SUB D`). Sebrání **jen Up samo** (`$DD23==$08`, první tick `$DD31=1`). `$D16B` zapíše byte1=`$01` (řádek < 6 → `$AB40` nekreslí). XOR-smazání attr `$47`. Sprite+ink do inventáře `$D2D2` (4× `{sprite, attr}`). Pátý slot: `$D1F8` drop zpět (`$D267` 2×2, col−1 / col+2 / orig, screen-row `($BF−Y)≫3`). Trvá po odchodu; engine drží `world.collected` + index u slotu. **`$D09F` / `$94E8` nemění `$D2CC`–`$D2CF`** (energie / plošinky / palba / životy). Refill je jen extra `$CC9A`.
 
 Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA==1` (jeden marker). Sprite `$11`–`$19`, typ `$01`, **automaticky** AABB. Sebrání `$CC9A` + `$A801` maže bit. Markery `$96CB` bere `$A90F` z raw nibble `$90` v `$9740` (jako `$C0`/`$D0`/`$60`) — **nakreslený** attr `$90` v exportu není (0 buněk). Engine skládá XY z `rooms.json` + `blocks.json` + `block_attrs.json` raw. Start `#8` má 2 markery, seed+20 dá extra `$17` na (13,19). Rozbor: [`notes/item-effects.md`](notes/item-effects.md).
@@ -252,11 +254,11 @@ Meze: E/P/F strop `$7F` (`$D469`); dolní mez 0 jen `$D4E9` (ne tato cesta). Ži
 
 ### Cheops `$CCF1` (extra `$19`)
 
-AABB extra `$19` + `$DD23` bit 3 (Up). `$CC9A` se nevolá; extra se hned nemaže. Overlay `$A412` + `CHEOPS PYRAMID` / `CHEOPS KEY CODE`, SFX `$0B`. Minihra `$D5FD` A=`$02` BC=`$0F0D` — **2** cifry stejným `$D616` jako dveře (`$D2C6=$7B78`). `$0F` wildcard všech, `$0E` jedné. Fail: ACCESS CODE INVALID, `$CC4B` Y-snap `$D2C4=$03`, extra zůstane (`$A350` beze změny). OK: ACCESS AUTHORISED, pak výměna.
+AABB extra `$19` + `$DD23` bit 3 (Up). Na vznášedle (`$DD22=2`) `$CB36 RES 3,$DD23` Up smaže před `$CB8A`, takže `$CCF1` neskáče; totéž zdviž `$C761`. `$CC9A` se nevolá; extra se hned nemaže. Overlay `$A412` + `CHEOPS PYRAMID` / `CHEOPS KEY CODE`, SFX `$0B`. Minihra `$D5FD` A=`$02` BC=`$0F0D` — **2** cifry stejným `$D616` jako dveře (`$D2C6=$7B78`). `$0F` wildcard všech, `$0E` jedné. Fail: ACCESS CODE INVALID, `$CC4B` Y-snap `$D2C4=$03`, extra zůstane (`$A350` beze změny). OK: ACCESS AUTHORISED, pak výměna.
 
 Výměna (`$CD32`–`$CDF0`): první inventární sprite `<$09` nebo `≥$1A` (přeskoč `$09`–`$19` a nuly); jinak poslední neprázdný. Čtyři nabídky z `$D2DE` s bitem 7 (`AND $3F`), index `($DAC0 % 9)+1`; pátá = odevzdaný sprite. Klávesy 1–5 (`$D5C8`). Zápis jen sprite (`$CDEC`), attr beze změny. SFX `$10`, HUD `$D425`, `$A801` maže extra, `$CC4B`.
 
-Digit-sprite animace `$D78B` / házení `$D679` jako u dveří engine nekreslí (text + 2×2 UDG nabídek).
+Digit-roll `$D78B` / `$D679` sdílí `$D5FD` s dveřmi (A=2, BC=`$0F0D`). Nabídky 1–5 zůstanou 2×2 UDG.
 
 Rozbor: [`notes/item-effects.md`](notes/item-effects.md) § 9.
 
@@ -273,7 +275,7 @@ Typy objektů **mimo** `$94E8`: `$0C` vznášedlo, `$0D` teleport, `$00` securit
 
 ## Security doors (`$00`)
 
-Raw `$9740` `$01`–`$0F` (hi nibble 0) → typ `$00` v `$96FC`. **Není** nibble `$80` (to je `$9F05` pevný spawn). Subs `$25`/`$26` (raw `$04`/`$06`). Exact XY + Left\|Right: otevře se, když inventář drží **tři digit-sprity** kódu (multiset, `$D693`) **nebo** univerzální `$0F` (případně jedno `$0E`). **Bez promptu** — požadované sprity ukáže panel vieweru. Seed kódu `$D2C6=$7B78` ⊕ room.lo ⊕ `BC=$110B` → 3× `$09`–`$0D`. Úspěch: X ±`$30` (bit0 Right), Y snap, `$D2C4=$03`, reload bez respawnu vetřelců. Žádný persistentní „opened“. Zeď = `$D2F0` `attr<$40`. Místnosti: 176, 187, 200, 210, 265, 352, 362, 429. Rozbor: [`notes/security-doors.md`](notes/security-doors.md).
+Raw `$9740` `$01`–`$0F` (hi nibble 0) → typ `$00` v `$96FC`. **Není** nibble `$80` (to je `$9F05` pevný spawn). Subs `$25`/`$26` (raw `$04`/`$06`). Exact XY + Left\|Right: overlay `$EA65` L=`$25` BC=`$0A0C` a L=`$26` C=`$10`, pak `$D5FD` A=3 BC=`$110B` (sprity `$9088+id×$20` na řádku `$11` sl. `$0B`/`$0F`/`$13`). Otevře se, když inventář drží **tři digit-sprity** kódu (multiset, `$D693`) **nebo** univerzální `$0F` (případně jedno `$0E`). **Bez promptu** — požadované sprity ukáže i panel vieweru. Seed kódu `$D2C6=$7B78` ⊕ room.lo ⊕ `BC=$110B` → 3× `$09`–`$0D`. Úspěch: X ±`$30` (bit0 Right), Y snap, `$D2C4=$03`, reload bez respawnu vetřelců. Žádný persistentní „opened“. Zeď = `$D2F0` `attr<$40`. Místnosti: 176, 187, 200, 210, 265, 352, 362, 429. Rozbor: [`notes/security-doors.md`](notes/security-doors.md).
 
 ## Tajné průchody (`$0F`)
 
@@ -285,7 +287,7 @@ Nibble `$F0` v `$9740` (`raw=$F5` podbloky 43/44) → typ `$0F` v `$96FC`. Vypad
 |---|---|---|
 | místnost jádra | `$C7` (199); `$AA30` RET | `$AA3B` |
 | soused | `$C6` maže `$959C` před swapem | `$9C5C` |
-| požadované prvky | `$D2DE` 9× (bit7 = nedoručeno); snapshot init | `$6399` |
+| požadované prvky | `$D2DE` 9× (bit7 = nedoručeno); nová hra `$6399` losuje; `#room` snapshot | `$6399` |
 | zbývá / páry | `$D2E7=9`, `$D2E8=0…5` | `$A729` / `$A7B2` |
 | výhra | `$D2E8==5` po 9 doručeních | `$A7C9` |
 | doručení | inventář vs `$D2DE`, +10000, eject `($F0,$27)` `$C6` | `$A6C1` |
@@ -296,6 +298,25 @@ Nibble `$F0` v `$9740` (`raw=$F5` podbloky 43/44) → typ `$0F` v `$96FC`. Vypad
 | socket `$B0` | typ `$0B`; tool `$10` clear flag `$95F0` | `$CE96` |
 
 Každý vstup do `$C7` = scéna (panel + koule), pak **vždy** `$C6` (i bez doručení). `$C6` maže cache `$959C` před swapy. Rozbor: [`notes/core.md`](notes/core.md).
+
+## Title / menu (`$5E81`)
+
+Boot `$5E24 JR $5E81`. Engine kreslí stejný text přes `$D3C1`; tune `$6600` B=3 **skip**. `#room` v URL menu přeskočí.
+
+| veličina | hodnota | adresa |
+|---|---|---|
+| title | `STARQUAKE` AT 3,7, mezi písmeny UDG `$90` z `$5E71` | `$5EAA` |
+| default řízení | `$04` (keyboard `OPAQM`) | `$5E58` |
+| highlight | vybraná řádka INK 7, ostatní 1–5 INK 3 | `$5FB4` / `$5E59` |
+| `0` | intro `$666D`, další klávesa → `$A410` místnost **8** XY `$88,$3F` | `$6037` / `$6485` |
+| čísla | `ev.code` Digit0–6 / Numpad0–6 (QWERTZ `+ěščřžý`) | `$D5C8` `$30`–`$36` |
+| `1`–`5` | výběr + SFX `$0C`; ve hře dál Q/A/O/P + mezerník | `$6051` / `$605A` |
+| `6` | define-keys `$6194` — engine no-op | `$6032` |
+| `Q` | `QUIT THE GAME` / Y → goodbye + Olly `$56`, N → menu | `$6060` |
+| bannery | `$8A` ř. 0/22, `$8B` sl. 0/30, rohy `$8C`–`$8F` | `$6615` / `$6661` |
+| nohy | `$88` BC=`$1609`, `$89` C=`$11` | `$5E97` |
+
+Intro `$666D` (`FLIGHT COMPUTER REPORT` … ROM překlepy TOUCTHDOWN / COMTHUTER) po `0`; další klávesa spustí hru. Tune `$6600` B=3/4 skip — místo toho `viewer/intro.mp3` (smyčka, dokud běží menu). Start hry přepne na `viewer/bgm.mp3`.
 
 ## Skóre / konec hry
 
@@ -337,7 +358,7 @@ Platný teleport / `$0F` v kroku 6 hned volá `$A426` a zbytek ticku se přesko�
 2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne. `$64` je v overlay i chůzi nepevná.
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
-5. **Zvuk.** `$D7C0` + `$A57B` v `game/src/audio/`. Zbývá `$6600` / digit-roll.
+5. **Zvuk.** `$D7C0` + `$A57B` v `game/src/audio/`. Digit-roll `$D679`/`$D70E` je v overlay. `$6600` skip; MP3 intro vs smyčka.
 6. **Animace 4 GRAFIX snímků** u vetřelce i padu — live ptr frame 0; kresba `ptr+(frames/2)%4×$30` na `X − 2×frame` (snímky 1–3 jsou předshift `+2/+4/+6` pro `X∧7`, ne posun entity).
 7. **Extra spawn `$AAB6` po `$A80A`.** Markery jsou raw nibble `$90` (`$96CB`), ne nakreslený attr. Engine seed `$7530+id×12` + 20× `$DAC6`, ne celý řetězec při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
 8. **Přeplněný inventář `$D1CA`.** Pátý předmět: LDDR, `$D2DA` ven, `$D1E1` Y=5→`$32`, `$D236` zpět do aktuální místnosti (`$D267` 2×2 bit6≠`$64`: col−1, jinak col+2 když col`< $1D`, jinak orig). Cheops `$CCF1` je v enginu. Extra `$17`/`$18` taky (`$CCCC` / přetečení `$CCBC`).
@@ -459,11 +480,14 @@ Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839
 | `collectTableItem` unshift | `$0C` |
 | `applyExtra` (ne Cheops `$19`) | 1. B páru `$CCBC` |
 | `beginCheopsUi` | `$0B` |
-| `tickCheopsUi` intro→result | `$0F` (`$D5FD` OK/fail) |
+| `tickCheopsUi` roll/match | stejné `$D679`/`$D70E` jako dveře |
+| `tickCheopsUi` pause→result | `$0F` (`$D5FD` OK/fail) |
 | `feedCheopsKey` 1–5 | `$10` |
 | `beginDoorUi` | `$08` |
-| `tickDoorUi` intro→result OK | `$0A` pak `$0F` |
-| `tickDoorUi` intro→result fail | `$0F` |
+| `tickDoorUi` roll `$D64C` | `($DAC1∧3)+$0C` (`$D679`) |
+| `tickDoorUi` match `$D70E` | `$03` |
+| `tickDoorUi` pause→result OK | `$0A` pak `$0F` (`$CC33` / `$D75B`) |
+| `tickDoorUi` pause→result fail | `$0F` |
 | `beginTeleportUi` | `$07` |
 | `feedTeleportKey` přijatý znak | `$11` |
 | `finishTeleportInput` OK | `$10` pak `$09` |
@@ -474,7 +498,7 @@ Beeper `$D7C0`: typ v `A`, offset `A×5` do tabulky 5bajtových záznamů `$D839
 | `beginCoreCeremony` | `$14`/`$15` z `dac0∧1` |
 | výhra `corePairs==5` | `$11` jednou |
 
-Pozadí = `viewer/bgm.mp3` (smyčka, vlastní gain). Melodie `$6600` se nehraje.
+Pozadí = MP3, vlastní gain, mute BGM ≠ mute SFX. Title/menu/intro `$5E81`/`$666D` = `viewer/intro.mp3`; hra = `viewer/bgm.mp3` (smyčka; stejný soubor jako `music/game-loop.mp3`). Melodie `$6600` se nehraje.
 
 Kanál `$A41B`/`$A41C` → `$A57B` (tabulka `$A607`): palba, pád, plošinka, spawn, oblaka, ambient. A41B přeruší živý hlas; A41C čeká na A41D=0. Jeden 20 ms burst / 50 Hz tick (`world.buzz`). Palba se nespustí, dokud živý increment je `$F7` (`$C87B`).
 
@@ -489,4 +513,4 @@ Kanál `$A41B`/`$A41C` → `$A57B` (tabulka `$A607`): palba, pád, plošinka, sp
 | kill (navíc k `$D7C0` `$12`) | `$A41C` | `$0B` (`$A2FF`) |
 | ambient, když oba hlasy ticho a `$DAC0<$04` | `$A41C` | `($DAC1∧3)+$0C` = `$0C`…`$0F` (`$A5CA`) |
 
-**Nedořešené:** přesný T-state inner loop `$A5C1` (engine 23+35E); `$6600` melodie (skip); digit-roll `$D679`; IM1 jitter.
+**Nedořešené:** přesný T-state inner loop `$A5C1` (engine 23+35E); `$6600` melodie (skip); IM1 jitter. Digit-roll `$D679`/`$D70E` je v overlay FSM (1 tick = 1 ROM iterace, ne blocking `$D7C0`).

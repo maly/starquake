@@ -120,12 +120,19 @@
     return simulateSfx(index).pcm;
   }
 
+  // src/audio/tracks.ts
+  var BGM_INTRO_URL = "intro.mp3";
+  var BGM_LOOP_URL = "bgm.mp3";
+  function musicUrlFor(ui) {
+    return ui.kind === "menu" ? BGM_INTRO_URL : BGM_LOOP_URL;
+  }
+
   // src/audio/player.ts
   var LS_MUTED = "starquake.audio.muted";
   var LS_BGM_MUTED = "starquake.audio.bgmMuted";
   var LS_SFX_GAIN = "starquake.audio.sfxGain";
   var LS_BGM_GAIN = "starquake.audio.bgmGain";
-  var BGM_URL = "bgm.mp3";
+  var MUSIC_URLS = [BGM_INTRO_URL, BGM_LOOP_URL];
   function clamp01(n) {
     if (!Number.isFinite(n)) return 0;
     return Math.min(1, Math.max(0, n));
@@ -156,8 +163,8 @@
   var ctx = null;
   var sfxGain = null;
   var bgmGain = null;
-  var bgmEl = null;
-  var bgmSource = null;
+  var musicEls = /* @__PURE__ */ new Map();
+  var musicUrl = BGM_LOOP_URL;
   var unlocked = false;
   var nextSfxAt = 0;
   var resumeWait = null;
@@ -181,29 +188,47 @@
   function applyGains() {
     if (sfxGain) sfxGain.gain.value = muted ? 0 : sfxGainValue;
     if (bgmGain) bgmGain.gain.value = muted || bgmMuted ? 0 : bgmGainValue;
-    if (!bgmEl) return;
-    if (muted || bgmMuted || !unlocked) {
-      bgmEl.pause();
-      return;
+    const want = muted || bgmMuted || !unlocked ? null : musicUrl;
+    for (const [url, el] of musicEls) {
+      if (url === want) {
+        const p = el.play();
+        if (p && typeof p.catch === "function") p.catch(() => void 0);
+      } else {
+        el.pause();
+      }
     }
-    const p = bgmEl.play();
-    if (p && typeof p.catch === "function") p.catch(() => void 0);
   }
-  function setupBgm(ac) {
-    if (bgmEl) return;
-    const el = new Audio(BGM_URL);
+  function attachTrack(ac, url) {
+    if (musicEls.has(url)) return;
+    const el = new Audio(url);
     el.loop = true;
     el.preload = "auto";
     el.addEventListener("error", () => {
-      console.warn("starquake: bgm.mp3 missing or unreadable; BGM silent");
+      console.warn(`starquake: ${url} missing or unreadable; BGM silent`);
     });
-    bgmEl = el;
+    musicEls.set(url, el);
     try {
-      bgmSource = ac.createMediaElementSource(el);
-      bgmSource.connect(bgmGain ?? ac.destination);
+      ac.createMediaElementSource(el).connect(bgmGain ?? ac.destination);
     } catch {
-      console.warn("starquake: cannot attach bgm.mp3 to AudioContext; BGM silent");
+      console.warn(`starquake: cannot attach ${url} to AudioContext; BGM silent`);
     }
+  }
+  function setupBgm(ac) {
+    for (const url of MUSIC_URLS) attachTrack(ac, url);
+  }
+  function syncMusic(world) {
+    const next = musicUrlFor(world.ui);
+    if (next !== musicUrl) {
+      const prev = musicEls.get(musicUrl);
+      if (prev) {
+        prev.pause();
+        prev.currentTime = 0;
+      }
+      musicUrl = next;
+      const incoming = musicEls.get(next);
+      if (incoming) incoming.currentTime = 0;
+    }
+    applyGains();
   }
   function ensureCtx() {
     if (ctx) return ctx;
@@ -396,6 +421,7 @@
   var START_ENERGY = 127;
   var START_PLATFORMS = 48;
   var START_FIREPOWER = 126;
+  var NEW_GAME_ROOM = 8;
   var NEW_GAME_X = 136;
   var NEW_GAME_Y = 63;
   var NASTY_SLOTS = 4;
@@ -534,6 +560,29 @@
   var STAT_CAP = 127;
   var START_LIVES = 4;
   var ITEM_COUNT = 45;
+  var ITEM_SHUFFLE = 20;
+  var ITEM_KEY_ROOMS = [8, 40, 168, 182];
+  var ITEM_TOOL_ROOMS = [150, 198, 200, 246];
+  var ITEM_PAIR_ROOMS = [
+    [436, 422],
+    [236, 222],
+    [52, 16],
+    [502, 504],
+    [296, 314],
+    [72, 106],
+    [310, 278],
+    [56, 42],
+    [416, 352],
+    [140, 14],
+    [266, 316],
+    [476, 482],
+    [84, 86],
+    [478, 62],
+    [80, 82],
+    [226, 194],
+    [114, 116],
+    [466, 372]
+  ];
   var ITEM_NEAR = 15;
   var INVENTORY_SLOTS = 4;
   var ITEM_ORIGIN_ROWS = 24;
@@ -630,6 +679,69 @@
   var DOOR_DIGIT_MIN = 9;
   var DOOR_MSG_OK = "ACCESS AUTHORISED";
   var DOOR_MSG_BAD = "ACCESS CODE INVALID";
+  var DOOR_UDG_LEFT = 37;
+  var DOOR_UDG_RIGHT = 38;
+  var DOOR_UDG_ROW = 10;
+  var DOOR_UDG_COL_L = 12;
+  var DOOR_UDG_COL_R = 16;
+  var TELEPORT_UDG = 36;
+  var TELEPORT_UDG_ROW = 9;
+  var TELEPORT_UDG_COL = 23;
+  var D5FD_INTRO_HALT = 15;
+  var D5FD_ROLL = 25;
+  var D5FD_MATCH_FLASH = 10;
+  var D5FD_PAUSE = 20;
+  var D5FD_OK_FLASH = 35;
+  var D5FD_FAIL_FLASH = 40;
+  var D5FD_DIGIT_STRIDE = 4;
+  var D5FD_ATTR_WAIT = 3;
+  var D5FD_ATTR_OK = 7;
+  var D5FD_SFX_ROLL_BASE = 12;
+  var D5FD_SFX_MATCH = 3;
+  var DOOR_DIGIT_ROW = 17;
+  var DOOR_DIGIT_COL = 11;
+  var CHEOPS_DIGIT_ROW = 15;
+  var CHEOPS_DIGIT_COL = 13;
+  var MENU_CONTROL_DEFAULT = 4;
+  var MENU_INK_SELECTED = 7;
+  var MENU_INK_IDLE = 3;
+  var MENU_INK_STATIC = 4;
+  var MENU_TITLE_ROW = 3;
+  var MENU_TITLE_COL = 7;
+  var MENU_TITLE_UDG90 = [0, 0, 0, 24, 24, 0, 0, 0];
+  var MENU_TITLE = "STARQUAKE";
+  var MENU_KEYS_4 = "OPAQM";
+  var MENU_KEYS_5 = "QWERT";
+  var MENU_BAR_H = 138;
+  var MENU_BAR_V = 139;
+  var MENU_FOOT_L = 136;
+  var MENU_FOOT_R = 137;
+  var MENU_FOOT_ROW = 22;
+  var MENU_FOOT_COL_L = 9;
+  var MENU_FOOT_COL_R = 17;
+  var MENU_SFX_SELECT = 12;
+  var MENU_QUIT_MSG = "QUIT THE GAME";
+  var MENU_QUIT_HINT = "ARE YOU SURE...";
+  var MENU_QUIT_YN = "Y OR N...";
+  var MENU_GOODBYE = "SAY GOODBYE TO OLLY...";
+  var MENU_OLLY_UDG = 86;
+  var MENU_OLLY_ROW = 12;
+  var MENU_OLLY_COL = 12;
+  var MENU_CORNERS = [
+    [0, 0, 140],
+    [30, 0, 141],
+    [0, 22, 142],
+    [30, 22, 143]
+  ];
+  var INTRO_TITLE = "FLIGHT COMPUTER REPORT";
+  var INTRO_LINE2 = "TOUCHDOWN IMMINENT PREPARE";
+  var INTRO_LINE3 = "FOR MISSION STARQUAKE...";
+  var INTRO_LINE4 = "CRASH... BANG... SMASH...";
+  var INTRO_LINE5 = "TOUCTHDOWN";
+  var INTRO_LINE6 = "COMTHUTER MALTHUNCTION";
+  var INTRO_LINE7 = "MALFUNNYTHINKIN ...";
+  var D5FD_INV_ROW = 1;
+  var D5FD_INV_COL0 = 21;
   var MACHINE_ATTR_HI = 224;
   var MACHINE_FALL = 16;
   var MACHINE_LIFE = 2;
@@ -1960,8 +2072,10 @@
     return CORE_SOCKET_TABLE.map(([, flags]) => flags & 255);
   }
   function initCoreState() {
+    const d2de = CORE_D2DE_INIT.map((v) => v & 255);
     return {
-      d2de: CORE_D2DE_INIT.map((v) => v & 255),
+      d2de,
+      d2deNeed: d2de.slice(),
       coresLeft: CORE_LEFT_INIT,
       corePairs: CORE_PAIRS_INIT
     };
@@ -2043,6 +2157,123 @@
   }
 
   // src/items.ts
+  function rebuildItemIndex(prep) {
+    prep.itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
+    for (const it of prep.itemTable ?? []) {
+      if (it.sprite === 255) continue;
+      if (!it.placed) continue;
+      if ((it.row & 127) < PLAY_ORIGIN) continue;
+      if (it.room === ROOM_SKIP) continue;
+      if (it.room >= 0 && it.room < ROOM_COUNT) prep.itemsByRoom[it.room].push(it);
+    }
+  }
+  function rrca3(a) {
+    let v = a & 255;
+    for (let i = 0; i < 3; i++) v = (v >> 1 | (v & 1) << 7) & 255;
+    return v;
+  }
+  function dacReduce(a, n) {
+    let v = a & 255;
+    const e = n & 255;
+    if (e === 0) return 0;
+    do
+      v = v - e & 255;
+    while (v >= e);
+    return v;
+  }
+  function rollCoreSprites(world) {
+    const slots = Array.from({ length: 9 }, () => 0);
+    for (let n = 5; n > 0; n--) {
+      let sprite = 0;
+      for (; ; ) {
+        dacStep(world.dac);
+        let a = world.dac.dac0 & 255;
+        while (a >= 15) a -= 15;
+        a = a + 137 & 255;
+        if (a >= 143) a = a + 11 & 255;
+        if (slots.includes(a)) continue;
+        sprite = a;
+        break;
+      }
+      let slot = 0;
+      for (; ; ) {
+        dacStep(world.dac);
+        let e = world.dac.dac0 & 255;
+        while (e >= 9) e -= 9;
+        e = e + 9 & 255;
+        while (e >= 9) e -= 9;
+        slot = e;
+        if (slots[slot] === 0) break;
+      }
+      slots[slot] = sprite;
+    }
+    for (let b = 9; b > 0; b--) {
+      if (slots[9 - b] === 0) slots[9 - b] = 137 - b & 255;
+    }
+    world.d2de = slots;
+    world.d2deNeed = slots.slice();
+  }
+  function writeShuffled(prep, index, room, sprite) {
+    const src = prep.itemTemplate?.[index] ?? prep.itemTable?.[index];
+    const it = prep.itemTable?.[index];
+    if (!it) return;
+    it.room = room & 511;
+    it.sprite = sprite & 255;
+    it.placed = false;
+    it.attr_bits = (src?.attr_bits ?? 0) & 7;
+    it.col = it.attr_bits << 5 & 224;
+    it.row = room >> 8 & 1 ? 128 : 0;
+  }
+  function shuffleCollectibles(prep, world) {
+    if (!prep.itemTable || prep.itemTable.length < ITEM_SHUFFLE) return;
+    if (prep.itemTemplate) {
+      prep.itemTable = prep.itemTemplate.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
+    }
+    dacStep(world.dac);
+    writeShuffled(prep, 0, ITEM_KEY_ROOMS[world.dac.dac0 & 3], 15);
+    dacStep(world.dac);
+    writeShuffled(prep, 1, ITEM_TOOL_ROOMS[world.dac.dac0 & 3], 16);
+    rollCoreSprites(world);
+    let c = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      dacStep(world.dac);
+      c = world.dac.dac0 & 7;
+      for (let j = 0; j < 9; j++) {
+        c = (c + 1) % 9;
+        let sprite = (world.d2de[c] ?? 0) & 127;
+        if (pass === 1 && (world.dac.dac0 >> 8 & 255) >= 150) sprite = (sprite & 7) + 26;
+        sprite &= 127;
+        dacStep(world.dac);
+        const pair = ITEM_PAIR_ROOMS[pass * 9 + j];
+        const room = (world.dac.dac0 & 255) < 127 ? pair[0] : pair[1];
+        writeShuffled(prep, 2 + pass * 9 + j, room, sprite);
+      }
+    }
+    rebuildItemIndex(prep);
+  }
+  function placeCollectiblesInRoom(prep, world, room) {
+    if (room === ROOM_SKIP) return;
+    const marks = prep.extraMarksByRoom?.[room] ?? [];
+    if (!marks.length || !prep.itemTable) return;
+    world.dac = seedDac(room);
+    const slot = dacReduce((world.dac.dac0 >> 8 ^ world.d2c6 >> 8) & 127, marks.length);
+    const mark = marks[slot];
+    for (const it of prep.itemTable) {
+      if (it.index >= ITEM_SHUFFLE) continue;
+      if ((it.row & 127) !== 0) continue;
+      if (it.room !== room) continue;
+      let mix = (world.dac.dac2 & 255 ^ world.d2c6 & 255) & 63;
+      mix = dacReduce(mix, 6);
+      mix = mix + 2 & 255;
+      const attr = rrca3(mix) & 224;
+      it.col = mark.col & 31 | attr;
+      it.row = it.row & 128 | mark.row & 127;
+      it.placed = (it.row & 127) >= PLAY_ORIGIN;
+      it.attr_bits = attr >> 5;
+      rebuildItemIndex(prep);
+      break;
+    }
+  }
   function itemGamePos(item) {
     const col = item.col & 31;
     const row = item.row & 127;
@@ -2336,14 +2567,9 @@
       }
     }
     const blocks = data.blocks.blocks.map((b) => b.subblocks);
+    const itemTable = data.items.items.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
+    const itemTemplate = itemTable.map((it) => ({ ...it, raw: [...it.raw] }));
     const itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
-    for (const it of data.items.items) {
-      if (it.sprite === 255) continue;
-      if (!it.placed) continue;
-      if ((it.row & 127) < PLAY_ORIGIN) continue;
-      if (it.room === ROOM_SKIP) continue;
-      if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
-    }
     const rooms = data.rooms.rooms;
     const {
       stationsByRoom,
@@ -2357,7 +2583,7 @@
       passagesByRoom,
       machinesByRoom
     } = hotspotsFromData(data, rooms, blocks);
-    return {
+    const prep = {
       graphics,
       sprites,
       actorsBySet,
@@ -2365,6 +2591,8 @@
       blocks,
       rooms,
       itemsByRoom,
+      itemTable,
+      itemTemplate,
       stationsByRoom,
       teleportsByRoom,
       killsByRoom,
@@ -2376,6 +2604,8 @@
       passagesByRoom,
       machinesByRoom
     };
+    rebuildItemIndex(prep);
+    return prep;
   }
   function newBuffers() {
     return {
@@ -2485,10 +2715,10 @@
     for (let i = 0; i < CORE_SLOTS; i++) {
       const r = i / 3 | 0;
       const c = i % 3;
-      const need = CORE_D2DE_INIT[i];
-      const live = world.d2de[i] ?? need;
+      const live = world.d2de[i] ?? 0;
       const pending2 = (live & 128) !== 0;
-      const sprite = need & 127;
+      const origin = world.d2deNeed[i] ?? CORE_D2DE_INIT[i] ?? live;
+      const sprite = (pending2 ? live : origin) & 127;
       let ink = CORE_PANEL_INK_DONE;
       if (pending2) {
         ink = blinkOn ? CORE_PANEL_INK_PENDING : (world.frames + i & 3) + 2;
@@ -3301,6 +3531,142 @@
     return i - start;
   }
 
+  // src/ui/menu.ts
+  function beginMenuUi() {
+    return { kind: "menu", phase: "options", control: MENU_CONTROL_DEFAULT };
+  }
+  function printAt(buf, row, col, text, ink, bright = 1) {
+    const bytes = [22, row, col, 19, bright, 16, ink, 17, 0, ...[...text].map((c) => c.charCodeAt(0)), 255];
+    printMessage(buf, newPrintState(), bytes);
+  }
+  function blitGraphic2(buf, prep, id, row, col) {
+    const graphic = prep?.graphics[id];
+    if (!graphic) return;
+    for (const cell of graphic.cells) {
+      const cy = row + cell.row;
+      const cx = col + cell.col;
+      if (cy < 0 || cy >= 24 || cx < 0 || cx >= SCREEN_COLS) continue;
+      const idx = cellIndex(cy, cx);
+      const dst = idx * CELL;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py] = cell.data[py];
+      if (cell.attr != null) buf.attr[idx] = cell.attr & 255;
+    }
+  }
+  function plotUdg(buf, row, col, data, attr) {
+    if (row < 0 || row >= 24 || col < 0 || col >= SCREEN_COLS) return;
+    const idx = cellIndex(row, col);
+    const dst = idx * CELL;
+    for (let py = 0; py < 8; py++) buf.data[dst + py] = data[py];
+    buf.attr[idx] = attr & 255;
+  }
+  function drawBanners(buf, prep) {
+    for (let i = 0; i < 7; i++) {
+      const col = 2 + i * 4;
+      blitGraphic2(buf, prep, MENU_BAR_H, 0, col);
+      blitGraphic2(buf, prep, MENU_BAR_H, MENU_FOOT_ROW, col);
+    }
+    for (let i = 0; i < 5; i++) {
+      const row = 2 + i * 4;
+      blitGraphic2(buf, prep, MENU_BAR_V, row, 0);
+      blitGraphic2(buf, prep, MENU_BAR_V, row, 30);
+    }
+    for (const [col, row, id] of MENU_CORNERS) blitGraphic2(buf, prep, id, row, col);
+  }
+  function drawTitle(buf) {
+    const attr = 71;
+    let col = MENU_TITLE_COL;
+    for (let i = 0; i < MENU_TITLE.length; i++) {
+      printAt(buf, MENU_TITLE_ROW, col, MENU_TITLE[i], 7);
+      col += 1;
+      if (i + 1 < MENU_TITLE.length) {
+        plotUdg(buf, MENU_TITLE_ROW, col, MENU_TITLE_UDG90, attr);
+        col += 1;
+      }
+    }
+  }
+  function optionInk(ui, n) {
+    return ui.control === n ? MENU_INK_SELECTED : MENU_INK_IDLE;
+  }
+  function drawOptions(buf, ui) {
+    printAt(buf, 6, 4, "1.KEMPSTON JOYSTICK", optionInk(ui, 1));
+    printAt(buf, 8, 4, "2.CURSOR JOYSTICK", optionInk(ui, 2));
+    printAt(buf, 10, 4, "3.SINCLAIR ZX2 JOYSTICK", optionInk(ui, 3));
+    printAt(buf, 12, 4, "4.KEYBOARD ... " + MENU_KEYS_4, optionInk(ui, 4));
+    printAt(buf, 14, 4, "5.UDK KEYBOARD ... " + MENU_KEYS_5, optionInk(ui, 5));
+    printAt(buf, 16, 4, "6.DEFINE YOUR OWN KEYS", MENU_INK_STATIC);
+    printAt(buf, 18, 4, "0.START GAME", MENU_INK_STATIC);
+    printAt(buf, 20, 4, "Q.QUIT", MENU_INK_STATIC);
+  }
+  function drawQuit(buf) {
+    printAt(buf, 4, 9, MENU_QUIT_MSG, 6);
+    printAt(buf, 6, 9, MENU_QUIT_HINT, 6);
+    printAt(buf, 9, 12, MENU_QUIT_YN, 6);
+  }
+  function drawMenuOverlay(buf, ui, prep) {
+    clearScreen(buf, 7);
+    drawBanners(buf, prep);
+    if (ui.phase === "options") {
+      blitGraphic2(buf, prep, MENU_FOOT_L, MENU_FOOT_ROW, MENU_FOOT_COL_L);
+      blitGraphic2(buf, prep, MENU_FOOT_R, MENU_FOOT_ROW, MENU_FOOT_COL_R);
+      drawTitle(buf);
+      drawOptions(buf, ui);
+      return;
+    }
+    if (ui.phase === "intro") {
+      printAt(buf, 4, 5, INTRO_TITLE, 5);
+      printAt(buf, 7, 3, INTRO_LINE2, 3);
+      printAt(buf, 9, 5, INTRO_LINE3, 3);
+      printAt(buf, 11, 4, INTRO_LINE4, 3);
+      printAt(buf, 13, 10, INTRO_LINE5, 3);
+      printAt(buf, 15, 5, INTRO_LINE6, 3);
+      printAt(buf, 17, 7, INTRO_LINE7, 3);
+      return;
+    }
+    drawQuit(buf);
+    if (ui.phase === "goodbye") {
+      printAt(buf, 19, 6, MENU_GOODBYE, 2);
+      blitGraphic2(buf, prep, MENU_OLLY_UDG, MENU_OLLY_ROW, MENU_OLLY_COL);
+    }
+  }
+  function menuDigitFromKey(key, physical) {
+    if (physical) {
+      const digit = physical.match(/^(?:Digit|Numpad)([0-6])$/);
+      if (digit) return digit[1].charCodeAt(0) - 48 & 255;
+    }
+    if (key.length === 1 && key >= "0" && key <= "6") return key.charCodeAt(0) - 48;
+    return null;
+  }
+  function feedMenuKey(ui, key, world, physical) {
+    if (ui.phase === "goodbye") return "stay";
+    if (ui.phase === "intro") {
+      if (key === "Shift" || key === "Control" || key === "Alt" || key === "AltGraph") return "stay";
+      return "start";
+    }
+    if (ui.phase === "quit") {
+      const ch = key.length === 1 ? key.toUpperCase() : "";
+      if (ch === "Y") ui.phase = "goodbye";
+      else if (ch === "N") ui.phase = "options";
+      return "stay";
+    }
+    const digit = menuDigitFromKey(key, physical);
+    if (digit === 0) {
+      ui.phase = "intro";
+      return "stay";
+    }
+    if (digit !== null && digit >= 1 && digit <= 5) {
+      if (digit !== ui.control) {
+        ui.control = digit;
+        if (world) requestSfx(world, MENU_SFX_SELECT);
+      }
+      return "stay";
+    }
+    if (key === "q" || key === "Q") {
+      ui.phase = "quit";
+      return "stay";
+    }
+    return "stay";
+  }
+
   // src/ui/overlay.ts
   var MSG_SECURITY_DOOR = "SECURITY  DOOR";
   var MSG_ACCESS_CODE = "ACCESS  CODE";
@@ -3317,20 +3683,73 @@
   function idleUi() {
     return { kind: "none" };
   }
-  function printAt(buf, row, col, text, ink = 7) {
+  function printAt2(buf, row, col, text, ink = 7) {
     const bytes = [22, row, col, 16, ink, 19, 1, ...[...text].map((c) => c.charCodeAt(0)), 255];
     printMessage(buf, newPrintState(), bytes);
+  }
+  function planDigitMatches(world, digits) {
+    const matched = digits.map(() => false);
+    const invCols = digits.map(() => D5FD_INV_COL0);
+    const used = world.inventory.map(() => false);
+    for (let d = 0; d < digits.length; d++) {
+      let hit = -1;
+      for (let i = 0; i < world.inventory.length && i < 4; i++) {
+        if (used[i]) continue;
+        if ((world.inventory[i].sprite & 255) === DOOR_KEY_SPRITE) {
+          hit = i;
+          break;
+        }
+      }
+      if (hit < 0) {
+        for (let i = 0; i < world.inventory.length && i < 4; i++) {
+          if (used[i]) continue;
+          if ((world.inventory[i].sprite & 255) === (digits[d] & 255)) {
+            hit = i;
+            used[i] = true;
+            break;
+          }
+        }
+      }
+      if (hit < 0) {
+        for (let i = 0; i < world.inventory.length && i < 4; i++) {
+          if (used[i]) continue;
+          if ((world.inventory[i].sprite & 255) === DOOR_SINGLE_WILDCARD) {
+            hit = i;
+            used[i] = true;
+            break;
+          }
+        }
+      }
+      if (hit >= 0) {
+        matched[d] = true;
+        invCols[d] = D5FD_INV_COL0 + hit * 2;
+      }
+    }
+    return { matched, invCols };
+  }
+  function d5fdFields(world, digits) {
+    const { matched, invCols } = planDigitMatches(world, digits);
+    return {
+      digitIndex: 0,
+      rollSlot: 0,
+      ink: 7,
+      flags: digits.map(() => D5FD_ATTR_WAIT),
+      matched,
+      invCols
+    };
   }
   function beginDoorUi(world, room, openRight) {
     const ok = doorKeysAccepted(world, room);
     requestSfx(world, 8);
+    const digits = expectedDoorCode(room);
     return {
       kind: "door",
       phase: "intro",
       ok,
       openRight,
       ticks: 0,
-      digits: expectedDoorCode(room)
+      digits,
+      ...d5fdFields(world, digits)
     };
   }
   function beginTeleportUi(room, world) {
@@ -3348,13 +3767,15 @@
   }
   function beginCheopsUi(world, room) {
     requestSfx(world, CHEOPS_SFX_INTRO);
+    const digits = expectedCheopsCode(room);
     return {
       kind: "cheops",
       phase: "intro",
       ok: cheopsKeysAccepted(world, room),
       chosen: false,
       ticks: 0,
-      digits: expectedCheopsCode(room),
+      digits,
+      ...d5fdFields(world, digits),
       slot: 0,
       given: 0,
       offers: []
@@ -3368,33 +3789,17 @@
     ui.phase = "exchange";
     ui.ticks = 0;
   }
-  function drawDoorOverlay(buf, ui) {
-    clearPlayfield(buf);
-    printAt(buf, 8, 9, MSG_SECURITY_DOOR);
-    printAt(buf, 15, 10, MSG_ACCESS_CODE);
-    if (ui.phase === "result" || ui.phase === "done") {
-      if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
-      else printAt(buf, 21, 6, MSG_ACCESS_BAD);
-    }
-  }
-  function drawTeleportOverlay(buf, ui) {
-    clearPlayfield(buf);
-    printAt(buf, 8, 4, MSG_ENTERED);
-    printAt(buf, 10, 8, MSG_TELEPORT);
-    printAt(buf, 12, 6, MSG_CODE_PREFIX + ui.ownName.slice(0, TELEPORT_NAME_LEN));
-    printAt(buf, 14, 8, MSG_ENTER_TP);
-    printAt(buf, 16, 8, MSG_DEST_CODE);
-    if (ui.phase === "prompt" || ui.phase === "input") {
-      printAt(buf, 19, 12, MSG_DASHES);
-      let col = 12;
-      for (let i = 0; i < ui.buffer.length; i++) {
-        printAt(buf, 19, col, ui.buffer[i] + " ");
-        col += 2;
-      }
-    }
-    if (ui.phase === "result" || ui.phase === "done") {
-      if (ui.ok) printAt(buf, 21, 9, MSG_TP_OK);
-      else printAt(buf, 21, 6, MSG_TP_BAD);
+  function blitGraphic3(buf, prep, id, row, col) {
+    const graphic = prep?.graphics[id];
+    if (!graphic) return;
+    for (const cell of graphic.cells) {
+      const cy = row + cell.row;
+      const cx = col + cell.col;
+      if (cy < 0 || cy >= 24 || cx < 0 || cx >= SCREEN_COLS) continue;
+      const idx = cellIndex(cy, cx);
+      const dst = idx * CELL;
+      for (let py = 0; py < CELL; py++) buf.data[dst + py] = cell.data[py];
+      if (cell.attr != null) buf.attr[idx] = cell.attr & 255;
     }
   }
   function blitSprite2(buf, prep, spriteId, row, col, attr) {
@@ -3410,66 +3815,177 @@
       buf.attr[idx] = attr;
     }
   }
+  function digitAttr(ui, i) {
+    if (ui.phase === "roll" && i === ui.rollSlot) return ui.ink & 7;
+    if (ui.phase === "match" && i === ui.digitIndex) return ui.ink & 7 | 2;
+    return ui.flags[i] ?? D5FD_ATTR_WAIT;
+  }
+  function drawDigitRoll(buf, prep, ui, row, col0) {
+    if (ui.phase === "intro") return;
+    for (let i = 0; i < ui.digits.length; i++) {
+      blitSprite2(buf, prep, ui.digits[i], row, col0 + i * D5FD_DIGIT_STRIDE, digitAttr(ui, i));
+    }
+    if (ui.phase === "match") {
+      const col = ui.invCols[ui.digitIndex] ?? D5FD_INV_COL0;
+      const attr = ui.ink & 7 | 2;
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          const idx = cellIndex(D5FD_INV_ROW + dy, col + dx);
+          if (idx >= 0 && idx < buf.attr.length) buf.attr[idx] = attr;
+        }
+      }
+    }
+  }
+  function drawDoorOverlay(buf, ui, prep) {
+    clearPlayfield(buf);
+    printAt2(buf, 8, 9, MSG_SECURITY_DOOR);
+    printAt2(buf, 15, 10, MSG_ACCESS_CODE);
+    blitGraphic3(buf, prep, DOOR_UDG_LEFT, DOOR_UDG_ROW, DOOR_UDG_COL_L);
+    blitGraphic3(buf, prep, DOOR_UDG_RIGHT, DOOR_UDG_ROW, DOOR_UDG_COL_R);
+    drawDigitRoll(buf, prep, ui, DOOR_DIGIT_ROW, DOOR_DIGIT_COL);
+    if (ui.phase === "result" || ui.phase === "done") {
+      if (ui.ok) printAt2(buf, 21, 7, MSG_ACCESS_OK);
+      else printAt2(buf, 21, 6, MSG_ACCESS_BAD);
+    }
+  }
+  function drawTeleportOverlay(buf, ui, prep) {
+    clearPlayfield(buf);
+    printAt2(buf, 8, 4, MSG_ENTERED);
+    printAt2(buf, 10, 8, MSG_TELEPORT);
+    printAt2(buf, 12, 6, MSG_CODE_PREFIX + ui.ownName.slice(0, TELEPORT_NAME_LEN));
+    blitGraphic3(buf, prep, TELEPORT_UDG, TELEPORT_UDG_ROW, TELEPORT_UDG_COL);
+    printAt2(buf, 14, 8, MSG_ENTER_TP);
+    printAt2(buf, 16, 8, MSG_DEST_CODE);
+    if (ui.phase === "prompt" || ui.phase === "input") {
+      printAt2(buf, 19, 12, MSG_DASHES);
+      let col = 12;
+      for (let i = 0; i < ui.buffer.length; i++) {
+        printAt2(buf, 19, col, ui.buffer[i] + " ");
+        col += 2;
+      }
+    }
+    if (ui.phase === "result" || ui.phase === "done") {
+      if (ui.ok) printAt2(buf, 21, 9, MSG_TP_OK);
+      else printAt2(buf, 21, 6, MSG_TP_BAD);
+    }
+  }
   function drawCheopsOverlay(buf, ui, prep) {
     clearPlayfield(buf);
-    printAt(buf, 9, 6, CHEOPS_MSG_TITLE);
-    if (ui.phase === "intro" || ui.phase === "result") {
-      printAt(buf, 13, 9, CHEOPS_MSG_CODE);
+    printAt2(buf, 9, 6, CHEOPS_MSG_TITLE);
+    if (ui.phase === "intro" || ui.phase === "roll" || ui.phase === "match" || ui.phase === "pause" || ui.phase === "result") {
+      printAt2(buf, 13, 9, CHEOPS_MSG_CODE);
+      drawDigitRoll(buf, prep, ui, CHEOPS_DIGIT_ROW, CHEOPS_DIGIT_COL);
     }
     if (ui.phase === "result") {
-      if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
-      else printAt(buf, 21, 6, MSG_ACCESS_BAD);
+      if (ui.ok) printAt2(buf, 21, 7, MSG_ACCESS_OK);
+      else printAt2(buf, 21, 6, MSG_ACCESS_BAD);
     }
     if (ui.phase === "exchange" || ui.phase === "done" && ui.chosen) {
-      printAt(buf, 13, 8, CHEOPS_MSG_EXCHANGE);
-      printAt(buf, 21, 4, CHEOPS_MSG_HINT);
+      printAt2(buf, 13, 8, CHEOPS_MSG_EXCHANGE);
+      printAt2(buf, 21, 4, CHEOPS_MSG_HINT);
       blitSprite2(buf, prep, ui.given, 12, 17, 71);
       for (let i = 0; i < CHEOPS_OFFERS; i++) {
         const col = 4 + i * 6;
-        printAt(buf, 15, col, `${i + 1}.`);
+        printAt2(buf, 15, col, `${i + 1}.`);
         blitSprite2(buf, prep, ui.offers[i] ?? 0, 16, col, 71);
       }
     }
   }
   function drawUiOverlay(buf, ui, prep) {
-    if (ui.kind === "door") drawDoorOverlay(buf, ui);
-    else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui);
+    if (ui.kind === "door") drawDoorOverlay(buf, ui, prep);
+    else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui, prep);
     else if (ui.kind === "cheops") drawCheopsOverlay(buf, ui, prep);
+    else if (ui.kind === "menu") drawMenuOverlay(buf, ui, prep);
   }
-  function tickDoorUi(ui, world) {
+  function nextD5fdInk(world, prev) {
+    dacStep(world.dac);
+    let a = world.dac.dac0 >> 8 & 63;
+    while (a >= 6) a -= 6;
+    a = a + 2 & 255;
+    if (a === (prev & 255)) a ^= 1;
+    return a;
+  }
+  function advanceDigit(ui) {
+    ui.digitIndex += 1;
+    ui.ticks = 0;
+    if (ui.digitIndex >= ui.digits.length) ui.phase = "pause";
+    else ui.phase = "roll";
+  }
+  function tickD5fd(ui, world) {
+    if (ui.phase === "result" || ui.phase === "done" || ui.phase === "exchange") return false;
     ui.ticks += 1;
-    if (ui.phase === "intro" && ui.ticks >= 25) {
-      ui.phase = "result";
-      ui.ticks = 0;
+    if (ui.phase === "intro") {
+      if (ui.ticks >= D5FD_INTRO_HALT) {
+        ui.phase = "roll";
+        ui.ticks = 0;
+        ui.digitIndex = 0;
+      }
+      return false;
+    }
+    if (ui.phase === "roll") {
       if (world) {
-        if (ui.ok) {
-          requestSfx(world, 10);
-          requestSfx(world, 15);
+        ui.ink = nextD5fdInk(world, ui.ink);
+        const n = ui.digits.length || 1;
+        let slot = world.dac.dac0 & 31;
+        while (slot >= n) slot -= n;
+        ui.rollSlot = slot;
+        requestSfx(world, (world.dac.dac0 >> 8 & 3) + D5FD_SFX_ROLL_BASE);
+      }
+      if (ui.ticks >= D5FD_ROLL) {
+        if (ui.matched[ui.digitIndex]) {
+          ui.phase = "match";
+          ui.ticks = 0;
+          ui.flags[ui.digitIndex] = D5FD_ATTR_OK;
+          if (world) requestSfx(world, D5FD_SFX_MATCH);
         } else {
-          requestSfx(world, 15);
+          advanceDigit(ui);
         }
       }
-    } else if (ui.phase === "result" && ui.ticks >= 40) {
-      ui.phase = "done";
-      return true;
+      return false;
+    }
+    if (ui.phase === "match") {
+      ui.ink = (ui.ink ^ 7 | 2) & 255;
+      if (world) requestSfx(world, D5FD_SFX_MATCH);
+      if (ui.ticks >= D5FD_MATCH_FLASH) advanceDigit(ui);
+      return false;
+    }
+    if (ui.phase === "pause") {
+      if (ui.ticks >= D5FD_PAUSE) {
+        ui.phase = "result";
+        ui.ticks = 0;
+        return true;
+      }
+    }
+    return false;
+  }
+  function tickDoorUi(ui, world) {
+    if (tickD5fd(ui, world) && world) {
+      if (ui.ok) requestSfx(world, 10);
+      requestSfx(world, 15);
+    }
+    if (ui.phase === "result") {
+      ui.ticks += 1;
+      if (ui.ticks >= (ui.ok ? D5FD_OK_FLASH : D5FD_FAIL_FLASH)) {
+        ui.phase = "done";
+        return true;
+      }
     }
     return ui.phase === "done";
   }
   function tickCheopsUi(ui, world) {
     if (ui.phase === "done") return true;
     if (ui.phase === "exchange") return false;
-    ui.ticks += 1;
-    if (ui.phase === "intro" && ui.ticks >= 25) {
-      ui.phase = "result";
-      ui.ticks = 0;
-      if (world) requestSfx(world, 15);
-    } else if (ui.phase === "result" && ui.ticks >= 40) {
-      if (ui.ok && world) {
-        enterCheopsExchange(ui, world);
-        return false;
+    if (tickD5fd(ui, world) && world) requestSfx(world, 15);
+    if (ui.phase === "result") {
+      ui.ticks += 1;
+      if (ui.ticks >= (ui.ok ? D5FD_OK_FLASH : D5FD_FAIL_FLASH)) {
+        if (ui.ok && world) {
+          enterCheopsExchange(ui, world);
+          return false;
+        }
+        ui.phase = "done";
+        return true;
       }
-      ui.phase = "done";
-      return true;
     }
     return false;
   }
@@ -3565,6 +4081,8 @@
       } else {
         world.message = CHEOPS_MSG_CODE;
       }
+    } else if (ui.kind === "menu") {
+      world.message = ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
     }
   }
   function isUiBlocking(ui) {
@@ -4029,7 +4547,7 @@
     if (world.dd22 === DD22_PAD) tickPadFire(prep, blob, !!input2.fire, world);
     else tickFire(prep, blob, !!input2.fire, world);
     tickEnergyDrain(world);
-    const pickupInput = stationed ? { ...input2, up: false } : input2;
+    const pickupInput = stationed || world.dd22 === DD22_PAD || world.dd22 === DD22_LIFT ? { ...input2, up: false } : input2;
     if (tickPickup(prep, blob, pickupInput, world) === "cheops") {
       world.teleportLatch = true;
       world.ui = beginCheopsUi(world, blob.room);
@@ -4075,7 +4593,7 @@
     applyRoomExit(prep, blob, steer.right && !steer.left, steer.left && !steer.right, world);
     if (blob.room < 0 || blob.room >= ROOM_COUNT) blob.room = (blob.room % ROOM_COUNT + ROOM_COUNT) % ROOM_COUNT;
   }
-  function createWorld(prep, room) {
+  function createWorld(prep, room, opts) {
     const core = initCoreState();
     const world = {
       terrain: newBuffers(),
@@ -4091,6 +4609,7 @@
       pickupLatch: false,
       dac0: 0,
       dac: { dac0: 0, dac2: 0, dac4: 0, db19: 3, db1a: 3 },
+      d2c6: opts?.frames ?? DOOR_D2C6,
       entities: [],
       entityCache: null,
       cacheRoom: -1,
@@ -4126,6 +4645,7 @@
       visitedCount: 0,
       frames: 0,
       d2de: core.d2de,
+      d2deNeed: core.d2deNeed,
       coresLeft: core.coresLeft,
       corePairs: core.corePairs,
       corePhase: null,
@@ -4144,6 +4664,10 @@
       chan: emptyChan(),
       buzz: []
     };
+    if (opts?.shuffleItems) {
+      world.dac = { dac0: world.d2c6, dac2: 0, dac4: 0, db19: 3, db1a: 3 };
+      shuffleCollectibles(prep, world);
+    }
     enterRoom(prep, world, room);
     return world;
   }
@@ -4157,6 +4681,7 @@
     world.pickupLatch = false;
     world.machineSpent = [];
     parkBullet(world);
+    placeCollectiblesInRoom(prep, world, room);
     if (a390Unvisited(world.a390, room)) {
       addScore(world, SCORE_FIRST_VISIT);
       clearA390Bit(world.a390, room);
@@ -4842,11 +5367,14 @@
       actors: pack[5],
       blockAttrs: pack[6]
     });
-    const start = parseHash() ?? 0;
-    const world = createWorld(prep, start);
+    const hashed = parseHash();
+    const start = hashed ?? NEW_GAME_ROOM;
+    let world = createWorld(prep, start);
     wireAudioUi();
     let blob = spawnBlob(prep, start, world);
-    if (blob.room === start) enterRoom(prep, world, start, { blob });
+    if (hashed === null) world.ui = beginMenuUi();
+    else if (blob.room === start) enterRoom(prep, world, start, { blob });
+    syncMusic(world);
     let overlay = false;
     let endShown = false;
     let lastMs = 0;
@@ -4961,17 +5489,40 @@
       avgMs += (dt - avgMs) / Math.min(frames, 50);
       updatePanel();
     }
-    function goRoom(id) {
+    function startPlay(id, writeHash, newGame = false) {
       const room = clampRoom(id);
-      blob = spawnBlob(prep, room, world);
-      enterRoom(prep, world, room, { blob });
-      chromeRoom = -1;
+      if (newGame) {
+        const god = world.cheatGod;
+        world = createWorld(prep, room, {
+          shuffleItems: true,
+          frames: (Date.now() ^ (performance.now() | 0)) & 65535
+        });
+        world.cheatGod = god;
+        blob = spawnBlob(prep, room, world);
+        chromeRoom = -1;
+      } else {
+        world.ui = idleUi();
+        blob = spawnBlob(prep, room, world);
+        enterRoom(prep, world, room, { blob });
+        chromeRoom = -1;
+      }
+      syncMusic(world);
+      if (!writeHash) return;
       const hash = "#" + blob.room;
       if (location.hash !== hash) history.replaceState(null, "", hash);
+    }
+    function goRoom(id) {
+      startPlay(id, true);
     }
     document.addEventListener("keydown", (ev) => {
       unlock();
       if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
+      if (world.ui.kind === "menu") {
+        const act = feedMenuKey(world.ui, ev.key, world, ev.code);
+        if (act === "start") startPlay(NEW_GAME_ROOM, false, true);
+        ev.preventDefault();
+        return;
+      }
       if (world.ui.kind === "teleport") {
         feedTeleportKey(world.ui, ev.key, true, world);
         if (ev.key.length === 1 || ev.key === " ") ev.preventDefault();
@@ -5069,6 +5620,7 @@
       while (acc >= TICK_MS) {
         const prev = blob.room;
         tick(prep, blob, input(), world);
+        syncMusic(world);
         drainSfx(world);
         if (blob.room !== prev) {
           chromeRoom = -1;

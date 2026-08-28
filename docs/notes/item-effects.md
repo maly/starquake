@@ -262,7 +262,7 @@ NEVÍM k přenosu: viz § 9.
 2. **`$0F` mapa.** V enginu: 22 místností (11 párů), exact XY + L\|R, room ±1, snap dest `$0F`. `A=$05` = `$D2C4`.
 3. **Typy `$10`–`$13` v live `$96FC`.** Větev `$D13B` je no-op. `$AB80` začíná na `$14`, extra je `$01`. Jestli je někdy zapíše jiný kód — NEVÍM.
 4. **Drop overflow `$D1CA` / `$D236`.** Implementováno (col−1 / col+2 / orig, Y=`$32` jen mezi `$D1E1` a `$D236`). `$D1B3` prázdný Up `00 00` a skip `$D2BE≥4` při `$D2DB≠0` zůstávají mimo.
-5. **Cheops výměna `$CCF1`–`$CDFB`.** Implementováno: 2ciferný kód BC=`$0F0D`, slot `$CD32`, 4× `$D2DE` bit7 + original, klávesy 1–5, `$A801` po úspěchu. Digit-roll `$D78B` jako u dveří ne.
+5. **Cheops výměna `$CCF1`–`$CDFB`.** Implementováno: 2ciferný kód BC=`$0F0D`, slot `$CD32`, 4× `$D2DE` bit7 + original, klávesy 1–5, `$A801` po úspěchu. Digit-roll `$D78B` / `$D679` jako u dveří (A=2). Na padu/zdviži `$CB36`/`$C761` RES 3 — Up (a tedy Cheops) ne.
 6. **`$D693` / jádro `$C7` / security `$CBDC`.** Jen že `$D09F` tam neskáče.
 7. **Skóre při nenulovém `$D419`.** Sběr pracovní cifry nesází; kdyby je nastavil jiný kód ve stejném ticku, `$D1F5` by je přičetl. Za jakých ticků to nastane při sběru — NEVÍM (typicky `$D419` nula).
 8. **Engine vs `$18` a 1. Up prázdný slot.** ROM to dělá. Jestli engine extra `$18` ignoruje a prázdný slot z Up nevkládá — rozhodnutí orchestrátora, ne NEVÍM o ROM.

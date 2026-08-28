@@ -1,5 +1,5 @@
-import { drainSfx, unlock, wireAudioUi } from "./audio/player";
-import { DISPLAY_H, DISPLAY_W, SCREEN_H, SCREEN_W, TICK_MS } from "./constants";
+import { drainSfx, syncMusic, unlock, wireAudioUi } from "./audio/player";
+import { DISPLAY_H, DISPLAY_W, NEW_GAME_ROOM, SCREEN_H, SCREEN_W, TICK_MS } from "./constants";
 import { expectedCheopsCode, expectedDoorCode, teleportNameForRoom } from "./objects";
 import {
   cellPos,
@@ -27,7 +27,8 @@ import { parseCheatSprite, setInventorySlot } from "./cheat";
 import type { GameData, Prepared } from "./types";
 import { clampWorldStats, drawChrome, drawStatus } from "./ui/chrome";
 import { blitPlayfieldRgba, rasterizeScreen } from "./ui/compose";
-import { drawUiOverlay, feedCheopsKey, feedTeleportKey, isUiBlocking } from "./ui/overlay";
+import { beginMenuUi, feedMenuKey } from "./ui/menu";
+import { drawUiOverlay, feedCheopsKey, feedTeleportKey, idleUi, isUiBlocking } from "./ui/overlay";
 import { PLAY_Y0, clearScreen, newScreenBuffers, pastePlayfield } from "./ui/screen";
 
 const DATA_BASE = "../out";
@@ -120,11 +121,14 @@ async function boot(): Promise<void> {
     blockAttrs: pack[6],
   });
 
-  const start = parseHash() ?? 0;
-  const world = createWorld(prep, start);
+  const hashed = parseHash();
+  const start = hashed ?? NEW_GAME_ROOM;
+  let world = createWorld(prep, start);
   wireAudioUi();
   let blob = spawnBlob(prep, start, world);
-  if (blob.room === start) enterRoom(prep, world, start, { blob });
+  if (hashed === null) world.ui = beginMenuUi();
+  else if (blob.room === start) enterRoom(prep, world, start, { blob });
+  syncMusic(world);
   let overlay = false;
   let endShown = false;
   let lastMs = 0;
@@ -263,18 +267,42 @@ async function boot(): Promise<void> {
     updatePanel();
   }
 
-  function goRoom(id: number): void {
+  function startPlay(id: number, writeHash: boolean, newGame = false): void {
     const room = clampRoom(id);
-    blob = spawnBlob(prep, room, world);
-    enterRoom(prep, world, room, { blob });
-    chromeRoom = -1;
+    if (newGame) {
+      const god = world.cheatGod;
+      world = createWorld(prep, room, {
+        shuffleItems: true,
+        frames: (Date.now() ^ (performance.now() | 0)) & 0xffff,
+      });
+      world.cheatGod = god;
+      blob = spawnBlob(prep, room, world);
+      chromeRoom = -1;
+    } else {
+      world.ui = idleUi();
+      blob = spawnBlob(prep, room, world);
+      enterRoom(prep, world, room, { blob });
+      chromeRoom = -1;
+    }
+    syncMusic(world);
+    if (!writeHash) return;
     const hash = "#" + blob.room;
     if (location.hash !== hash) history.replaceState(null, "", hash);
+  }
+
+  function goRoom(id: number): void {
+    startPlay(id, true);
   }
 
   document.addEventListener("keydown", (ev) => {
     unlock();
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
+    if (world.ui.kind === "menu") {
+      const act = feedMenuKey(world.ui, ev.key, world, ev.code);
+      if (act === "start") startPlay(NEW_GAME_ROOM, false, true);
+      ev.preventDefault();
+      return;
+    }
     if (world.ui.kind === "teleport") {
       feedTeleportKey(world.ui, ev.key, true, world);
       if (ev.key.length === 1 || ev.key === " ") ev.preventDefault();
@@ -376,6 +404,7 @@ async function boot(): Promise<void> {
     while (acc >= TICK_MS) {
       const prev = blob.room;
       tick(prep, blob, input(), world);
+      syncMusic(world);
       drainSfx(world);
       if (blob.room !== prev) {
         chromeRoom = -1;

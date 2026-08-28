@@ -4,7 +4,7 @@ Podklad: [`sound-effects.md`](sound-effects.md), [`melodies.md`](melodies.md). T
 
 ## Melodie `$6600`
 
-**Nezahrnovat.** Pět call sites (`$5ED3`, `$65B5`, `$6727`, `$685F`, `$69D0`) je title / menu / intro / hi-score / end-screen. Zadání tyto obrazovky neimplementuje. `$D9DE` je blokující `DI`. Pozadí = jen MP3. Místo v `game/src/audio/` nechat komentář + konstanty id 1–5 z `melodies.md` pro pozdější doplnění, bez přehrávače.
+**Nezahrnovat.** Pět call sites (`$5ED3`, `$65B5`, `$6727`, `$685F`, `$69D0`) je title / menu / intro / hi-score / end-screen. Menu `$5E81` je v enginu **bez** `$6600`. `$D9DE` je blokující `DI`. Pozadí = jen MP3.
 
 ## Kanál `$A41B` / `$A57B` (palba, pád, plošinka, oblaka)
 
@@ -45,19 +45,19 @@ Index `$17` (L=0 hang) **nikdy** nehrát. A=`$05`/`$06`/`$16` bez CALL — nehr�
 
 ## Co nespouštět (není v enginu / zakázané)
 
-- menu `$605A`, define keys `$6295`, hi-score `$68F8`
-- házení cifer `$D679` / shoda `$D70E` — overlay dveří/Cheops digit-sprite animaci nemá
+- menu select `$605A` `$0C` je v `feedMenuKey`; define keys `$6295` / hi-score `$68F8` skip
+- házení cifer `$D679` / shoda `$D70E` — overlay dveří/Cheops: 1 SFX / tick roll (`$0C`…`$0F`) a match (`$03`)
 - stroj `$0E` (`$D0E0`), místnost ±1 `$0F` (`$D133`)
 - `$D1CA` při prázdném Up bez sběru — engine latchuje Up, ale zvuk jen když se inventář skutečně změní (sběr). Prázdný Up bez itemu nehrát; full inventář v ROM taky `$D7C0` nemá.
 
 ## Web Audio + MP3
 
 - Efekty: obdélník z simulace `$D7C0` (ne vzorky, ne OscillatorNode s jedním Hz — D není konstantní).
-- BGM: soubor **`viewer/bgm.mp3`**, smyčka, vlastní Gain, mute BGM ≠ mute SFX. Chybějící soubor = ticho, žádný throw.
+- BGM: **`viewer/intro.mp3`** na title/menu/intro (`$5E81` / `$666D`); **`viewer/bgm.mp3`** ve hře (smyčka). Vlastní Gain, mute BGM ≠ mute SFX. Chybějící soubor = ticho, žádný throw. `music/` (intro + loop) necommituj, dokud nerozhodneme duplicitu.
 - Master mute vypne obojí. Persist `localStorage` klíče `starquake.audio.muted`, `starquake.audio.bgmMuted`, `starquake.audio.sfxGain`, `starquake.audio.bgmGain`.
 - Unlock `AudioContext` na prvním keydown/pointerdown; při `suspended` nic neshodit.
 - Ovládání viditelné i při `?dev=0` (malý audio strip u canvasu).
-- `dump.js` / Node testy **bez** `AudioContext`. Server MIME `.mp3`.
+- `dump.js` / Node testy **bez** `AudioContext`. Server MIME `.mp3`. Výběr stopy: `musicUrlFor` v `audio/tracks.ts`.
 
 ## Testy
 

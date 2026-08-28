@@ -8,8 +8,10 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 - [x] Cheops `$CCF1` — extra `$19` + Up: 2ciferný kód, výměna 1–5 z `$D2DE`.
 - [x] Přeplněný inventář `$D1CA` — pátý předmět se zahodí z pole; ROM ho dropne zpět do místnosti (`$D1F8` / `$D267` col−1 / col+2 / orig).
 - [x] Objekt `$0E` (nibble `$E0`) — stroj: pád z max. výšky položí dvě plošinky. Není zelené pole `$64`.
-- [ ] Door/TP overlay — text OK; chybí animace cifer `$D78B` / ikony `$25`/`$26`/`$24` a SFX `$D679`/`$D70E`.
-- [ ] Intro hudba — `music/intro.mp3` není zapojené (smyčka je `viewer/bgm.mp3`). Title/menu obrazovky taky ne.
+- [x] Door/TP overlay — text + ikony `$25`/`$26`/`$24` (`$EA65`) + digit-roll `$D78B` / SFX `$D679`/`$D70E`.
+- [x] Title/menu `$5E81` — `STARQUAKE`, volby 1–5 (highlight + `$0C`), `0` start, `Q` quit Y/N. `$6600` skip; define-keys `$6194` skip; řízení ve hře dál Q/A/O/P.
+- [x] Intro `$666D` `FLIGHT COMPUTER REPORT` (po `0`, další klávesa → hra). `$6600` B=4 skip.
+- [x] `music/intro.mp3` — title/menu/intro hraje `viewer/intro.mp3`; smyčka ve hře je `viewer/bgm.mp3`. `$6600` dál skip. `music/` necommituj (intro vs duplicitní loop).
 
 ## Záměrně mimo
 
@@ -25,6 +27,7 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 
 - [x] Animace 4 GRAFIX snímků vetřelce + pad — `world.frames / 2`, live ptr beze změny.
 - [ ] `$DD26` lean-to-stop `$E674` — engine drží poslední walk pose.
+- [x] `$6351`/`$648A` / `$6399` — nová hra z menu losuje `$94E8` 0–19 i `$D2DE`; panel `$C4AB` kreslí živé ID. `#room` snapshot. XY `$AA30`.
 - [ ] Live `$DAC6` po `$A80A` — engine seed `$7530+id×12`.
 - [ ] HUD redraw každý frame (ROM chrome jen `$A426`).
 - [ ] Inventář ve statusu: XOR blit vs přesné `$DB24` timing.
@@ -35,8 +38,8 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 
 ## Hygiena
 
-- [x] WORKLOG: poslední commit je `4948d6c`.
+- [x] WORKLOG: poslední commit je `62a915f`.
 - [x] WORKLOG bod 17: `viewer/bgm.mp3` už je v gitu (stejný soubor jako `music/game-loop.mp3`).
 - [x] `docs/notes/item-effects.md` — `$0F` v enginu; Cheops výměna taky.
 - [ ] Git remote `origin` — push teď nejde.
-- [ ] Untracked `tmp_*` sondy necommituj; `music/` (intro + duplicitní loop) rozhodnout.
+- [ ] Untracked `tmp_*` sondy necommituj; `music/` (intro + loop) necommituj — `viewer/intro.mp3` a `viewer/bgm.mp3` stačí k přehrání.

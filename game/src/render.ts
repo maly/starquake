@@ -24,6 +24,7 @@ import {
   WIDTH,
 } from "./constants";
 import { entityVisible, grafixAnimFrame } from "./entities";
+import { rebuildItemIndex } from "./items";
 import { hotspotsFromData } from "./objects";
 import type { Buffers, ExtraObject, GameData, Graphic, Item, Prepared, Pulse, RenderOpts, Rgb, World } from "./types";
 
@@ -78,14 +79,9 @@ export function prepare(data: GameData): Prepared {
     }
   }
   const blocks = data.blocks.blocks.map((b) => b.subblocks);
+  const itemTable: Item[] = data.items.items.map((it) => ({ ...it, raw: [...(it.raw ?? [])] }));
+  const itemTemplate: Item[] = itemTable.map((it) => ({ ...it, raw: [...it.raw] }));
   const itemsByRoom: Item[][] = Array.from({ length: ROOM_COUNT }, () => []);
-  for (const it of data.items.items) {
-    if (it.sprite === 0xff) continue;
-    if (!it.placed) continue;
-    if ((it.row & 0x7f) < PLAY_ORIGIN) continue;
-    if (it.room === ROOM_SKIP) continue;
-    if (it.room >= 0 && it.room < ROOM_COUNT) itemsByRoom[it.room].push(it);
-  }
   const rooms = data.rooms.rooms;
   const {
     stationsByRoom,
@@ -99,7 +95,7 @@ export function prepare(data: GameData): Prepared {
     passagesByRoom,
     machinesByRoom,
   } = hotspotsFromData(data, rooms, blocks);
-  return {
+  const prep = {
     graphics,
     sprites,
     actorsBySet,
@@ -107,6 +103,8 @@ export function prepare(data: GameData): Prepared {
     blocks,
     rooms,
     itemsByRoom,
+    itemTable,
+    itemTemplate,
     stationsByRoom,
     teleportsByRoom,
     killsByRoom,
@@ -118,6 +116,8 @@ export function prepare(data: GameData): Prepared {
     passagesByRoom,
     machinesByRoom,
   };
+  rebuildItemIndex(prep);
+  return prep;
 }
 
 export function newBuffers(): Buffers {
@@ -260,10 +260,10 @@ export function blitCorePanel(prep: Prepared, buf: Buffers, world: World, roomId
   for (let i = 0; i < CORE_SLOTS; i++) {
     const r = (i / 3) | 0;
     const c = i % 3;
-    const need = CORE_D2DE_INIT[i]!;
-    const live = world.d2de[i] ?? need;
+    const live = world.d2de[i] ?? 0;
     const pending = (live & 0x80) !== 0;
-    const sprite = need & 0x7f;
+    const origin = world.d2deNeed[i] ?? CORE_D2DE_INIT[i] ?? live;
+    const sprite = (pending ? live : origin) & 0x7f;
     let ink = CORE_PANEL_INK_DONE;
     if (pending) {
       ink = blinkOn ? CORE_PANEL_INK_PENDING : ((world.frames + i) & 3) + 2;

@@ -215,9 +215,9 @@ describe("sfx hooks", () => {
     const failUi = beginCheopsUi(failWorld, 0);
     assert.ok(failWorld.sfx.includes(0x0b));
     failWorld.sfx.length = 0;
-    failUi.ticks = 24;
-    tickCheopsUi(failUi, failWorld);
-    assert.deepEqual(failWorld.sfx, [0x0f]);
+    for (let i = 0; i < 400 && failUi.phase !== "result"; i++) tickCheopsUi(failUi, failWorld);
+    assert.equal(failUi.phase, "result");
+    assert.ok(failWorld.sfx.includes(0x0f));
 
     const okWorld = createWorld(prep, 0);
     okWorld.inventory = [
@@ -226,7 +226,7 @@ describe("sfx hooks", () => {
     ];
     okWorld.d2de = CORE_D2DE_INIT.map((v) => v);
     const okUi = beginCheopsUi(okWorld, 0);
-    for (let i = 0; i < 65; i++) tickCheopsUi(okUi, okWorld);
+    for (let i = 0; i < 400 && okUi.phase !== "exchange"; i++) tickCheopsUi(okUi, okWorld);
     okWorld.sfx.length = 0;
     feedCheopsKey(okUi, "5", okWorld);
     assert.deepEqual(okWorld.sfx, [0x10]);
@@ -239,16 +239,18 @@ describe("sfx hooks", () => {
     const okUi = beginDoorUi(okWorld, 0, true);
     assert.ok(okWorld.sfx.includes(0x08));
     okWorld.sfx.length = 0;
-    okUi.ticks = 24;
-    tickDoorUi(okUi, okWorld);
-    assert.deepEqual(okWorld.sfx, [0x0a, 0x0f]);
+    for (let i = 0; i < 400 && okUi.phase !== "result"; i++) tickDoorUi(okUi, okWorld);
+    assert.equal(okUi.phase, "result");
+    assert.ok(okWorld.sfx.includes(0x0a));
+    assert.ok(okWorld.sfx.includes(0x0f));
 
     const badWorld = createWorld(prep, 1);
     const badUi = beginDoorUi(badWorld, 0, true);
     badWorld.sfx.length = 0;
-    badUi.ticks = 24;
-    tickDoorUi(badUi, badWorld);
-    assert.deepEqual(badWorld.sfx, [0x0f]);
+    for (let i = 0; i < 400 && badUi.phase !== "result"; i++) tickDoorUi(badUi, badWorld);
+    assert.equal(badUi.phase, "result");
+    assert.ok(badWorld.sfx.includes(0x0f));
+    assert.ok(!badWorld.sfx.includes(0x0a));
   });
 
   it("teleport start $07, char $11, OK $10+$09, fail $0F", () => {

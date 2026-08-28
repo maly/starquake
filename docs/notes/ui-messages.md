@@ -266,7 +266,7 @@ Engine dnes: teleport `TELEPORT_NAME_LEN = 5` — **sedí**. Dveře **ne** 5pís
 2. **Délka kódu:** teleport 5 písmen (OK s enginem); dveře 3 cifry-sprity, **ne** 5 písmen. Pokud by někdo čekal jednotný 5znaký prompt na dveře, ROM to nedělá.
 3. **Invalid keyboard u teleportu:** CAPS/ENTER/Sym se tiše ignorují (`A<$0A` → znovu čti). Číslice/mezera se **přijmou** do `$D031` a skončí jako neplatný kód po eval — ne okamžitý reject. Delete/backspace **neexistuje**.
 4. **Přesná pixel pozice jména za `"CODE : "`** spoléhá na DF_CC po `$D3C1` + nekollizi s `$EA65`; AT bajt u `$CF3D` chybí. Textově ověřeno ve skool; live screenshot cursoru neprobed v tomto rozboru.
-5. **Engine vs ROM UI:** originál = overlay na Spectrum; engine teleport = `window.prompt`, dveře = tiché inventářové rozhodnutí + panel s očekávanými cifry. Sémantika OK/fail sedí; vizuál overlay ne.
+5. **Engine vs ROM UI:** overlay text + ikony `$24`/`$25`/`$26` + `$D78B` sprity; teleport 5 znaků v rastru (ne `prompt`). `$D58A` blikání textu a busy-wait `$D7C0` jsou 50 Hz FSM.
 6. **`$D55F` / `$D58A` barvy** — jen INK toggle z `$DAC6`; waveform zvuků `$D7C0` mimo rozsah.
 
 ---

@@ -86,7 +86,7 @@ function atString(row: number, col: number, ink: number, text: string): number[]
 
 export function drawEndOverlay(buf: ScreenBuffers, ui: EndUi, prep?: Prepared): void {
   clearScreen(buf, 0x02);
-  drawBannerFrame(buf, prep);
+  drawBannerFrame(buf, prep, 0x02);
   if (ui.phase === "cores") {
     printBytes(buf, CORES_COMPLETE);
     return;

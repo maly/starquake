@@ -380,6 +380,51 @@ describe("room transitions", () => {
     assert.equal(moveRoom(0, -1, 0), 0);
     assert.equal(moveRoom(511, 1, 0), 511);
   });
+
+  it("left wrap into a right-edge wall unsticks into free space", () => {
+    const floor = Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0));
+    const air = Array.from({ length: ROWS }, () => Array<number>(COLS).fill(0x47));
+    for (let x = 0; x < COLS; x++) {
+      floor[16]![x] = 1;
+      air[16]![x] = 0x07;
+    }
+    const wall = floor.map((row) => row.slice());
+    const wallAttr = air.map((row) => row.slice());
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 28; x < COLS; x++) {
+        wall[y]![x] = 1;
+        wallAttr[y]![x] = 0x07;
+      }
+    }
+    const mk = (id: number, solid: number[][], attributes: number[][]): Room => ({
+      id,
+      blocks: [],
+      attributes,
+      solid,
+    });
+    const rooms: Room[] = Array.from({ length: 512 }, (_, id) => mk(id, floor, air));
+    rooms[0] = mk(0, wall, wallAttr);
+    rooms[1] = mk(1, floor, air);
+    const prep: Prepared = {
+      graphics: [],
+      sprites: [],
+      actorsBySet: new Map(),
+      actorsByPtr: new Map(),
+      blocks: [],
+      rooms,
+      itemsByRoom: Array.from({ length: 512 }, () => []),
+    };
+    const blob = spawnBlob(prep, 1);
+    blob.x = 24;
+    blob.y = 16 * CELL - BLOB_H;
+    const none = { left: false, right: false, up: false, down: false, fire: false };
+    for (let i = 0; i < 20 && blob.room === 1; i++) tick(prep, blob, { ...none, left: true });
+    assert.equal(blob.room, 0);
+    assert.equal(overlapsTerrain(prep, blob.room, blob.x, blob.y, blobInkPixels(undefined)), false);
+    const x0 = blob.x;
+    tick(prep, blob, { ...none, left: true });
+    assert.ok(blob.x < x0 || blob.room !== 0, "can walk after unstick");
+  });
 });
 
 describe("isSolid", () => {

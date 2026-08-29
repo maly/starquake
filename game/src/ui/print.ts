@@ -28,7 +28,16 @@ export function newPrintState(): PrintState {
   };
 }
 
-function glyphBytes(code: number): Uint8Array | null {
+/** ZX ROM mosaic `$80`–`$8F`: 2×2 quadrants, 4×4 px each (PO_GR). */
+function mosaicBytes(code: number): number[] {
+  const n = code & 0x0f;
+  const top = (n & 1 ? 0xf0 : 0) | (n & 2 ? 0x0f : 0);
+  const bot = (n & 4 ? 0xf0 : 0) | (n & 8 ? 0x0f : 0);
+  return [top, top, top, top, bot, bot, bot, bot];
+}
+
+function glyphBytes(code: number): Uint8Array | number[] | null {
+  if (code >= 0x80 && code <= 0x8f) return mosaicBytes(code);
   const idx = code - FONT_FIRST;
   if (idx < 0 || idx >= FONT_COUNT) return null;
   return FONT_ADD4.subarray(idx * 8, idx * 8 + 8);

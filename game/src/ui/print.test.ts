@@ -32,6 +32,17 @@ describe("print $D3C1", () => {
     assert.equal(buf.attr[cellIndex(3, 11)]! & 7, 6);
   });
 
+  it("plots $8C mosaic as bottom-half block (PO_GR)", () => {
+    const buf = newScreenBuffers();
+    const st = newPrintState();
+    st.row = 1;
+    st.col = 0;
+    printMessage(buf, st, [0x8c, 0xff]);
+    assert.deepEqual([...buf.data.subarray(cellIndex(1, 0) * 8, cellIndex(1, 0) * 8 + 8)], [
+      0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff,
+    ]);
+  });
+
   it("INK 8 keeps existing cell ink", () => {
     const buf = newScreenBuffers();
     buf.attr[cellIndex(1, 16)] = 0x42; // bright ink 2

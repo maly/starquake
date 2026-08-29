@@ -301,20 +301,21 @@ Každý vstup do `$C7` = scéna (panel + koule), pak **vždy** `$C6` (i bez doru
 
 ## Title / menu (`$5E81`)
 
-Boot `$5E24 JR $5E81`. Engine kreslí stejný text přes `$D3C1`; tune `$6600` B=3 **skip**. `#room` v URL menu přeskočí.
+Boot: **splash** (rámeček + `CLICK OR PRESS A KEY`) kvůli odemčení audia, pak `$5E81`. Engine kreslí přes `$D3C1`; tune `$6600` B=3 **skip**. `#room` v URL přeskočí title až **po** splash.
 
 | veličina | hodnota | adresa |
 |---|---|---|
 | title | `STARQUAKE` AT 3,7, mezi písmeny UDG `$90` z `$5E71` | `$5EAA` |
 | default řízení | `$04` (keyboard `OPAQM`) | `$5E58` |
-| highlight | vybraná řádka INK 7, ostatní 1–5 INK 3 | `$5FB4` / `$5E59` |
+| highlight | vybraná řádka INK 7, 2–5 idle INK 3; 1 Kempston INK 1 (no-op, později gamepad) | `$5FB4` / `$5E59` |
 | `0` | intro `$666D`, další klávesa → `$A410` místnost **8** XY `$88,$3F` | `$6037` / `$6485` |
 | čísla | `ev.code` Digit0–6 / Numpad0–6 (QWERTZ `+ěščřžý`) | `$D5C8` `$30`–`$36` |
-| `1`–`5` | výběr + SFX `$0C`; ve hře dál Q/A/O/P + mezerník | `$6051` / `$605A` |
-| `6` | define-keys `$6194` — engine no-op | `$6032` |
+| `2`–`5` | výběr + SFX `$0C`; ve hře 2=šipky+mezera, 3=WASD+mezera, 4=OPAQM, 5=UDK | `$6051` / `$605A` |
+| `6` | define-keys `$6194` mřížka `$60E1`, LEFT…PAUSE, pak `control=5` | `$6032` |
 | `Q` | `QUIT THE GAME` / Y → goodbye + Olly `$56`, N → menu | `$6060` |
 | bannery | `$8A` ř. 0/22, `$8B` sl. 0/30, rohy `$8C`–`$8F` | `$6615` / `$6661` |
 | nohy | `$88` BC=`$1609`, `$89` C=`$11` | `$5E97` |
+| ESC pauza | End / Save / Load; `localStorage['starquake-save']`; ESC/klik resume | (web) |
 
 Intro `$666D` (`FLIGHT COMPUTER REPORT` … ROM překlepy TOUCTHDOWN / COMTHUTER) po `0`; další klávesa spustí hru. Tune `$6600` B=3/4 skip — místo toho `viewer/intro.mp3` (smyčka, dokud běží menu). Start hry přepne na `viewer/bgm.mp3`.
 

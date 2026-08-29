@@ -9,7 +9,11 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 - [x] Přeplněný inventář `$D1CA` — pátý předmět se zahodí z pole; ROM ho dropne zpět do místnosti (`$D1F8` / `$D267` col−1 / col+2 / orig).
 - [x] Objekt `$0E` (nibble `$E0`) — stroj: pád z max. výšky položí dvě plošinky. Není zelené pole `$64`.
 - [x] Door/TP overlay — text + ikony `$25`/`$26`/`$24` (`$EA65`) + digit-roll `$D78B` / SFX `$D679`/`$D70E`.
-- [x] Title/menu `$5E81` — `STARQUAKE`, volby 1–5 (highlight + `$0C`), `0` start, `Q` quit Y/N. `$6600` skip; define-keys `$6194` skip; řízení ve hře dál Q/A/O/P.
+- [x] Title/menu `$5E81` — `STARQUAKE`, volby 2–5 (highlight + `$0C`), 1 Kempston zašedlé, `0` start, `Q` quit Y/N. `$6600` skip.
+- [x] Splash po loadu (klik/klávesa odemkne audio) → title. `#room` až po splash.
+- [x] Define-keys `$6194` — mřížka `$60E1`, LEFT…PAUSE, `control=5`.
+- [x] Řízení ve hře: 2 šipky+mezera, 3 WASD+mezera, 4 OPAQM, 5 UDK; ESC/`*` pauza.
+- [x] ESC pauza: End / Save / Load (`localStorage` jeden slot).
 - [x] Intro `$666D` `FLIGHT COMPUTER REPORT` (po `0`, další klávesa → hra). `$6600` B=4 skip.
 - [x] `music/intro.mp3` — title/menu/intro hraje `viewer/intro.mp3`; smyčka ve hře je `viewer/bgm.mp3`. `$6600` dál skip. `music/` necommituj (intro vs duplicitní loop).
 

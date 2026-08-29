@@ -42,9 +42,6 @@ import {
   TELEPORT_UDG,
   TELEPORT_UDG_COL,
   TELEPORT_UDG_ROW,
-  ATTR_INK_SPECIAL,
-  ATTR_PAPER_SPECIAL,
-  EA62_MIN,
 } from "../constants";
 import { requestSfx } from "../audio/effects";
 import { dacStep } from "../entities";
@@ -62,6 +59,7 @@ import {
   teleportNameForRoom,
 } from "../objects";
 import type { Prepared, World } from "../types";
+import { ea62ForRow, resolveEad3Attr } from "./ead3";
 import { drawEndOverlay, type EndUi } from "./end";
 import { drawMenuOverlay, type MenuUi } from "./menu";
 import { newPrintState, printMessage } from "./print";
@@ -258,21 +256,6 @@ function enterCheopsExchange(ui: CheopsUi, world: World): void {
   ui.offers = rollCheopsOffers(world, ui.given);
   ui.phase = "exchange";
   ui.ticks = 0;
-}
-
-/** `$EA65` `$EA62`: ink from `$DAC0∧7` if ≥2, else `(row∧7)∨$02`. */
-function ea62ForRow(row: number, dac0 = 0): number {
-  const a = dac0 & 7;
-  if (a >= EA62_MIN) return a;
-  return (row & 7) | EA62_MIN;
-}
-
-/** `$EAD3` specials on the raw ATTR stream from `graphics.json`. */
-function resolveEad3Attr(raw: number, ea62: number, ea63 = 0x05): number {
-  const masked = raw & 0x3f;
-  if (masked === ATTR_PAPER_SPECIAL) return (raw & 0xc0) | (ea63 & 0xff);
-  if (masked === ATTR_INK_SPECIAL) return (raw & 0xf8) | (ea62 & 0xff);
-  return raw & 0xff;
 }
 
 function blitGraphic(
@@ -650,7 +633,17 @@ export function syncWorldMessage(world: World, ui: UiState): void {
     }
   } else if (ui.kind === "menu") {
     world.message =
-      ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
+      ui.phase === "splash"
+        ? "CLICK OR PRESS A KEY"
+        : ui.phase === "options"
+          ? "STARQUAKE"
+          : ui.phase === "define"
+            ? "HIT KEY REQUIRED ..."
+            : ui.phase === "intro"
+              ? INTRO_TITLE
+              : ui.phase === "quit"
+                ? MENU_QUIT_MSG
+                : MENU_GOODBYE;
   } else if (ui.kind === "end") {
     world.message = ui.phase === "cores" ? "THE CORES COMPLETE" : "GAME OVER";
   }

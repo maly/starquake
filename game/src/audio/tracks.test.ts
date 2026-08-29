@@ -10,6 +10,7 @@ describe("MP3 tracks (menu intro vs in-game loop)", () => {
     assert.equal(BGM_LOOP_URL, "bgm.mp3");
     const menu = beginMenuUi();
     assert.equal(musicUrlFor(menu), BGM_INTRO_URL);
+    assert.equal(musicUrlFor({ kind: "menu", phase: "splash" }), BGM_INTRO_URL);
     menu.phase = "intro";
     assert.equal(musicUrlFor(menu), BGM_INTRO_URL);
     menu.phase = "quit";

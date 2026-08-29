@@ -1,5 +1,20 @@
 import { drainSfx, syncMusic, unlock, wireAudioUi } from "./audio/player";
-import { DISPLAY_H, DISPLAY_W, NEW_GAME_ROOM, SCREEN_H, SCREEN_W, TICK_MS } from "./constants";
+import {
+  DISPLAY_H,
+  DISPLAY_W,
+  LS_KEYS_KEY,
+  LS_SAVE_KEY,
+  NEW_GAME_ROOM,
+  PAUSE_INVALID,
+  PAUSE_LOADED,
+  PAUSE_NO_SAVE,
+  PAUSE_SAVED,
+  SCREEN_H,
+  SCREEN_W,
+  TICK_MS,
+} from "./constants";
+import { actionFromEvent, DEFAULT_BINDINGS, type GameAction, type KeyBindings } from "./input";
+import { decodeSave, encodeSave } from "./persist";
 import { expectedCheopsCode, expectedDoorCode, teleportNameForRoom } from "./objects";
 import {
   cellPos,
@@ -27,7 +42,16 @@ import { parseCheatSprite, setInventorySlot } from "./cheat";
 import type { GameData, Prepared } from "./types";
 import { clampWorldStats, drawChrome, drawStatus } from "./ui/chrome";
 import { blitPlayfieldRgba, rasterizeScreen } from "./ui/compose";
-import { beginMenuUi, feedMenuKey } from "./ui/menu";
+import {
+  beginMenuUi,
+  beginPauseUi,
+  beginSplashUi,
+  drawPauseOverlay,
+  feedMenuKey,
+  feedMenuRelease,
+  feedPauseKey,
+  type PauseUi,
+} from "./ui/menu";
 import { drawUiOverlay, feedCheopsKey, feedEndKey, feedTeleportKey, idleUi, isUiBlocking } from "./ui/overlay";
 import { PLAY_Y0, clearScreen, newScreenBuffers, pastePlayfield } from "./ui/screen";
 
@@ -38,6 +62,32 @@ const keys = { left: false, right: false, up: false, down: false, fire: false };
 
 function input(): Input {
   return { left: keys.left, right: keys.right, up: keys.up, down: keys.down, fire: keys.fire };
+}
+
+function loadBindings(): KeyBindings {
+  try {
+    const raw = localStorage.getItem(LS_KEYS_KEY);
+    if (!raw) return { control: DEFAULT_BINDINGS.control, udk: [...DEFAULT_BINDINGS.udk] };
+    const j = JSON.parse(raw) as { control?: number; udk?: string[] };
+    const control = j.control != null && j.control >= 2 && j.control <= 5 ? j.control : DEFAULT_BINDINGS.control;
+    const udk = Array.isArray(j.udk) && j.udk.length >= 6 ? j.udk.slice(0, 6).map(String) : [...DEFAULT_BINDINGS.udk];
+    return { control, udk };
+  } catch {
+    return { control: DEFAULT_BINDINGS.control, udk: [...DEFAULT_BINDINGS.udk] };
+  }
+}
+
+function setHeld(action: GameAction, down: boolean): void {
+  if (action === "pause") return;
+  keys[action] = down;
+}
+
+function clearHeld(): void {
+  keys.left = false;
+  keys.right = false;
+  keys.up = false;
+  keys.down = false;
+  keys.fire = false;
 }
 
 function $(id: string): HTMLElement {
@@ -124,11 +174,13 @@ async function boot(): Promise<void> {
 
   const hashed = parseHash();
   const start = hashed ?? NEW_GAME_ROOM;
+  let bindings = loadBindings();
   let world = createWorld(prep, start);
   wireAudioUi();
   let blob = spawnBlob(prep, start, world);
-  if (hashed === null) world.ui = beginMenuUi();
-  else if (blob.room === start) enterRoom(prep, world, start, { blob });
+  let pause: PauseUi | null = null;
+  let pendingHash: number | null = hashed;
+  world.ui = beginSplashUi(bindings);
   syncMusic(world);
   let overlay = false;
   let lastMs = 0;
@@ -227,7 +279,10 @@ async function boot(): Promise<void> {
     screenBuf.attr.set(hudScratch.attr);
     drawStatus(screenBuf, world, prep);
 
-    if (isUiBlocking(world.ui)) {
+    if (pause) {
+      drawPauseOverlay(screenBuf, pause, prep);
+      rasterizeScreen(screenBuf, screenRgba);
+    } else if (isUiBlocking(world.ui)) {
       drawUiOverlay(screenBuf, world.ui, prep, world.dac.dac0);
       rasterizeScreen(screenBuf, screenRgba);
     } else {
@@ -253,8 +308,93 @@ async function boot(): Promise<void> {
     updatePanel();
   }
 
+  function persistKeys(): void {
+    try {
+      localStorage.setItem(LS_KEYS_KEY, JSON.stringify({ control: bindings.control, udk: bindings.udk }));
+    } catch {
+      /* private mode */
+    }
+  }
+
+  function finishSplashIfNeeded(): void {
+    if (world.ui.kind !== "menu" || world.ui.phase !== "options") return;
+    if (pendingHash === null) return;
+    const id = pendingHash;
+    pendingHash = null;
+    startPlay(id, false, false);
+  }
+
+  function openPause(): void {
+    if (pause) return;
+    if (world.ui.kind === "menu" || world.ui.kind === "end") return;
+    pause = beginPauseUi();
+    clearHeld();
+  }
+
+  function saveGame(): void {
+    if (!pause) return;
+    try {
+      const raw = encodeSave({
+        blob,
+        world,
+        itemTable: prep.itemTable ?? [],
+        control: bindings.control,
+        udk: bindings.udk,
+      });
+      localStorage.setItem(LS_SAVE_KEY, raw);
+      pause.status = PAUSE_SAVED;
+    } catch {
+      pause.status = PAUSE_INVALID;
+    }
+  }
+
+  function loadGame(): void {
+    if (!pause) return;
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(LS_SAVE_KEY);
+    } catch {
+      pause.status = PAUSE_INVALID;
+      return;
+    }
+    const got = decodeSave(raw);
+    if (got.status === "empty") {
+      pause.status = PAUSE_NO_SAVE;
+      return;
+    }
+    if (got.status !== "ok") {
+      pause.status = PAUSE_INVALID;
+      return;
+    }
+    world = got.data.world;
+    blob = got.data.blob;
+    prep.itemTable = got.data.itemTable.map((it) => ({ ...it, raw: [...(it.raw ?? [])] }));
+    bindings = { control: got.data.control, udk: [...got.data.udk] };
+    persistKeys();
+    chromeRoom = -1;
+    pause.status = PAUSE_LOADED;
+    syncMusic(world);
+  }
+
+  function handlePauseAction(act: ReturnType<typeof feedPauseKey>): void {
+    if (!pause) return;
+    if (act === "resume") {
+      pause = null;
+      return;
+    }
+    if (act === "end") {
+      pause = null;
+      world.ui = beginMenuUi(bindings);
+      syncMusic(world);
+      return;
+    }
+    if (act === "save") saveGame();
+    else if (act === "load") loadGame();
+  }
+
   function startPlay(id: number, writeHash: boolean, newGame = false): void {
     const room = clampRoom(id);
+    pause = null;
     if (newGame) {
       const god = world.cheatGod;
       world = createWorld(prep, room, {
@@ -283,8 +423,16 @@ async function boot(): Promise<void> {
   document.addEventListener("keydown", (ev) => {
     unlock();
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
+    if (pause) {
+      handlePauseAction(feedPauseKey(pause, ev.key, ev.code));
+      ev.preventDefault();
+      return;
+    }
     if (world.ui.kind === "menu") {
       const act = feedMenuKey(world.ui, ev.key, world, ev.code);
+      bindings = { control: world.ui.control, udk: [...world.ui.udk] };
+      persistKeys();
+      finishSplashIfNeeded();
       if (act === "start") startPlay(NEW_GAME_ROOM, false, true);
       ev.preventDefault();
       return;
@@ -308,37 +456,41 @@ async function boot(): Promise<void> {
       ev.preventDefault();
       return;
     }
-    // Spectrum layout: Q up, A down, O left, P right, Space fire.
-    if (ev.key === "o" || ev.key === "O") {
-      keys.left = true;
+    const action = actionFromEvent(bindings, ev.key, ev.code);
+    if (action === "pause") {
+      openPause();
       ev.preventDefault();
-    } else if (ev.key === "p" || ev.key === "P") {
-      keys.right = true;
+      return;
+    }
+    if (action) {
+      setHeld(action, true);
       ev.preventDefault();
-    } else if (ev.key === "q" || ev.key === "Q") {
-      keys.up = true;
-      ev.preventDefault();
-    } else if (ev.key === "a" || ev.key === "A") {
-      keys.down = true;
-      ev.preventDefault();
-    } else if (ev.key === " ") {
-      keys.fire = true;
-      ev.preventDefault();
-    } else if (ev.key === "PageUp") {
+      return;
+    }
+    if (ev.key === "PageUp") {
       goRoom(moveRoom(blob.room, 0, -1));
     } else if (ev.key === "PageDown") {
       goRoom(moveRoom(blob.room, 0, 1));
     }
   });
   document.addEventListener("keyup", (ev) => {
+    if (world.ui.kind === "menu") feedMenuRelease(world.ui);
     if (world.ui.kind === "teleport") {
       feedTeleportKey(world.ui, ev.key, false, world);
     }
-    if (ev.key === "o" || ev.key === "O") keys.left = false;
-    else if (ev.key === "p" || ev.key === "P") keys.right = false;
-    else if (ev.key === "q" || ev.key === "Q") keys.up = false;
-    else if (ev.key === "a" || ev.key === "A") keys.down = false;
-    else if (ev.key === " ") keys.fire = false;
+    const action = actionFromEvent(bindings, ev.key, ev.code);
+    if (action) setHeld(action, false);
+  });
+  canvas.addEventListener("pointerdown", () => {
+    unlock();
+    if (pause) {
+      handlePauseAction(feedPauseKey(pause, "click"));
+      return;
+    }
+    if (world.ui.kind === "menu" && world.ui.phase === "splash") {
+      feedMenuKey(world.ui, "click");
+      finishSplashIfNeeded();
+    }
   });
   document.addEventListener("pointerdown", () => unlock());
   document.addEventListener("click", () => unlock());
@@ -385,7 +537,7 @@ async function boot(): Promise<void> {
   });
 
   $("status").textContent =
-    "50 Hz · HUD+playfield 256×192 · Q/A/O/P + mezerník · teleport 5 znaků · dveře inventář · ?dev=0";
+    "50 Hz · HUD+playfield 256×192 · ESC pauza · klávesy z menu · teleport 5 znaků · dveře inventář · ?dev=0";
   void stage;
 
   function frame(now: number): void {
@@ -393,14 +545,16 @@ async function boot(): Promise<void> {
     last = now;
     if (acc > 100) acc = 100;
     while (acc >= TICK_MS) {
-      const prev = blob.room;
-      tick(prep, blob, input(), world);
-      syncMusic(world);
-      drainSfx(world);
-      if (blob.room !== prev) {
-        chromeRoom = -1;
-        const hash = "#" + blob.room;
-        if (location.hash !== hash) history.replaceState(null, "", hash);
+      if (!pause) {
+        const prev = blob.room;
+        tick(prep, blob, input(), world);
+        syncMusic(world);
+        drainSfx(world);
+        if (blob.room !== prev) {
+          chromeRoom = -1;
+          const hash = "#" + blob.room;
+          if (location.hash !== hash) history.replaceState(null, "", hash);
+        }
       }
       acc -= TICK_MS;
     }

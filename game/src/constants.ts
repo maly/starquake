@@ -569,13 +569,32 @@ export const CHEOPS_DIGIT_ROW = 0x0f;
 export const CHEOPS_DIGIT_COL = 0x0d;
 
 /**
- * Main menu `$5E81`. Tune `$6600` B=3 skipped (MP3). Define-keys `$6194` skipped.
- * Default control `$5E58`=`$04` (keyboard `OPAQM`).
+ * Main menu `$5E81`. Tune `$6600` B=3 skipped (MP3). Define-keys `$6194` live.
+ * Default control `$5E58`=`$04` (keyboard `OPAQM`). Kempston (1) greyed.
  */
 export const MENU_CONTROL_DEFAULT = 0x04;
 export const MENU_INK_SELECTED = 0x07;
 export const MENU_INK_IDLE = 0x03;
 export const MENU_INK_STATIC = 0x04;
+export const MENU_INK_DISABLED = 0x01;
+export const MENU_SFX_DEFINE = 0x01;
+/** `$60E1` 40 keys for `$6194`. */
+export const DEFINE_GRID_KEYS = "1234567890QWERTYUIOPASDFGHJKL\\[ZXCVBNM]*";
+export const DEFINE_LABELS = ["LEFT  ", "RIGHT ", "DOWN  ", "UP    ", "FIRE  ", "PAUSE "] as const;
+export const DEFAULT_UDK = ["Q", "W", "E", "R", "T", "*"] as const;
+export const DEFAULT_PAUSE_KEY = "*";
+export const SPLASH_HINT = "CLICK OR PRESS A KEY";
+export const SPLASH_HINT_ROW = 0x10;
+export const SPLASH_HINT_COL = 0x06;
+export const PAUSE_END = "1.END GAME";
+export const PAUSE_SAVE = "2.SAVE GAME";
+export const PAUSE_LOAD = "3.LOAD GAME";
+export const PAUSE_SAVED = "GAME SAVED";
+export const PAUSE_LOADED = "GAME LOADED";
+export const PAUSE_NO_SAVE = "NO SAVE";
+export const PAUSE_INVALID = "SAVE INVALID";
+export const LS_SAVE_KEY = "starquake-save";
+export const LS_KEYS_KEY = "starquake-keys";
 export const MENU_TITLE_ROW = 0x03;
 export const MENU_TITLE_COL = 0x07;
 /** `$5E71` first UDG (`$90` between STARQUAKE letters). */

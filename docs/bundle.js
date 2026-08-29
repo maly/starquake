@@ -709,12 +709,29 @@
   var MENU_INK_SELECTED = 7;
   var MENU_INK_IDLE = 3;
   var MENU_INK_STATIC = 4;
+  var MENU_INK_DISABLED = 1;
+  var MENU_SFX_DEFINE = 1;
+  var DEFINE_GRID_KEYS = "1234567890QWERTYUIOPASDFGHJKL\\[ZXCVBNM]*";
+  var DEFINE_LABELS = ["LEFT  ", "RIGHT ", "DOWN  ", "UP    ", "FIRE  ", "PAUSE "];
+  var DEFAULT_UDK = ["Q", "W", "E", "R", "T", "*"];
+  var DEFAULT_PAUSE_KEY = "*";
+  var SPLASH_HINT = "CLICK OR PRESS A KEY";
+  var SPLASH_HINT_ROW = 16;
+  var SPLASH_HINT_COL = 6;
+  var PAUSE_END = "1.END GAME";
+  var PAUSE_SAVE = "2.SAVE GAME";
+  var PAUSE_LOAD = "3.LOAD GAME";
+  var PAUSE_SAVED = "GAME SAVED";
+  var PAUSE_LOADED = "GAME LOADED";
+  var PAUSE_NO_SAVE = "NO SAVE";
+  var PAUSE_INVALID = "SAVE INVALID";
+  var LS_SAVE_KEY = "starquake-save";
+  var LS_KEYS_KEY = "starquake-keys";
   var MENU_TITLE_ROW = 3;
   var MENU_TITLE_COL = 7;
   var MENU_TITLE_UDG90 = [0, 0, 0, 24, 24, 0, 0, 0];
   var MENU_TITLE = "STARQUAKE";
   var MENU_KEYS_4 = "OPAQM";
-  var MENU_KEYS_5 = "QWERT";
   var MENU_BAR_H = 138;
   var MENU_BAR_V = 139;
   var MENU_FOOT_L = 136;
@@ -824,6 +841,129 @@
     [255, 255, 0],
     [255, 255, 255]
   ];
+
+  // src/input.ts
+  var DEFAULT_BINDINGS = {
+    control: MENU_CONTROL_DEFAULT,
+    udk: [...DEFAULT_UDK]
+  };
+  var SCHEME2 = {
+    ArrowLeft: "left",
+    ArrowRight: "right",
+    ArrowDown: "down",
+    ArrowUp: "up",
+    " ": "fire",
+    [DEFAULT_PAUSE_KEY]: "pause"
+  };
+  var SCHEME3 = {
+    a: "left",
+    d: "right",
+    s: "down",
+    w: "up",
+    " ": "fire",
+    [DEFAULT_PAUSE_KEY]: "pause"
+  };
+  var SCHEME4 = {
+    o: "left",
+    p: "right",
+    a: "down",
+    q: "up",
+    m: "fire",
+    [DEFAULT_PAUSE_KEY]: "pause"
+  };
+  var UDK_ACTIONS = ["left", "right", "down", "up", "fire", "pause"];
+  function normLetter(key) {
+    return key.length === 1 ? key.toLowerCase() : key;
+  }
+  function lookup(map, key) {
+    return map[key] ?? map[normLetter(key)] ?? null;
+  }
+  function actionFromEvent(b, key, _physical) {
+    if (key === "Escape") return "pause";
+    if (b.control === 2) return lookup(SCHEME2, key);
+    if (b.control === 3) return lookup(SCHEME3, key);
+    if (b.control === 5) {
+      const token = key.length === 1 ? key.toUpperCase() : key;
+      for (let i = 0; i < UDK_ACTIONS.length; i++) {
+        const bound = b.udk[i] ?? "";
+        if (!bound) continue;
+        if (bound === key || bound === token || bound.toLowerCase() === key.toLowerCase()) return UDK_ACTIONS[i];
+      }
+      return null;
+    }
+    return lookup(SCHEME4, key);
+  }
+
+  // src/persist.ts
+  function pack(value) {
+    if (value instanceof Uint8Array) return { $u8: Array.from(value) };
+    if (value instanceof Int16Array) return { $i16: Array.from(value) };
+    if (Array.isArray(value)) return value.map(pack);
+    if (value && typeof value === "object") {
+      const o = {};
+      for (const [k, v] of Object.entries(value)) o[k] = pack(v);
+      return o;
+    }
+    return value;
+  }
+  function revive(value) {
+    if (Array.isArray(value)) return value.map(revive);
+    if (value && typeof value === "object") {
+      const o = value;
+      if (Array.isArray(o.$u8)) return Uint8Array.from(o.$u8);
+      if (Array.isArray(o.$i16)) return Int16Array.from(o.$i16);
+      const out = {};
+      for (const [k, v] of Object.entries(o)) out[k] = revive(v);
+      return out;
+    }
+    return value;
+  }
+  function encodeSave(input2) {
+    const world = { ...input2.world, sfx: [], buzz: [] };
+    return JSON.stringify(
+      pack({
+        v: 1,
+        blob: input2.blob,
+        world,
+        itemTable: input2.itemTable,
+        control: input2.control,
+        udk: input2.udk
+      })
+    );
+  }
+  function isBlob(x) {
+    if (!x || typeof x !== "object") return false;
+    const b = x;
+    return typeof b.x === "number" && typeof b.y === "number" && typeof b.room === "number";
+  }
+  function isWorld(x) {
+    if (!x || typeof x !== "object") return false;
+    const w = x;
+    return typeof w.energy === "number" && w.collected instanceof Uint8Array;
+  }
+  function decodeSave(raw) {
+    if (raw == null || raw === "") return { status: "empty" };
+    try {
+      const parsed = revive(JSON.parse(raw));
+      if (parsed.v !== 1) return { status: "invalid" };
+      if (!isBlob(parsed.blob) || !isWorld(parsed.world)) return { status: "invalid" };
+      if (!Array.isArray(parsed.itemTable) || !Array.isArray(parsed.udk)) return { status: "invalid" };
+      if (typeof parsed.control !== "number") return { status: "invalid" };
+      return {
+        status: "ok",
+        data: {
+          v: 1,
+          blob: parsed.blob,
+          world: parsed.world,
+          itemTable: parsed.itemTable,
+          control: parsed.control,
+          udk: parsed.udk.map(String)
+        }
+      };
+    } catch {
+      return { status: "invalid" };
+    }
+  }
 
   // src/audio/channel.ts
   var CHAN_TABLE = [
@@ -1424,6 +1564,19 @@
     return null;
   }
 
+  // src/ui/ead3.ts
+  function ea62ForRow(row, dac0 = 0) {
+    const a = dac0 & 7;
+    if (a >= EA62_MIN) return a;
+    return row & 7 | EA62_MIN;
+  }
+  function resolveEad3Attr(raw, ea62, ea63 = 5) {
+    const masked = raw & 63;
+    if (masked === ATTR_PAPER_SPECIAL) return raw & 192 | ea63 & 255;
+    if (masked === ATTR_INK_SPECIAL) return raw & 248 | ea62 & 255;
+    return raw & 255;
+  }
+
   // src/ui/font-data.ts
   var FONT_ADD4 = Uint8Array.from([
     0,
@@ -1985,7 +2138,14 @@
       transparentInk: false
     };
   }
+  function mosaicBytes(code) {
+    const n = code & 15;
+    const top = (n & 1 ? 240 : 0) | (n & 2 ? 15 : 0);
+    const bot = (n & 4 ? 240 : 0) | (n & 8 ? 15 : 0);
+    return [top, top, top, top, bot, bot, bot, bot];
+  }
   function glyphBytes(code) {
+    if (code >= 128 && code <= 143) return mosaicBytes(code);
     const idx = code - FONT_FIRST;
     if (idx < 0 || idx >= FONT_COUNT) return null;
     return FONT_ADD4.subarray(idx * 8, idx * 8 + 8);
@@ -2067,14 +2227,33 @@
   }
 
   // src/ui/menu.ts
-  function beginMenuUi() {
-    return { kind: "menu", phase: "options", control: MENU_CONTROL_DEFAULT };
+  function defaultUdk(udk) {
+    return udk && udk.length >= 6 ? udk.slice(0, 6) : [...DEFAULT_UDK];
+  }
+  function beginMenuUi(opts) {
+    return {
+      kind: "menu",
+      phase: "options",
+      control: opts?.control ?? MENU_CONTROL_DEFAULT,
+      udk: defaultUdk(opts?.udk),
+      defineStep: 0,
+      defineGrid: [],
+      defineNeedRelease: false
+    };
+  }
+  function beginSplashUi(opts) {
+    const ui = beginMenuUi(opts);
+    ui.phase = "splash";
+    return ui;
+  }
+  function beginPauseUi() {
+    return { kind: "pause", status: "" };
   }
   function printAt(buf, row, col, text, ink, bright = 1) {
     const bytes = [22, row, col, 19, bright, 16, ink, 17, 0, ...[...text].map((c) => c.charCodeAt(0)), 255];
     printMessage(buf, newPrintState(), bytes);
   }
-  function blitGraphic(buf, prep, id, row, col) {
+  function blitGraphic(buf, prep, id, row, col, ea63 = 5) {
     const graphic = prep?.graphics[id];
     if (!graphic) return;
     for (const cell of graphic.cells) {
@@ -2084,7 +2263,7 @@
       const idx = cellIndex(cy, cx);
       const dst = idx * CELL;
       for (let py = 0; py < CELL; py++) buf.data[dst + py] = cell.data[py];
-      if (cell.attr != null) buf.attr[idx] = cell.attr & 255;
+      if (cell.attr != null) buf.attr[idx] = resolveEad3Attr(cell.attr, 2, ea63);
     }
   }
   function plotUdg(buf, row, col, data, attr) {
@@ -2094,18 +2273,18 @@
     for (let py = 0; py < 8; py++) buf.data[dst + py] = data[py];
     buf.attr[idx] = attr & 255;
   }
-  function drawBanners(buf, prep) {
+  function drawBanners(buf, prep, ea63) {
     for (let i = 0; i < 7; i++) {
       const col = 2 + i * 4;
-      blitGraphic(buf, prep, MENU_BAR_H, 0, col);
-      blitGraphic(buf, prep, MENU_BAR_H, MENU_FOOT_ROW, col);
+      blitGraphic(buf, prep, MENU_BAR_H, 0, col, ea63);
+      blitGraphic(buf, prep, MENU_BAR_H, MENU_FOOT_ROW, col, ea63);
     }
     for (let i = 0; i < 5; i++) {
       const row = 2 + i * 4;
-      blitGraphic(buf, prep, MENU_BAR_V, row, 0);
-      blitGraphic(buf, prep, MENU_BAR_V, row, 30);
+      blitGraphic(buf, prep, MENU_BAR_V, row, 0, ea63);
+      blitGraphic(buf, prep, MENU_BAR_V, row, 30, ea63);
     }
-    for (const [col, row, id] of MENU_CORNERS) blitGraphic(buf, prep, id, row, col);
+    for (const [col, row, id] of MENU_CORNERS) blitGraphic(buf, prep, id, row, col, ea63);
   }
   function drawTitle(buf) {
     const attr = 71;
@@ -2122,32 +2301,120 @@
   function optionInk(ui, n) {
     return ui.control === n ? MENU_INK_SELECTED : MENU_INK_IDLE;
   }
+  function udkLine(ui) {
+    return ui.udk.slice(0, 5).map((k) => k === " " ? "_" : k).join("");
+  }
   function drawOptions(buf, ui) {
-    printAt(buf, 6, 4, "1.KEMPSTON JOYSTICK", optionInk(ui, 1));
+    printAt(buf, 6, 4, "1.KEMPSTON JOYSTICK", MENU_INK_DISABLED);
     printAt(buf, 8, 4, "2.CURSOR JOYSTICK", optionInk(ui, 2));
     printAt(buf, 10, 4, "3.SINCLAIR ZX2 JOYSTICK", optionInk(ui, 3));
     printAt(buf, 12, 4, "4.KEYBOARD ... " + MENU_KEYS_4, optionInk(ui, 4));
-    printAt(buf, 14, 4, "5.UDK KEYBOARD ... " + MENU_KEYS_5, optionInk(ui, 5));
+    printAt(buf, 14, 4, "5.UDK KEYBOARD ... " + udkLine(ui), optionInk(ui, 5));
     printAt(buf, 16, 4, "6.DEFINE YOUR OWN KEYS", MENU_INK_STATIC);
     printAt(buf, 18, 4, "0.START GAME", MENU_INK_STATIC);
     printAt(buf, 20, 4, "Q.QUIT", MENU_INK_STATIC);
+  }
+  var DEFINE_UDG_FIRST = 59;
+  var DEFINE_SPACE_ROW = 12;
+  var DEFINE_SPACE_COL = 11;
+  function defineRowOffset(r) {
+    return r === 3 ? 0 : r;
+  }
+  function drawDefineKey(buf, row, col, code) {
+    const assigned = code >= 144;
+    const paper = assigned ? 2 : 1;
+    const bright = assigned ? 1 : 0;
+    const glyph = assigned ? DEFINE_UDG_FIRST + (code - 144) % 6 : code;
+    const bytes = [
+      16,
+      7,
+      17,
+      paper,
+      22,
+      row,
+      col,
+      19,
+      bright,
+      glyph,
+      16,
+      0,
+      43,
+      22,
+      row + 1 & 255,
+      col,
+      140,
+      44,
+      16,
+      5,
+      19,
+      1,
+      17,
+      0,
+      255
+    ];
+    printMessage(buf, newPrintState(), bytes);
+  }
+  function drawDefineGrid(buf, ui) {
+    for (let r = 0; r < 4; r++) {
+      const e0 = defineRowOffset(r);
+      for (let c = 0; c < 10; c++) {
+        const code = ui.defineGrid[r * 10 + c] ?? DEFINE_GRID_KEYS.charCodeAt(r * 10 + c);
+        drawDefineKey(buf, r * 3, e0 + c * 3, code);
+      }
+    }
+    const space = ui.defineGrid[40] ?? 32;
+    if (space >= 144) {
+      drawDefineKey(buf, DEFINE_SPACE_ROW, DEFINE_SPACE_COL, space);
+    } else {
+      printAt(buf, DEFINE_SPACE_ROW, DEFINE_SPACE_COL, "SPACE", MENU_INK_STATIC);
+    }
+  }
+  function definePromptPos(step) {
+    const row = 17 + (step >> 1) * 2;
+    const col = step & 1 ? 20 : 5;
+    return { row, col };
+  }
+  function drawDefine(buf, ui) {
+    drawDefineGrid(buf, ui);
+    printAt(buf, 14, 0, "HIT KEY REQUIRED ...", 7);
+    const n = Math.min(ui.defineStep, 5);
+    const pos = definePromptPos(n);
+    printAt(buf, pos.row, pos.col, DEFINE_LABELS[n] ?? "LEFT  ", 7);
+  }
+  function drawSplash(buf) {
+    drawTitle(buf);
+    printAt(buf, SPLASH_HINT_ROW, SPLASH_HINT_COL, SPLASH_HINT, MENU_INK_STATIC);
   }
   function drawQuit(buf) {
     printAt(buf, 4, 9, MENU_QUIT_MSG, 6);
     printAt(buf, 6, 9, MENU_QUIT_HINT, 6);
     printAt(buf, 9, 12, MENU_QUIT_YN, 6);
   }
-  function drawBannerFrame(buf, prep) {
-    drawBanners(buf, prep);
+  function drawBannerFrame(buf, prep, ea63 = 5) {
+    drawBanners(buf, prep, ea63);
+  }
+  function menuEa63(phase) {
+    if (phase === "intro" || phase === "quit" || phase === "goodbye") return 4;
+    return 5;
   }
   function drawMenuOverlay(buf, ui, prep) {
     clearScreen(buf, 7);
-    drawBannerFrame(buf, prep);
+    if (ui.phase !== "define") drawBannerFrame(buf, prep, menuEa63(ui.phase));
+    if (ui.phase === "splash") {
+      blitGraphic(buf, prep, MENU_FOOT_L, MENU_FOOT_ROW, MENU_FOOT_COL_L);
+      blitGraphic(buf, prep, MENU_FOOT_R, MENU_FOOT_ROW, MENU_FOOT_COL_R);
+      drawSplash(buf);
+      return;
+    }
     if (ui.phase === "options") {
       blitGraphic(buf, prep, MENU_FOOT_L, MENU_FOOT_ROW, MENU_FOOT_COL_L);
       blitGraphic(buf, prep, MENU_FOOT_R, MENU_FOOT_ROW, MENU_FOOT_COL_R);
       drawTitle(buf);
       drawOptions(buf, ui);
+      return;
+    }
+    if (ui.phase === "define") {
+      drawDefine(buf, ui);
       return;
     }
     if (ui.phase === "intro") {
@@ -2166,6 +2433,15 @@
       blitGraphic(buf, prep, MENU_OLLY_UDG, MENU_OLLY_ROW, MENU_OLLY_COL);
     }
   }
+  function drawPauseOverlay(buf, ui, prep) {
+    clearScreen(buf, 7);
+    drawBannerFrame(buf, prep);
+    drawTitle(buf);
+    printAt(buf, 8, 4, PAUSE_END, MENU_INK_STATIC);
+    printAt(buf, 10, 4, PAUSE_SAVE, MENU_INK_STATIC);
+    printAt(buf, 12, 4, PAUSE_LOAD, MENU_INK_STATIC);
+    if (ui.status) printAt(buf, 20, 4, ui.status, 6);
+  }
   function menuDigitFromKey(key, physical) {
     if (physical) {
       const digit = physical.match(/^(?:Digit|Numpad)([0-6])$/);
@@ -2174,10 +2450,60 @@
     if (key.length === 1 && key >= "0" && key <= "6") return key.charCodeAt(0) - 48;
     return null;
   }
+  function isModifierKey(key) {
+    return key === "Shift" || key === "Control" || key === "Alt" || key === "AltGraph";
+  }
+  function feedMenuRelease(ui) {
+    if (ui.phase === "define") ui.defineNeedRelease = false;
+  }
+  function defineToken(key, physical) {
+    if (key === " " || physical === "Space") return " ";
+    if (physical) {
+      const digit = physical.match(/^Digit([0-9])$/);
+      if (digit) return digit[1];
+      const letter = physical.match(/^Key([A-Z])$/);
+      if (letter) return letter[1];
+      if (physical === "Backslash") return "\\";
+      if (physical === "BracketLeft") return "[";
+    }
+    if (key === "*" || key === "\\" || key === "[") return key;
+    if (key.length === 1) {
+      const up = key.toUpperCase();
+      if (DEFINE_GRID_KEYS.includes(up)) return up;
+      if (DEFINE_GRID_KEYS.includes(key)) return key;
+    }
+    return null;
+  }
+  function feedDefineKey(ui, key, world, physical) {
+    if (ui.defineNeedRelease) return "stay";
+    const token = defineToken(key, physical);
+    if (token == null) return "stay";
+    const code = token.charCodeAt(0);
+    const slot = ui.defineGrid.findIndex((c) => c === code);
+    if (slot < 0) return "stay";
+    const step = ui.defineStep;
+    ui.defineGrid[slot] = 144 + step;
+    ui.udk[step] = token;
+    if (world) requestSfx(world, MENU_SFX_DEFINE);
+    ui.defineStep = step + 1;
+    ui.defineNeedRelease = true;
+    if (ui.defineStep >= 6) {
+      ui.control = 5;
+      ui.phase = "options";
+      ui.defineNeedRelease = false;
+    }
+    return "stay";
+  }
   function feedMenuKey(ui, key, world, physical) {
     if (ui.phase === "goodbye") return "stay";
+    if (ui.phase === "splash") {
+      if (isModifierKey(key)) return "stay";
+      ui.phase = "options";
+      return "stay";
+    }
+    if (ui.phase === "define") return feedDefineKey(ui, key, world, physical);
     if (ui.phase === "intro") {
-      if (key === "Shift" || key === "Control" || key === "Alt" || key === "AltGraph") return "stay";
+      if (isModifierKey(key)) return "stay";
       return "start";
     }
     if (ui.phase === "quit") {
@@ -2191,7 +2517,15 @@
       ui.phase = "intro";
       return "stay";
     }
-    if (digit !== null && digit >= 1 && digit <= 5) {
+    if (digit === 6) {
+      ui.phase = "define";
+      ui.defineStep = 0;
+      ui.defineGrid = [...DEFINE_GRID_KEYS].map((c) => c.charCodeAt(0));
+      ui.defineGrid.push(32);
+      ui.defineNeedRelease = true;
+      return "stay";
+    }
+    if (digit !== null && digit >= 2 && digit <= 5) {
       if (digit !== ui.control) {
         ui.control = digit;
         if (world) requestSfx(world, MENU_SFX_SELECT);
@@ -2202,6 +2536,14 @@
       ui.phase = "quit";
       return "stay";
     }
+    return "stay";
+  }
+  function feedPauseKey(ui, key, physical) {
+    if (key === "Escape" || key === "click") return "resume";
+    const digit = menuDigitFromKey(key, physical);
+    if (digit === 1) return "end";
+    if (digit === 2) return "save";
+    if (digit === 3) return "load";
     return "stay";
   }
 
@@ -2292,7 +2634,7 @@
   }
   function drawEndOverlay(buf, ui, prep) {
     clearScreen(buf, 2);
-    drawBannerFrame(buf, prep);
+    drawBannerFrame(buf, prep, 2);
     if (ui.phase === "cores") {
       printBytes(buf, CORES_COMPLETE);
       return;
@@ -3972,17 +4314,6 @@
     ui.phase = "exchange";
     ui.ticks = 0;
   }
-  function ea62ForRow(row, dac0 = 0) {
-    const a = dac0 & 7;
-    if (a >= EA62_MIN) return a;
-    return row & 7 | EA62_MIN;
-  }
-  function resolveEad3Attr(raw, ea62, ea63 = 5) {
-    const masked = raw & 63;
-    if (masked === ATTR_PAPER_SPECIAL) return raw & 192 | ea63 & 255;
-    if (masked === ATTR_INK_SPECIAL) return raw & 248 | ea62 & 255;
-    return raw & 255;
-  }
   function blitGraphic3(buf, prep, id, row, col, dac0 = 0) {
     const graphic = prep?.graphics[id];
     if (!graphic) return;
@@ -4278,7 +4609,7 @@
         world.message = CHEOPS_MSG_CODE;
       }
     } else if (ui.kind === "menu") {
-      world.message = ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
+      world.message = ui.phase === "splash" ? "CLICK OR PRESS A KEY" : ui.phase === "options" ? "STARQUAKE" : ui.phase === "define" ? "HIT KEY REQUIRED ..." : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
     } else if (ui.kind === "end") {
       world.message = ui.phase === "cores" ? "THE CORES COMPLETE" : "GAME OVER";
     }
@@ -4396,14 +4727,39 @@
   function dirBits(input2) {
     return (input2.right ? 1 : 0) | (input2.left ? 2 : 0) | (input2.down ? 4 : 0) | (input2.up ? 8 : 0);
   }
-  function nudgeOutOfSolid(prep, blob, pixels, world) {
-    let guard = 0;
-    while (overlapsTerrain(prep, blob.room, blob.x, blob.y, pixels, world) && guard < HEIGHT) {
-      blob.y -= 1;
-      guard += 1;
-      if (blob.y < 0) {
-        blob.y = 0;
-        break;
+  function clampBlobX(x) {
+    return Math.max(0, Math.min(WIDTH - 1, x));
+  }
+  function clampBlobY(y) {
+    return Math.max(0, Math.min(HEIGHT - BLOB_H, y));
+  }
+  function nudgeOutOfSolid(prep, blob, pixels, world, preferDx = 0, preferDy = -1) {
+    const free = (x, y) => !overlapsTerrain(prep, blob.room, x, y, pixels, world);
+    if (free(blob.x, blob.y)) return;
+    const ox = blob.x;
+    const oy = blob.y;
+    const tryAt = (x, y) => {
+      const nx = clampBlobX(x);
+      const ny = clampBlobY(y);
+      if (!free(nx, ny)) return false;
+      blob.x = nx;
+      blob.y = ny;
+      return true;
+    };
+    const max = Math.max(WIDTH, HEIGHT);
+    if (preferDx || preferDy) {
+      for (let i = 1; i <= max; i++) {
+        if (tryAt(ox + preferDx * i, oy + preferDy * i)) return;
+        if (preferDx && tryAt(ox + preferDx * i, oy)) return;
+        if (preferDy && tryAt(ox, oy + preferDy * i)) return;
+      }
+    }
+    for (let r = 1; r <= max; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (tryAt(ox + dx, oy - r) || tryAt(ox + dx, oy + r)) return;
+      }
+      for (let dy = -r + 1; dy <= r - 1; dy++) {
+        if (tryAt(ox - r, oy + dy) || tryAt(ox + r, oy + dy)) return;
       }
     }
   }
@@ -4576,7 +4932,14 @@
       saveEntry(world, blob);
       syncHoverpad(prep, world, blob.room, blob);
     }
-    nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob, world)), world);
+    nudgeOutOfSolid(
+      prep,
+      blob,
+      blobInkPixels(poseGraphic(prep, blob, world)),
+      world,
+      dx,
+      dy
+    );
     return true;
   }
   function animationSet(blob, world) {
@@ -5503,6 +5866,29 @@
   function input() {
     return { left: keys.left, right: keys.right, up: keys.up, down: keys.down, fire: keys.fire };
   }
+  function loadBindings() {
+    try {
+      const raw = localStorage.getItem(LS_KEYS_KEY);
+      if (!raw) return { control: DEFAULT_BINDINGS.control, udk: [...DEFAULT_BINDINGS.udk] };
+      const j = JSON.parse(raw);
+      const control = j.control != null && j.control >= 2 && j.control <= 5 ? j.control : DEFAULT_BINDINGS.control;
+      const udk = Array.isArray(j.udk) && j.udk.length >= 6 ? j.udk.slice(0, 6).map(String) : [...DEFAULT_BINDINGS.udk];
+      return { control, udk };
+    } catch {
+      return { control: DEFAULT_BINDINGS.control, udk: [...DEFAULT_BINDINGS.udk] };
+    }
+  }
+  function setHeld(action, down) {
+    if (action === "pause") return;
+    keys[action] = down;
+  }
+  function clearHeld() {
+    keys.left = false;
+    keys.right = false;
+    keys.up = false;
+    keys.down = false;
+    keys.fire = false;
+  }
   function $(id) {
     const el = document.getElementById(id);
     if (!el) throw new Error("#" + id);
@@ -5549,7 +5935,7 @@
     const overlayEl = $("overlay");
     const gotoEl = $("goto");
     $("status").textContent = "Na\u010D\xEDt\xE1m out/*.json \u2026";
-    const pack = await Promise.all([
+    const pack2 = await Promise.all([
       loadJson("rooms.json"),
       loadJson("graphics.json"),
       loadJson("blocks.json"),
@@ -5559,21 +5945,23 @@
       loadJson("block_attrs.json")
     ]);
     const prep = prepare({
-      rooms: pack[0],
-      graphics: pack[1],
-      blocks: pack[2],
-      sprites: pack[3],
-      items: pack[4],
-      actors: pack[5],
-      blockAttrs: pack[6]
+      rooms: pack2[0],
+      graphics: pack2[1],
+      blocks: pack2[2],
+      sprites: pack2[3],
+      items: pack2[4],
+      actors: pack2[5],
+      blockAttrs: pack2[6]
     });
     const hashed = parseHash();
     const start = hashed ?? NEW_GAME_ROOM;
+    let bindings = loadBindings();
     let world = createWorld(prep, start);
     wireAudioUi();
     let blob = spawnBlob(prep, start, world);
-    if (hashed === null) world.ui = beginMenuUi();
-    else if (blob.room === start) enterRoom(prep, world, start, { blob });
+    let pause = null;
+    let pendingHash = hashed;
+    world.ui = beginSplashUi(bindings);
     syncMusic(world);
     let overlay = false;
     let lastMs = 0;
@@ -5649,7 +6037,10 @@
       screenBuf.data.set(hudScratch.data);
       screenBuf.attr.set(hudScratch.attr);
       drawStatus(screenBuf, world, prep);
-      if (isUiBlocking(world.ui)) {
+      if (pause) {
+        drawPauseOverlay(screenBuf, pause, prep);
+        rasterizeScreen(screenBuf, screenRgba);
+      } else if (isUiBlocking(world.ui)) {
         drawUiOverlay(screenBuf, world.ui, prep, world.dac.dac0);
         rasterizeScreen(screenBuf, screenRgba);
       } else {
@@ -5670,8 +6061,86 @@
       avgMs += (dt - avgMs) / Math.min(frames, 50);
       updatePanel();
     }
+    function persistKeys() {
+      try {
+        localStorage.setItem(LS_KEYS_KEY, JSON.stringify({ control: bindings.control, udk: bindings.udk }));
+      } catch {
+      }
+    }
+    function finishSplashIfNeeded() {
+      if (world.ui.kind !== "menu" || world.ui.phase !== "options") return;
+      if (pendingHash === null) return;
+      const id = pendingHash;
+      pendingHash = null;
+      startPlay(id, false, false);
+    }
+    function openPause() {
+      if (pause) return;
+      if (world.ui.kind === "menu" || world.ui.kind === "end") return;
+      pause = beginPauseUi();
+      clearHeld();
+    }
+    function saveGame() {
+      if (!pause) return;
+      try {
+        const raw = encodeSave({
+          blob,
+          world,
+          itemTable: prep.itemTable ?? [],
+          control: bindings.control,
+          udk: bindings.udk
+        });
+        localStorage.setItem(LS_SAVE_KEY, raw);
+        pause.status = PAUSE_SAVED;
+      } catch {
+        pause.status = PAUSE_INVALID;
+      }
+    }
+    function loadGame() {
+      if (!pause) return;
+      let raw = null;
+      try {
+        raw = localStorage.getItem(LS_SAVE_KEY);
+      } catch {
+        pause.status = PAUSE_INVALID;
+        return;
+      }
+      const got = decodeSave(raw);
+      if (got.status === "empty") {
+        pause.status = PAUSE_NO_SAVE;
+        return;
+      }
+      if (got.status !== "ok") {
+        pause.status = PAUSE_INVALID;
+        return;
+      }
+      world = got.data.world;
+      blob = got.data.blob;
+      prep.itemTable = got.data.itemTable.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
+      bindings = { control: got.data.control, udk: [...got.data.udk] };
+      persistKeys();
+      chromeRoom = -1;
+      pause.status = PAUSE_LOADED;
+      syncMusic(world);
+    }
+    function handlePauseAction(act) {
+      if (!pause) return;
+      if (act === "resume") {
+        pause = null;
+        return;
+      }
+      if (act === "end") {
+        pause = null;
+        world.ui = beginMenuUi(bindings);
+        syncMusic(world);
+        return;
+      }
+      if (act === "save") saveGame();
+      else if (act === "load") loadGame();
+    }
     function startPlay(id, writeHash, newGame = false) {
       const room = clampRoom(id);
+      pause = null;
       if (newGame) {
         const god = world.cheatGod;
         world = createWorld(prep, room, {
@@ -5698,8 +6167,16 @@
     document.addEventListener("keydown", (ev) => {
       unlock();
       if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLSelectElement) return;
+      if (pause) {
+        handlePauseAction(feedPauseKey(pause, ev.key, ev.code));
+        ev.preventDefault();
+        return;
+      }
       if (world.ui.kind === "menu") {
         const act = feedMenuKey(world.ui, ev.key, world, ev.code);
+        bindings = { control: world.ui.control, udk: [...world.ui.udk] };
+        persistKeys();
+        finishSplashIfNeeded();
         if (act === "start") startPlay(NEW_GAME_ROOM, false, true);
         ev.preventDefault();
         return;
@@ -5723,36 +6200,41 @@
         ev.preventDefault();
         return;
       }
-      if (ev.key === "o" || ev.key === "O") {
-        keys.left = true;
+      const action = actionFromEvent(bindings, ev.key, ev.code);
+      if (action === "pause") {
+        openPause();
         ev.preventDefault();
-      } else if (ev.key === "p" || ev.key === "P") {
-        keys.right = true;
+        return;
+      }
+      if (action) {
+        setHeld(action, true);
         ev.preventDefault();
-      } else if (ev.key === "q" || ev.key === "Q") {
-        keys.up = true;
-        ev.preventDefault();
-      } else if (ev.key === "a" || ev.key === "A") {
-        keys.down = true;
-        ev.preventDefault();
-      } else if (ev.key === " ") {
-        keys.fire = true;
-        ev.preventDefault();
-      } else if (ev.key === "PageUp") {
+        return;
+      }
+      if (ev.key === "PageUp") {
         goRoom(moveRoom(blob.room, 0, -1));
       } else if (ev.key === "PageDown") {
         goRoom(moveRoom(blob.room, 0, 1));
       }
     });
     document.addEventListener("keyup", (ev) => {
+      if (world.ui.kind === "menu") feedMenuRelease(world.ui);
       if (world.ui.kind === "teleport") {
         feedTeleportKey(world.ui, ev.key, false, world);
       }
-      if (ev.key === "o" || ev.key === "O") keys.left = false;
-      else if (ev.key === "p" || ev.key === "P") keys.right = false;
-      else if (ev.key === "q" || ev.key === "Q") keys.up = false;
-      else if (ev.key === "a" || ev.key === "A") keys.down = false;
-      else if (ev.key === " ") keys.fire = false;
+      const action = actionFromEvent(bindings, ev.key, ev.code);
+      if (action) setHeld(action, false);
+    });
+    canvas.addEventListener("pointerdown", () => {
+      unlock();
+      if (pause) {
+        handlePauseAction(feedPauseKey(pause, "click"));
+        return;
+      }
+      if (world.ui.kind === "menu" && world.ui.phase === "splash") {
+        feedMenuKey(world.ui, "click");
+        finishSplashIfNeeded();
+      }
     });
     document.addEventListener("pointerdown", () => unlock());
     document.addEventListener("click", () => unlock());
@@ -5797,21 +6279,23 @@
       const id = parseHash();
       if (id !== null && id !== blob.room) goRoom(id);
     });
-    $("status").textContent = "50 Hz \xB7 HUD+playfield 256\xD7192 \xB7 Q/A/O/P + mezern\xEDk \xB7 teleport 5 znak\u016F \xB7 dve\u0159e invent\xE1\u0159 \xB7 ?dev=0";
+    $("status").textContent = "50 Hz \xB7 HUD+playfield 256\xD7192 \xB7 ESC pauza \xB7 kl\xE1vesy z menu \xB7 teleport 5 znak\u016F \xB7 dve\u0159e invent\xE1\u0159 \xB7 ?dev=0";
     void stage;
     function frame(now) {
       acc += now - last;
       last = now;
       if (acc > 100) acc = 100;
       while (acc >= TICK_MS) {
-        const prev = blob.room;
-        tick(prep, blob, input(), world);
-        syncMusic(world);
-        drainSfx(world);
-        if (blob.room !== prev) {
-          chromeRoom = -1;
-          const hash = "#" + blob.room;
-          if (location.hash !== hash) history.replaceState(null, "", hash);
+        if (!pause) {
+          const prev = blob.room;
+          tick(prep, blob, input(), world);
+          syncMusic(world);
+          drainSfx(world);
+          if (blob.room !== prev) {
+            chromeRoom = -1;
+            const hash = "#" + blob.room;
+            if (location.hash !== hash) history.replaceState(null, "", hash);
+          }
         }
         acc -= TICK_MS;
       }

@@ -351,14 +351,55 @@ export function insideSolid(
   return overlapsTerrain(prep, room, x, y, pixels, world);
 }
 
-function nudgeOutOfSolid(prep: Prepared, blob: BlobState, pixels: readonly InkPixel[], world?: World): void {
-  let guard = 0;
-  while (overlapsTerrain(prep, blob.room, blob.x, blob.y, pixels, world) && guard < HEIGHT) {
-    blob.y -= 1;
-    guard += 1;
-    if (blob.y < 0) {
-      blob.y = 0;
-      break;
+function clampBlobX(x: number): number {
+  return Math.max(0, Math.min(WIDTH - 1, x));
+}
+
+function clampBlobY(y: number): number {
+  return Math.max(0, Math.min(HEIGHT - BLOB_H, y));
+}
+
+/**
+ * After a room wrap the sprite can sit inside `$D2F0` terrain (157→156 right
+ * wall). Walk refuses any still-overlapping step, so search inward first,
+ * then a square spiral. `preferDx`/`preferDy` are playfield signs (left −1,
+ * down +1) matching the map step into the new room.
+ */
+function nudgeOutOfSolid(
+  prep: Prepared,
+  blob: BlobState,
+  pixels: readonly InkPixel[],
+  world?: World,
+  preferDx = 0,
+  preferDy = -1,
+): void {
+  const free = (x: number, y: number): boolean =>
+    !overlapsTerrain(prep, blob.room, x, y, pixels, world);
+  if (free(blob.x, blob.y)) return;
+  const ox = blob.x;
+  const oy = blob.y;
+  const tryAt = (x: number, y: number): boolean => {
+    const nx = clampBlobX(x);
+    const ny = clampBlobY(y);
+    if (!free(nx, ny)) return false;
+    blob.x = nx;
+    blob.y = ny;
+    return true;
+  };
+  const max = Math.max(WIDTH, HEIGHT);
+  if (preferDx || preferDy) {
+    for (let i = 1; i <= max; i++) {
+      if (tryAt(ox + preferDx * i, oy + preferDy * i)) return;
+      if (preferDx && tryAt(ox + preferDx * i, oy)) return;
+      if (preferDy && tryAt(ox, oy + preferDy * i)) return;
+    }
+  }
+  for (let r = 1; r <= max; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (tryAt(ox + dx, oy - r) || tryAt(ox + dx, oy + r)) return;
+    }
+    for (let dy = -r + 1; dy <= r - 1; dy++) {
+      if (tryAt(ox - r, oy + dy) || tryAt(ox + r, oy + dy)) return;
     }
   }
 }
@@ -550,7 +591,14 @@ function applyRoomExit(
     saveEntry(world, blob);
     syncHoverpad(prep, world, blob.room, blob);
   }
-  nudgeOutOfSolid(prep, blob, blobInkPixels(poseGraphic(prep, blob, world)), world);
+  nudgeOutOfSolid(
+    prep,
+    blob,
+    blobInkPixels(poseGraphic(prep, blob, world)),
+    world,
+    dx,
+    dy,
+  );
   return true;
 }
 

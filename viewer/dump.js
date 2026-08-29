@@ -3447,7 +3447,7 @@ function syncWorldMessage(world, ui) {
       world.message = CHEOPS_MSG_CODE;
     }
   } else if (ui.kind === "menu") {
-    world.message = ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
+    world.message = ui.phase === "splash" ? "CLICK OR PRESS A KEY" : ui.phase === "options" ? "STARQUAKE" : ui.phase === "define" ? "HIT KEY REQUIRED ..." : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
   } else if (ui.kind === "end") {
     world.message = ui.phase === "cores" ? "THE CORES COMPLETE" : "GAME OVER";
   }
@@ -3565,14 +3565,39 @@ function d2f4Bits(prep2, room2, x, playY, world) {
 function dirBits(input) {
   return (input.right ? 1 : 0) | (input.left ? 2 : 0) | (input.down ? 4 : 0) | (input.up ? 8 : 0);
 }
-function nudgeOutOfSolid(prep2, blob, pixels, world) {
-  let guard = 0;
-  while (overlapsTerrain(prep2, blob.room, blob.x, blob.y, pixels, world) && guard < HEIGHT) {
-    blob.y -= 1;
-    guard += 1;
-    if (blob.y < 0) {
-      blob.y = 0;
-      break;
+function clampBlobX(x) {
+  return Math.max(0, Math.min(WIDTH - 1, x));
+}
+function clampBlobY(y) {
+  return Math.max(0, Math.min(HEIGHT - BLOB_H, y));
+}
+function nudgeOutOfSolid(prep2, blob, pixels, world, preferDx = 0, preferDy = -1) {
+  const free = (x, y) => !overlapsTerrain(prep2, blob.room, x, y, pixels, world);
+  if (free(blob.x, blob.y)) return;
+  const ox = blob.x;
+  const oy = blob.y;
+  const tryAt = (x, y) => {
+    const nx = clampBlobX(x);
+    const ny = clampBlobY(y);
+    if (!free(nx, ny)) return false;
+    blob.x = nx;
+    blob.y = ny;
+    return true;
+  };
+  const max = Math.max(WIDTH, HEIGHT);
+  if (preferDx || preferDy) {
+    for (let i = 1; i <= max; i++) {
+      if (tryAt(ox + preferDx * i, oy + preferDy * i)) return;
+      if (preferDx && tryAt(ox + preferDx * i, oy)) return;
+      if (preferDy && tryAt(ox, oy + preferDy * i)) return;
+    }
+  }
+  for (let r = 1; r <= max; r++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (tryAt(ox + dx, oy - r) || tryAt(ox + dx, oy + r)) return;
+    }
+    for (let dy = -r + 1; dy <= r - 1; dy++) {
+      if (tryAt(ox - r, oy + dy) || tryAt(ox + r, oy + dy)) return;
     }
   }
 }
@@ -3745,7 +3770,14 @@ function applyRoomExit(prep2, blob, movingRight, movingLeft, world) {
     saveEntry(world, blob);
     syncHoverpad(prep2, world, blob.room, blob);
   }
-  nudgeOutOfSolid(prep2, blob, blobInkPixels(poseGraphic(prep2, blob, world)), world);
+  nudgeOutOfSolid(
+    prep2,
+    blob,
+    blobInkPixels(poseGraphic(prep2, blob, world)),
+    world,
+    dx,
+    dy
+  );
   return true;
 }
 function animationSet(blob, world) {

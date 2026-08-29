@@ -98,7 +98,7 @@ Statická stránka v `viewer/` (GitHub Pages skládá kopii do `docs/`). Čte JS
 npm start
 ```
 
-Otevře http://127.0.0.1:8000/viewer/ (TypeScript server v `game/src/server.ts`, port `--port` nebo `PORT`). Q/A/O/P pohybují BLOBem (nahoru sběr / nástup na pad, dolů plošinka), mezerník střílí (na padu `$CA15`). O/P na teleportu otevře zadání 5písmenného kódu. PageUp/PageDown mění místnost. `#168` otevře místnost 168. Panel ukáže `$DD22`, pad a jméno teleportu. `?dev=0` skryje vývojářský panel.
+Otevře http://127.0.0.1:8000/viewer/ (TypeScript server v `game/src/server.ts`, port `--port` nebo `PORT`). Po loadu splash (klik/klávesa odemkne zvuk). Q/A/O/P (nebo schéma z menu 2–5 / redefine) pohybují BLOBem (nahoru sběr / nástup na pad, dolů plošinka), mezerník střílí (na padu `$CA15`). ESC pauza: konec / save / load (`localStorage`). O/P na teleportu otevře zadání 5písmenného kódu. PageUp/PageDown mění místnost. `#168` otevře místnost 168 až po splash. Panel ukáže `$DD22`, pad a jméno teleportu. `?dev=0` skryje vývojářský panel.
 
 GitHub Pages: `docs/` je commitnutý viewer (`index.html`, `bundle.js`, MP3, `out/*.json`). Sestavení:
 

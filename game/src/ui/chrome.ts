@@ -121,6 +121,7 @@ export function drawInventory(
   const cols = [21, 23, 25, 27];
   for (let i = 0; i < world.inventory.length && i < 4; i++) {
     const it = world.inventory[i]!;
+    if ((it.sprite & 0xff) === 0 && (it.attr & 0xff) === 0) continue;
     const sprite = prep.sprites[it.sprite];
     if (!sprite) continue;
     const attr = ((it.attr & 7) | 0x40) & 0xff;

@@ -61,6 +61,7 @@ function liveEntity(over: Partial<Entity>): Entity {
     aiCount: 0x64,
     homeX: 80,
     homeY: 80,
+    clipTerrain: true,
     ...over,
   };
 }
@@ -270,6 +271,35 @@ describe("nasties $A01B", () => {
     assert.equal(probe(HIT_DX, 0), null, "dx=14 outside");
     assert.equal(probe(0, HIT_DY - 1), DEATH_A_LETHAL, "dy=10 inside");
     assert.equal(probe(0, HIT_DY), null, "dy=11 outside");
+  });
+
+  it("ghosts through attr<$40 until the 24x16 box is air, then latches bounce", () => {
+    const prep = grid((solid) => {
+      for (let r = 0; r < ROWS; r++) solid[r]![12] = 1;
+    });
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 0;
+    blob.y = 0;
+    const ghost = liveEntity({ x: 80, y: 80, dir: 1, ai: 0, period: 1, timer: 1, clipTerrain: false });
+    world.entities = [ghost];
+    world.nastyCount = 1;
+    tickNasties(prep, blob, world);
+    assert.equal(ghost.clipTerrain, false, "still overlapping col 12");
+    assert.equal(ghost.dir & 3, 1, "must not bounce while ghosting");
+    assert.ok(ghost.x > 80, `expected to fly right through the wall, x=${ghost.x}`);
+
+    const air = liveEntity({ x: 40, y: 80, dir: 1, ai: 0, period: 1, timer: 1, clipTerrain: false });
+    world.entities = [air];
+    tickNasties(prep, blob, world);
+    assert.equal(air.clipTerrain, true, "open air latches");
+    air.x = 80;
+    air.dir = 1;
+    air.timer = 1;
+    tickNasties(prep, blob, world);
+    assert.equal(air.clipTerrain, true, "latch never clears");
+    assert.ok(air.x < 80, `expected bounce after latch, x=${air.x}`);
+    assert.equal(air.dir & 3, 2);
   });
 });
 

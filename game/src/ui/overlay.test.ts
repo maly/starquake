@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { COLS, DOOR_KEY_SPRITE, DOOR_MSG_BAD, DOOR_MSG_OK, ROWS, TELEPORT_MSG_OK, TELEPORT_TABLE } from "../constants";
 import { createWorld } from "../physics";
+import { composeEndResult } from "../score";
 import type { Graphic, Prepared, Room } from "../types";
+import { FONT_ADD4, FONT_FIRST } from "./font-data";
 import {
   beginCheopsUi,
   beginDoorUi,
@@ -10,6 +12,7 @@ import {
   drawCheopsOverlay,
   drawUiOverlay,
   feedCheopsKey,
+  feedEndKey,
   feedTeleportKey,
   finishTeleportInput,
   mapTeleportKey,
@@ -206,6 +209,31 @@ describe("door/teleport overlay icons $EA65 + digit roll $D78B", () => {
     assert.equal(buf.data[cellIndex(9, 23) * 8]!, 0xa1);
   });
 
+  it("$EA65 resolves $24 roof ATTR 0 via $EA62 so the booth is visible", () => {
+    const prep = emptyPrep();
+    const ink = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    prep.graphics[0x24] = {
+      id: 0x24,
+      ptr: 0,
+      cols: 4,
+      rows: 3,
+      cells: [
+        { row: 0, col: 0, data: ink, attr: 0 },
+        { row: 0, col: 1, data: ink, attr: 0 },
+        { row: 1, col: 0, data: ink, attr: 0x47 },
+        { row: 1, col: 2, data: ink, attr: 0x05 },
+      ],
+    };
+    const ui = beginTeleportUi(343);
+    const buf = newScreenBuffers();
+    drawUiOverlay(buf, ui, prep);
+    const roof = cellIndex(9, 23);
+    assert.notEqual(buf.attr[roof], 0);
+    assert.equal(buf.attr[roof]! & 7, 3);
+    assert.equal(buf.data[roof * 8]!, 0xff);
+    assert.equal(buf.attr[cellIndex(10, 23)], 0x47);
+  });
+
   it("$D5FD intro is 15 HALTs then roll draws $D78B digits at $110B stride 4", () => {
     const prep = prepWithMarks();
     const world = createWorld(prep, 0);
@@ -260,5 +288,35 @@ describe("door/teleport overlay icons $EA65 + digit roll $D78B", () => {
     tickDoorUi(ui, world);
     assert.equal(ui.phase, "match");
     assert.ok(world.sfx.includes(0x03), JSON.stringify(world.sfx));
+  });
+});
+
+function glyph(code: number): number[] {
+  const i = (code - FONT_FIRST) * 8;
+  return [...FONT_ADD4.subarray(i, i + 8)];
+}
+
+describe("$6730 Spectrum end screen", () => {
+  it("prints GAME  OVER at AT 3,11 and SCORE digits at AT 6,16", () => {
+    const world = createWorld(emptyPrep(), 0);
+    world.scoreDigits = [0, 1, 2, 3, 4, 5];
+    composeEndResult(world, false);
+    if (world.ui.kind !== "end") throw new Error("expected end ui");
+    const buf = newScreenBuffers();
+    drawUiOverlay(buf, world.ui, emptyPrep());
+    assert.deepEqual([...buf.data.subarray(cellIndex(3, 11) * 8, cellIndex(3, 11) * 8 + 8)], glyph(0x47));
+    const d0 = world.endResult!.scoreDigits[0]! + 0x30;
+    assert.deepEqual([...buf.data.subarray(cellIndex(6, 16) * 8, cellIndex(6, 16) * 8 + 8)], glyph(d0));
+  });
+
+  it("victory starts on $693F cores text; a key goes to $6730 stats", () => {
+    const world = createWorld(emptyPrep(), 0);
+    composeEndResult(world, true);
+    if (world.ui.kind !== "end") throw new Error("expected end ui");
+    const buf = newScreenBuffers();
+    drawUiOverlay(buf, world.ui, emptyPrep());
+    assert.deepEqual([...buf.data.subarray(cellIndex(3, 7) * 8, cellIndex(3, 7) * 8 + 8)], glyph(0x54));
+    feedEndKey(world.ui, " ");
+    assert.equal(world.ui.phase, "stats");
   });
 });

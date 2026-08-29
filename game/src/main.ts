@@ -22,13 +22,13 @@ import {
   roomCol,
   roomRow,
 } from "./render";
-import { formatScore, formatTime } from "./score";
+import { formatScore } from "./score";
 import { parseCheatSprite, setInventorySlot } from "./cheat";
 import type { GameData, Prepared } from "./types";
 import { clampWorldStats, drawChrome, drawStatus } from "./ui/chrome";
 import { blitPlayfieldRgba, rasterizeScreen } from "./ui/compose";
 import { beginMenuUi, feedMenuKey } from "./ui/menu";
-import { drawUiOverlay, feedCheopsKey, feedTeleportKey, idleUi, isUiBlocking } from "./ui/overlay";
+import { drawUiOverlay, feedCheopsKey, feedEndKey, feedTeleportKey, idleUi, isUiBlocking } from "./ui/overlay";
 import { PLAY_Y0, clearScreen, newScreenBuffers, pastePlayfield } from "./ui/screen";
 
 /** Same-origin `out/` next to the page (Pages `docs/out`, local `/viewer/out`). */
@@ -131,7 +131,6 @@ async function boot(): Promise<void> {
   else if (blob.room === start) enterRoom(prep, world, start, { blob });
   syncMusic(world);
   let overlay = false;
-  let endShown = false;
   let lastMs = 0;
   let avgMs = 0;
   let frames = 0;
@@ -143,24 +142,6 @@ async function boot(): Promise<void> {
     clearScreen(hudScratch, 0);
     drawChrome(hudScratch);
     chromeRoom = blob.room;
-  }
-
-  function showEndOverlay(): void {
-    if (endShown || !world.endResult) return;
-    endShown = true;
-    const er = world.endResult;
-    const panel = document.createElement("div");
-    panel.id = "end-overlay";
-    panel.className = "end-overlay";
-    const title = er.victory ? er.banner || "THE CORES COMPLETE" : "GAME OVER";
-    panel.innerHTML = `<div class="end-card"><h2>${title}</h2>
-      <dl>
-        <div><dt>SCORE</dt><dd>${formatScore(er.scoreDigits)}</dd></div>
-        <div><dt>ADVENTURE</dt><dd>${er.adventure}</dd></div>
-        <div><dt>TIME</dt><dd>${formatTime(er.timeMinutes, er.timeSeconds)}</dd></div>
-        <div><dt>CORES REPLACED</dt><dd>${er.coresReplaced}</dd></div>
-      </dl></div>`;
-    document.body.appendChild(panel);
   }
 
   function updatePanel(): void {
@@ -223,13 +204,17 @@ async function boot(): Promise<void> {
         cheopsEl.textContent = world.cheops ? "výměna hotová" : "—";
       }
     }
-    $("stat-message").textContent = world.message || "—";
+    $("stat-message").textContent =
+      world.ui.kind === "end"
+        ? world.ui.phase === "cores"
+          ? "THE CORES COMPLETE"
+          : "GAME OVER"
+        : world.message || "—";
     gotoEl.value = String(blob.room);
     $("time").textContent = lastMs.toFixed(2) + " ms";
     $("avg").textContent = avgMs.toFixed(2) + " ms";
     $("fps").textContent = avgMs > 0 ? (1000 / avgMs).toFixed(0) : "—";
     $("scale").textContent = "×2";
-    if (world.gameOver) showEndOverlay();
   }
 
   function draw(): void {
@@ -243,7 +228,7 @@ async function boot(): Promise<void> {
     drawStatus(screenBuf, world, prep);
 
     if (isUiBlocking(world.ui)) {
-      drawUiOverlay(screenBuf, world.ui, prep);
+      drawUiOverlay(screenBuf, world.ui, prep, world.dac.dac0);
       rasterizeScreen(screenBuf, screenRgba);
     } else {
       const anim = animationSet(blob, world);
@@ -301,6 +286,11 @@ async function boot(): Promise<void> {
     if (world.ui.kind === "menu") {
       const act = feedMenuKey(world.ui, ev.key, world, ev.code);
       if (act === "start") startPlay(NEW_GAME_ROOM, false, true);
+      ev.preventDefault();
+      return;
+    }
+    if (world.ui.kind === "end") {
+      feedEndKey(world.ui, ev.key);
       ev.preventDefault();
       return;
     }

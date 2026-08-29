@@ -62,6 +62,7 @@ export function parkedBullet(): Entity {
     aiCount: 0,
     homeX: 0,
     homeY: ENTITY_PARK_Y,
+    clipTerrain: true,
   };
 }
 

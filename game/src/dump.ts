@@ -176,6 +176,7 @@ function parkedEntity(over: Partial<Entity>): Entity {
     aiCount: 0x64,
     homeX: 80,
     homeY: 80,
+    clipTerrain: true,
     ...over,
   };
 }
@@ -329,6 +330,7 @@ if (has("--hit-test")) {
       aiCount: 0x64,
       homeX: 80,
       homeY: 80,
+      clipTerrain: true,
     },
   ];
   world.nastyCount = 1;

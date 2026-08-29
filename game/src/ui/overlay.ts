@@ -42,6 +42,9 @@ import {
   TELEPORT_UDG,
   TELEPORT_UDG_COL,
   TELEPORT_UDG_ROW,
+  ATTR_INK_SPECIAL,
+  ATTR_PAPER_SPECIAL,
+  EA62_MIN,
 } from "../constants";
 import { requestSfx } from "../audio/effects";
 import { dacStep } from "../entities";
@@ -59,9 +62,12 @@ import {
   teleportNameForRoom,
 } from "../objects";
 import type { Prepared, World } from "../types";
+import { drawEndOverlay, type EndUi } from "./end";
 import { drawMenuOverlay, type MenuUi } from "./menu";
 import { newPrintState, printMessage } from "./print";
 import { cellIndex, clearPlayfield, SCREEN_COLS, type ScreenBuffers } from "./screen";
+
+export { feedEndKey } from "./end";
 
 /** Exact ROM overlay copy (double spaces where present). */
 export const MSG_SECURITY_DOOR = "SECURITY  DOOR";
@@ -132,7 +138,7 @@ export interface CheopsUi {
   offers: number[];
 }
 
-export type UiState = { kind: "none" } | DoorUi | TeleportUi | CheopsUi | MenuUi;
+export type UiState = { kind: "none" } | DoorUi | TeleportUi | CheopsUi | MenuUi | EndUi;
 
 export function idleUi(): UiState {
   return { kind: "none" };
@@ -254,15 +260,32 @@ function enterCheopsExchange(ui: CheopsUi, world: World): void {
   ui.ticks = 0;
 }
 
+/** `$EA65` `$EA62`: ink from `$DAC0∧7` if ≥2, else `(row∧7)∨$02`. */
+function ea62ForRow(row: number, dac0 = 0): number {
+  const a = dac0 & 7;
+  if (a >= EA62_MIN) return a;
+  return (row & 7) | EA62_MIN;
+}
+
+/** `$EAD3` specials on the raw ATTR stream from `graphics.json`. */
+function resolveEad3Attr(raw: number, ea62: number, ea63 = 0x05): number {
+  const masked = raw & 0x3f;
+  if (masked === ATTR_PAPER_SPECIAL) return (raw & 0xc0) | (ea63 & 0xff);
+  if (masked === ATTR_INK_SPECIAL) return (raw & 0xf8) | (ea62 & 0xff);
+  return raw & 0xff;
+}
+
 function blitGraphic(
   buf: ScreenBuffers,
   prep: Prepared | undefined,
   id: number,
   row: number,
   col: number,
+  dac0 = 0,
 ): void {
   const graphic = prep?.graphics[id];
   if (!graphic) return;
+  const ea62 = ea62ForRow(row, dac0);
   for (const cell of graphic.cells) {
     const cy = row + cell.row;
     const cx = col + cell.col;
@@ -270,7 +293,7 @@ function blitGraphic(
     const idx = cellIndex(cy, cx);
     const dst = idx * CELL;
     for (let py = 0; py < CELL; py++) buf.data[dst + py] = cell.data[py]!;
-    if (cell.attr != null) buf.attr[idx] = cell.attr & 0xff;
+    if (cell.attr != null) buf.attr[idx] = resolveEad3Attr(cell.attr, ea62);
   }
 }
 
@@ -328,12 +351,12 @@ function drawDigitRoll(
   }
 }
 
-export function drawDoorOverlay(buf: ScreenBuffers, ui: DoorUi, prep?: Prepared): void {
+export function drawDoorOverlay(buf: ScreenBuffers, ui: DoorUi, prep?: Prepared, dac0 = 0): void {
   clearPlayfield(buf);
   printAt(buf, 8, 9, MSG_SECURITY_DOOR);
   printAt(buf, 15, 10, MSG_ACCESS_CODE);
-  blitGraphic(buf, prep, DOOR_UDG_LEFT, DOOR_UDG_ROW, DOOR_UDG_COL_L);
-  blitGraphic(buf, prep, DOOR_UDG_RIGHT, DOOR_UDG_ROW, DOOR_UDG_COL_R);
+  blitGraphic(buf, prep, DOOR_UDG_LEFT, DOOR_UDG_ROW, DOOR_UDG_COL_L, dac0);
+  blitGraphic(buf, prep, DOOR_UDG_RIGHT, DOOR_UDG_ROW, DOOR_UDG_COL_R, dac0);
   drawDigitRoll(buf, prep, ui, DOOR_DIGIT_ROW, DOOR_DIGIT_COL);
   if (ui.phase === "result" || ui.phase === "done") {
     if (ui.ok) printAt(buf, 21, 7, MSG_ACCESS_OK);
@@ -341,12 +364,12 @@ export function drawDoorOverlay(buf: ScreenBuffers, ui: DoorUi, prep?: Prepared)
   }
 }
 
-export function drawTeleportOverlay(buf: ScreenBuffers, ui: TeleportUi, prep?: Prepared): void {
+export function drawTeleportOverlay(buf: ScreenBuffers, ui: TeleportUi, prep?: Prepared, dac0 = 0): void {
   clearPlayfield(buf);
   printAt(buf, 8, 4, MSG_ENTERED);
   printAt(buf, 10, 8, MSG_TELEPORT);
   printAt(buf, 12, 6, MSG_CODE_PREFIX + ui.ownName.slice(0, TELEPORT_NAME_LEN));
-  blitGraphic(buf, prep, TELEPORT_UDG, TELEPORT_UDG_ROW, TELEPORT_UDG_COL);
+  blitGraphic(buf, prep, TELEPORT_UDG, TELEPORT_UDG_ROW, TELEPORT_UDG_COL, dac0);
   printAt(buf, 14, 8, MSG_ENTER_TP);
   printAt(buf, 16, 8, MSG_DEST_CODE);
   if (ui.phase === "prompt" || ui.phase === "input") {
@@ -387,11 +410,12 @@ export function drawCheopsOverlay(buf: ScreenBuffers, ui: CheopsUi, prep?: Prepa
   }
 }
 
-export function drawUiOverlay(buf: ScreenBuffers, ui: UiState, prep?: Prepared): void {
-  if (ui.kind === "door") drawDoorOverlay(buf, ui, prep);
-  else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui, prep);
+export function drawUiOverlay(buf: ScreenBuffers, ui: UiState, prep?: Prepared, dac0 = 0): void {
+  if (ui.kind === "door") drawDoorOverlay(buf, ui, prep, dac0);
+  else if (ui.kind === "teleport") drawTeleportOverlay(buf, ui, prep, dac0);
   else if (ui.kind === "cheops") drawCheopsOverlay(buf, ui, prep);
   else if (ui.kind === "menu") drawMenuOverlay(buf, ui, prep);
+  else if (ui.kind === "end") drawEndOverlay(buf, ui, prep);
 }
 
 interface D5fdUi {
@@ -627,6 +651,8 @@ export function syncWorldMessage(world: World, ui: UiState): void {
   } else if (ui.kind === "menu") {
     world.message =
       ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
+  } else if (ui.kind === "end") {
+    world.message = ui.phase === "cores" ? "THE CORES COMPLETE" : "GAME OVER";
   }
 }
 

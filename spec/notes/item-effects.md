@@ -229,7 +229,7 @@ Sonda `$CCCC`:
 
 Po LDDR je pátý pár v `$D2DA`/`$D2DB`. `$D2DB≠0` → `INC ($D2BE)`, sloupec `(X≫3)`, screen-row `($BF−Y)≫3` (`$D20F`). `$D267` 2×2 v `$5800`: bit 6 **a** ne `$64`. Pořadí: col≥1 a A=0 vlevo → col−1; jinak col `< $1D` a A=0 vpravo → col+2; jinak původní col. `$D2A6` D=`$32` najde nejstarší nesený `$94E8`; byte0 `(AND $E0)∨col`, byte1 room-hi∨row, byte2 room.lo, byte3 sprite z `$D2DA`; `$CE68`/`$DB24` attr `$D2DB+$40`; `$A7FE`=`$AA02` typ `$14+index`. Sonda (`tmp_overflow_probe.py`): volné `$47` col−1, stejný screen-row; `$07`/`$64` vlevo → col+2; obě strany zablokované → col BloBa; col=0 přeskočí vlevo; col≥`$1D` přeskočí vpravo.
 
-Engine: unshift s `$94E8` indexem; při 5. slotu pop nejstarší, `collected=0`, přesun `itemsByRoom` do aktuální místnosti. Y-markery 2…5/`$32` se neukládají — nejstarší = poslední inventární slot. 1. Up prázdný `00 00` (`$D1B3`) **ne**. `$D1C2` skip když `$D2DB≠0` a `$D2BE≥4` (po předchozím overflow v plné místnosti by ROM nový sběr nevložila) engine neemuluje — každý pátý sběr dropne.
+Engine: unshift s `$94E8` indexem; při 5. slotu pop nejstarší, `collected=0`, přesun `itemsByRoom` do aktuální místnosti. Y-markery 2…5/`$32` se neukládají — nejstarší = poslední inventární slot. 1. Up prázdný `00 00` (`$D1B3`) **ano**. `$D1C2` skip když `$D2DB≠0` a `$D2BE≥4` engine neemuluje — každý pátý sběr dropne.
 
 ---
 
@@ -261,7 +261,7 @@ NEVÍM k přenosu: viz § 9.
 1. **Stroj `$0E`.** Implementováno: max pád + exact Y, dvě krátké plošinky. `$D3C1` flash mezerami ne. Jiné spouště než pád ROM nemá.
 2. **`$0F` mapa.** V enginu: 22 místností (11 párů), exact XY + L\|R, room ±1, snap dest `$0F`. `A=$05` = `$D2C4`.
 3. **Typy `$10`–`$13` v live `$96FC`.** Větev `$D13B` je no-op. `$AB80` začíná na `$14`, extra je `$01`. Jestli je někdy zapíše jiný kód — NEVÍM.
-4. **Drop overflow `$D1CA` / `$D236`.** Implementováno (col−1 / col+2 / orig, Y=`$32` jen mezi `$D1E1` a `$D236`). `$D1B3` prázdný Up `00 00` a skip `$D2BE≥4` při `$D2DB≠0` zůstávají mimo.
+4. **Drop overflow `$D1CA` / `$D236`.** Implementováno (col−1 / col+2 / orig, Y=`$32` jen mezi `$D1E1` a `$D236`). `$D1B3` prázdný Up `00 00` implementováno. Skip `$D2BE≥4` při `$D2DB≠0` engine ne.
 5. **Cheops výměna `$CCF1`–`$CDFB`.** Implementováno: 2ciferný kód BC=`$0F0D`, slot `$CD32`, 4× `$D2DE` bit7 + original, klávesy 1–5, `$A801` po úspěchu. Digit-roll `$D78B` / `$D679` jako u dveří (A=2). Na padu/zdviži `$CB36`/`$C761` RES 3 — Up (a tedy Cheops) ne.
 6. **`$D693` / jádro `$C7` / security `$CBDC`.** Jen že `$D09F` tam neskáče.
 7. **Skóre při nenulovém `$D419`.** Sběr pracovní cifry nesází; kdyby je nastavil jiný kód ve stejném ticku, `$D1F5` by je přičetl. Za jakých ticků to nastane při sběru — NEVÍM (typicky `$D419` nula).

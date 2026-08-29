@@ -565,7 +565,8 @@ function parkedBullet() {
     aiPeriod: 0,
     aiCount: 0,
     homeX: 0,
-    homeY: ENTITY_PARK_Y
+    homeY: ENTITY_PARK_Y,
+    clipTerrain: true
   };
 }
 function parkBullet(world) {
@@ -919,7 +920,9 @@ function accessCodeDigits(room2, d2c6, bc) {
   return [reduceDoorDigit(d5f7), reduceDoorDigit(d5f9), reduceDoorDigit(a)];
 }
 function inventoryHasSprite(world, sprite) {
-  return world.inventory.some((it) => (it.sprite & 255) === (sprite & 255));
+  return world.inventory.some(
+    (it) => (it.sprite & 255) === (sprite & 255) && ((it.sprite & 255) !== 0 || (it.attr & 255) !== 0)
+  );
 }
 function doorKeysAccepted(world, room2) {
   return inventoryMatchesDigits(world, expectedDoorCode(room2));
@@ -1020,1523 +1023,6 @@ function walkSpecialObjects(prep2, blob, input, world) {
     return "$0F";
   }
   return null;
-}
-
-// src/score.ts
-function freshA390() {
-  return new Uint8Array(A390_BYTES).fill(255);
-}
-function zeroScore() {
-  return Array.from({ length: SCORE_DIGITS }, () => 0);
-}
-function addScore(world, amount) {
-  let n = Math.max(0, amount | 0);
-  for (let i = SCORE_DIGITS - 1; i >= 0; i--) {
-    const sum = (world.scoreDigits[i] ?? 0) + n % 10;
-    world.scoreDigits[i] = sum % 10;
-    n = Math.floor(n / 10) + Math.floor(sum / 10);
-  }
-}
-function killScorePoints(ptr) {
-  const hi = ptr >> 8 & 255;
-  const tens = (hi - SCORE_KILL_HI_BASE) * 2 & 255;
-  return tens * 10;
-}
-function a390Unvisited(a390, room2) {
-  const high = room2 >> 8 & 1;
-  const low = room2 & 255;
-  const offset = (high >> 3 | (low & 248) >> 3) & 255;
-  let value = a390[offset] ?? 0;
-  for (let i = 0; i < (low & 7) + 1; i++) value = (value << 1 | value >> 7) & 255;
-  return (value & 1) !== 0;
-}
-function clearA390Bit(a390, room2) {
-  const high = room2 >> 8 & 1;
-  const low = room2 & 255;
-  const offset = (high >> 3 | (low & 248) >> 3) & 255;
-  const rot = (low & 7) + 1;
-  let value = a390[offset] ?? 0;
-  for (let i = 0; i < rot; i++) value = (value << 1 | value >> 7) & 255;
-  value = value & 254 & 255;
-  for (let i = 0; i < rot; i++) value = (value >> 1 | (value & 1) << 7) & 255;
-  a390[offset] = value;
-}
-function adventureScore(visitedCount) {
-  return visitedCount * 50 >> 8 & 255;
-}
-function framesToTime(frames) {
-  const totalSec = Math.floor(Math.max(0, frames) / FRAME_HZ);
-  return { minutes: Math.floor(totalSec / 60), seconds: totalSec % 60 };
-}
-function composeEndResult(world, victory, banner) {
-  addScore(world, SCORE_END_BONUS);
-  const time = framesToTime(world.frames);
-  const result = {
-    scoreDigits: world.scoreDigits.slice(),
-    adventure: adventureScore(world.visitedCount),
-    timeMinutes: time.minutes,
-    timeSeconds: time.seconds,
-    coresReplaced: CORE_LEFT_INIT - (world.coresLeft & 255),
-    victory,
-    banner
-  };
-  world.endResult = result;
-  world.victory = victory;
-  world.gameOver = true;
-  return result;
-}
-function formatScore(digits) {
-  return digits.map((d) => String(d & 15)).join("");
-}
-function formatTime(minutes, seconds) {
-  const mm = String(minutes).padStart(2, "0");
-  const ss = String(seconds).padStart(2, "0");
-  return `${mm}.${ss}`;
-}
-
-// src/entities.ts
-function cellAttr(world, col, row) {
-  if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return 71;
-  return world.terrain.attr[row * COLS + col];
-}
-function cellSolid2(world, col, row) {
-  return (cellAttr(world, col, row) & 64) === 0;
-}
-function cloneEntity(e) {
-  return { ...e };
-}
-function entityVisible(e) {
-  if (e.y === 0) return false;
-  if (e.ptr === ENTITY_DUMMY_PTR) return false;
-  return (e.x | e.y) >= ENTITY_DRAW_MIN;
-}
-function setForPtr(ptr) {
-  const n = Math.max(0, Math.round((ptr - GRAFIX_BASE) / GRAFIX_STRIDE));
-  return ENEMY_SETS[n] ?? "alien1";
-}
-function dacStep(d) {
-  let hl = d.dac0 & 65535;
-  const bc = hl;
-  hl = (hl << 8 | hl >> 8) & 65535;
-  hl = hl + bc + 41 + (d.dac2 & 65535) & 65535;
-  d.dac0 = hl;
-  d.db19 = d.db19 - 1 & 255;
-  if (d.db19 !== 0) return;
-  d.db19 = 5;
-  let dac2 = d.dac2 & 65535;
-  hl = dac2 * 16 + dac2 + 197 + (d.dac4 & 65535) & 65535;
-  d.dac2 = hl;
-  d.db1a = d.db1a - 1 & 255;
-  if (d.db1a !== 0) return;
-  d.db1a = 11;
-  hl = d.dac4 & 65535;
-  hl = (hl + hl + (d.dac0 & 65535) & 65535) + (hl + hl + (d.dac0 & 65535)) + 19387 & 65535;
-  d.dac4 = hl;
-}
-function seedDac(room2) {
-  const addr = ROOM_DATA_BASE + room2 * ROOM_DATA_STRIDE;
-  return { dac0: addr, dac2: 0, dac4: addr, db19: 3, db1a: 3 };
-}
-function modBias(a, sub, add) {
-  let v = a & 255;
-  while (v >= sub) v -= sub;
-  return v + add & 255;
-}
-function z80SubAdd(a, sub, add) {
-  let v = a & 255;
-  while (v >= sub) v -= sub;
-  return v + add - sub & 255;
-}
-function emptyish(attr) {
-  return (attr & 96) === 64;
-}
-function spawnCellOk(world, x, y) {
-  const col = x >> 3;
-  const row = GAME_Y_ORIGIN - y >> 3;
-  for (const [dc, dr] of [
-    [0, 0],
-    [1, 0],
-    [0, 1],
-    [1, 1]
-  ]) {
-    const c = col + dc;
-    const r = row + dr;
-    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
-    if (!emptyish(cellAttr(world, c, r))) return false;
-  }
-  return true;
-}
-function farFromBlob(x, y, blob) {
-  if (!blob) return true;
-  const by = GAME_Y_ORIGIN - blob.y;
-  const dx = x - blob.x;
-  const dy = y - by;
-  return dx * dx + dy * dy >= MIN_LETHAL_SPAWN_DIST * MIN_LETHAL_SPAWN_DIST;
-}
-function nudgeAwayFromBlob(e, blob) {
-  const by = GAME_Y_ORIGIN - blob.y;
-  let dx = e.x - blob.x;
-  let dy = e.y - by;
-  const len = Math.hypot(dx, dy);
-  if (len < 1) {
-    dx = MIN_LETHAL_SPAWN_DIST;
-    dy = 0;
-  } else {
-    const scale = MIN_LETHAL_SPAWN_DIST / len;
-    dx *= scale;
-    dy *= scale;
-  }
-  e.x = Math.max(NASTY_EDGE_L, Math.min(NASTY_EDGE_R - 1, Math.round(blob.x + dx))) & 255;
-  e.y = Math.max(NASTY_EDGE_U, Math.min(NASTY_EDGE_D - 1, Math.round(by + dy))) & 255;
-  e.homeX = e.x;
-  e.homeY = e.y;
-}
-function rotateDac0(world, times) {
-  let a = world.dac.dac0 & 255;
-  for (let i = 0; i < times; i++) a = (a << 1 | a >> 7) & 255;
-  return a;
-}
-function pickDir(world, slot, mask) {
-  const v = rotateDac0(world, slot) & mask;
-  return DIR_TABLE[v & 7];
-}
-function makeEntity(ptr) {
-  return {
-    x: 0,
-    y: ENTITY_PARK_Y,
-    ink: 4,
-    set: "corepieces1",
-    frame: 0,
-    ptr: ENTITY_DUMMY_PTR,
-    basePtr: ptr,
-    dir: 85,
-    speedX: NASTY_SPEED,
-    speedY: NASTY_SPEED,
-    period: 4,
-    timer: 8,
-    state: 0,
-    stateTimer: 0,
-    ai: 0,
-    aiPeriod: 8,
-    aiCount: 8,
-    homeX: 0,
-    homeY: 15
-  };
-}
-function spawnOne(prep2, room2, world, slot, blob) {
-  dacStep(world.dac);
-  const kind = z80SubAdd(world.dac.dac0 >> 8 & 255, 15, 17);
-  const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
-  const lethal = ptr >> 8 < KILL_GRAPHIC_HI;
-  const e = makeEntity(ptr);
-  e.ink = world.dac.dac0 >> 5 & 7;
-  if (e.ink === 0) e.ink = z80SubAdd(world.dac.dac0 & 255, 5, 7) & 7 || 2;
-  e.period = z80SubAdd(world.dac.dac2 >> 4 & 255, 5, 9) || 4;
-  e.timer = world.dac.dac2 & 255;
-  e.aiPeriod = modBias(world.dac.dac4 & 15, 5, 5) || 8;
-  if (e.aiPeriod === 0) e.aiPeriod = 100;
-  e.aiCount = 8;
-  e.ai = z80SubAdd(world.dac.dac4 >> 8 & 15, 5, 5);
-  if (kind === KIND_BADALIEN2) e.ai = AI_FORCED_KIND2;
-  e.dir = 85;
-  e.set = "corepieces1";
-  for (let attempt = 0; attempt < 100; attempt++) {
-    dacStep(world.dac);
-    let a = world.dac.dac0 & 255;
-    const odd = (a & 1) !== 0;
-    a = (a >> 1 | (odd ? 128 : 0)) & 255;
-    const dac1 = world.dac.dac0 >> 8 & 255;
-    let x;
-    let y;
-    if (odd) {
-      y = (z80SubAdd(a, 9, 15) << 3) - 1 & 255;
-      x = dac1 & 128 ? 2 : 238;
-    } else {
-      x = z80SubAdd(a, 23, 27) << 3 & 255;
-      y = dac1 & 1 ? 17 : 141;
-    }
-    if (!spawnCellOk(world, x, y)) continue;
-    if (lethal && !farFromBlob(x, y, blob)) continue;
-    e.homeX = x;
-    e.homeY = y;
-    return e;
-  }
-  e.y = 0;
-  e.homeY = 0;
-  return e;
-}
-function applyFixedNasties(prep2, room2, world) {
-  const list = prep2.fixedNastiesByRoom?.[room2] ?? [];
-  for (let i = 0; i < list.length; i++) {
-    const slotNum = list.length - i;
-    const e = world.entities[slotNum - 1];
-    const spot = list[i];
-    if (!e || !spot) continue;
-    e.x = spot.x;
-    e.y = spot.y;
-    e.ptr = FIXED_NASTY_PTR;
-    e.set = setForPtr(FIXED_NASTY_PTR);
-    e.dir = FIXED_NASTY_DIR;
-    e.period = (e.period | 8) & 255;
-    e.timer = 1;
-    e.state = 1;
-    e.stateTimer = 0;
-    e.ai = FIXED_NASTY_AI;
-  }
-}
-function spawnNasties(prep2, room2, world, blob) {
-  world.dac = seedDac(room2);
-  dacStep(world.dac);
-  world.entities = [];
-  for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep2, room2, world, i + 1, blob));
-  world.nastyCount = NASTY_SLOTS;
-  world.spawnGuard = SPAWN_GUARD;
-  applyFixedNasties(prep2, room2, world);
-}
-function parkCoreSlot() {
-  return {
-    x: 0,
-    y: 0,
-    ink: 7,
-    set: "corepieces2",
-    frame: 0,
-    ptr: ENTITY_DUMMY_PTR,
-    basePtr: CORE_GUARD_PTR,
-    dir: CORE_GUARD_DIR,
-    speedX: NASTY_SPEED,
-    speedY: NASTY_SPEED,
-    period: CORE_GUARD_PERIOD,
-    timer: CORE_GUARD_PERIOD,
-    state: 0,
-    stateTimer: 0,
-    ai: 0,
-    aiPeriod: CORE_GUARD_AI_PERIOD,
-    aiCount: CORE_GUARD_AI_PERIOD,
-    homeX: 0,
-    homeY: 0
-  };
-}
-function spawnCoreGuardians(world) {
-  const n = Math.min(world.corePairs & 255, CORE_GUARD_XY.length);
-  world.entities = [];
-  for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(parkCoreSlot());
-  for (let i = 0; i < n; i++) {
-    const [x, y] = CORE_GUARD_XY[i];
-    const e = world.entities[i];
-    e.x = x;
-    e.y = y;
-    e.homeX = x;
-    e.homeY = y;
-    e.ptr = CORE_GUARD_PTR;
-    e.basePtr = CORE_GUARD_PTR;
-    e.set = setForPtr(CORE_GUARD_PTR);
-    e.ink = CORE_GUARD_INK;
-    e.state = 1;
-    e.stateTimer = 0;
-    e.period = CORE_GUARD_PERIOD;
-    e.timer = CORE_GUARD_PERIOD;
-    e.dir = CORE_GUARD_DIR;
-    e.speedX = NASTY_SPEED;
-    e.speedY = NASTY_SPEED;
-    e.ai = 0;
-    e.aiPeriod = CORE_GUARD_AI_PERIOD;
-    e.aiCount = CORE_GUARD_AI_PERIOD;
-  }
-  world.nastyCount = NASTY_SLOTS;
-  world.spawnGuard = 0;
-  world.cacheRoom = CORE_ROOM;
-}
-function enterNasties(prep2, world, room2, blob) {
-  if (room2 === CORE_ROOM) {
-    spawnCoreGuardians(world);
-    return;
-  }
-  if (room2 === CORE_NEIGHBOR) {
-    world.entityCache = null;
-    world.entities = [];
-    world.nastyCount = 0;
-    world.spawnGuard = 0;
-    world.cacheRoom = room2;
-    return;
-  }
-  const outgoing = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
-  const incoming = world.entityCache;
-  world.entityCache = outgoing;
-  if (incoming && incoming.room === room2 && world.spawnGuard !== 0) {
-    world.entities = incoming.entities.map(cloneEntity);
-    world.nastyCount = NASTY_SLOTS;
-  } else {
-    spawnNasties(prep2, room2, world, blob);
-  }
-  world.cacheRoom = room2;
-}
-function isLethal(e) {
-  return e.ptr >> 8 < KILL_GRAPHIC_HI;
-}
-function hitBlob(e, blob) {
-  if (e.y === 0 || e.state !== 1) return false;
-  const dx = Math.abs(e.x - blob.x);
-  const dy = Math.abs(e.y - (GAME_Y_ORIGIN - blob.y));
-  return dx < HIT_DX && dy < HIT_DY;
-}
-function applyContact(e, blob, world, allowAnnoy) {
-  if (!hitBlob(e, blob)) return null;
-  if (isLethal(e)) {
-    return (e.ptr & 255) === GRAPHIC_LO_C8 ? DEATH_A_LETHAL_C8 : DEATH_A_LETHAL;
-  }
-  if (allowAnnoy) world.energyDrain = world.energyDrain + ANNOY_DRAIN_BUMP & 255;
-  return null;
-}
-function makePad(x, blobGameY) {
-  const py = blobGameY - HOVERPAD_Y_BIAS & 255;
-  return {
-    x: x & 255,
-    y: py,
-    ink: HOVERPAD_INK,
-    set: "hoverpad",
-    frame: 0,
-    ptr: HOVERPAD_PTR,
-    basePtr: HOVERPAD_PTR,
-    dir: 0,
-    speedX: 0,
-    speedY: 0,
-    period: 1,
-    timer: 1,
-    state: 0,
-    stateTimer: 0,
-    ai: 0,
-    aiPeriod: 0,
-    aiCount: 0,
-    homeX: x & 255,
-    homeY: py
-  };
-}
-function copyPadFromBlob(world, blob) {
-  world.pad = makePad(blob.x, GAME_Y_ORIGIN - blob.y);
-  world.nastyCount = NASTY_COUNT_WITH_PAD;
-}
-function syncHoverpad(prep2, world, room2, blob) {
-  world.station = lastStation(prep2, room2);
-  if (world.station.x !== 0 || world.station.y !== 0) {
-    world.pad = makePad(world.station.x, world.station.y);
-    world.nastyCount = NASTY_COUNT_WITH_PAD;
-  } else if (world.dd22 !== 2) {
-    world.pad = null;
-  }
-  if (world.dd22 === 2 && blob) copyPadFromBlob(world, blob);
-}
-function hitByBullet(e, world) {
-  if (!shotFlying(world)) return;
-  if (e.state === 2) return;
-  if (e.state === 0 && e.stateTimer === 0) return;
-  const dx = Math.abs(e.x - world.bullet.x);
-  const dy = Math.abs(e.y - world.bullet.y);
-  if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
-  addScore(world, killScorePoints(e.basePtr || e.ptr));
-  requestSfx(world, 18);
-  requestA41C(world, CHAN_KILL);
-  e.ptr = DEAD_GRAPHIC;
-  e.set = "stars";
-  e.ink = 7;
-  e.state = 2;
-  e.stateTimer = 0;
-  parkBullet(world);
-}
-function bounceH(e, world) {
-  if (e.x < NASTY_EDGE_L) {
-    e.dir = e.dir & 252 | 1;
-    return;
-  }
-  if (e.x >= NASTY_EDGE_R) {
-    e.dir = e.dir & 252 | 2;
-    return;
-  }
-  const playY = GAME_Y_ORIGIN - e.y;
-  if ((e.x & 7) !== 0) return;
-  const col = e.x >> 3;
-  const top = playY >> 3;
-  const rows = (e.y + 1 & 7) === 0 ? 2 : 3;
-  let left = false;
-  let right = false;
-  for (let r = 0; r < rows; r++) {
-    if (cellSolid2(world, col - 1, top + r)) left = true;
-    if (cellSolid2(world, col + 2, top + r)) right = true;
-  }
-  const bits = (right ? 1 : 0) | (left ? 2 : 0);
-  if (!bits) return;
-  e.dir = e.dir & 252 | bits ^ 3;
-}
-function bounceV(e, world) {
-  if (e.ai === 6) return;
-  if (e.y < NASTY_EDGE_D) {
-    e.dir = e.dir & 243 | 8;
-    return;
-  }
-  if (e.y >= NASTY_EDGE_U) {
-    e.dir = e.dir & 243 | 4;
-    return;
-  }
-  const playY = GAME_Y_ORIGIN - e.y;
-  if ((e.y + 1 & 7) !== 0) return;
-  const cols = (e.x & 7) === 0 ? [e.x >> 3, (e.x >> 3) + 1] : [e.x >> 3, (e.x >> 3) + 1, (e.x >> 3) + 2];
-  const floor = playY + 16 >> 3;
-  const ceil = (playY >> 3) - 1;
-  let down = false;
-  let up = false;
-  for (const c of cols) {
-    if (cellSolid2(world, c, floor)) down = true;
-    if (cellSolid2(world, c, ceil)) up = true;
-  }
-  const bits = (down ? 4 : 0) | (up ? 8 : 0);
-  if (!bits) return;
-  e.dir = e.dir & 243 | bits ^ 12;
-}
-function skip64(e, world) {
-  if ((e.x & 7) !== 0 || (e.y + 1 & 7) !== 0) return false;
-  const col = e.x >> 3;
-  const row = GAME_Y_ORIGIN - e.y >> 3;
-  for (const [dc, dr] of [
-    [0, 0],
-    [1, 0],
-    [0, 1],
-    [1, 1]
-  ]) {
-    if ((cellAttr(world, col + dc, row + dr) & 127) === 100) return true;
-  }
-  return false;
-}
-function chaseDir(e, blob) {
-  const bx = blob.x;
-  const by = GAME_Y_ORIGIN - blob.y;
-  return (e.x < bx ? 1 : 2) | (e.y < by ? 8 : 4);
-}
-function thinkAi3(e, world, slot) {
-  e.speedX = NASTY_SPEED;
-  e.speedY = NASTY_SPEED;
-  e.dir = pickDir(world, slot, 7);
-  let n = 0;
-  let bits = e.dir;
-  for (let i = 0; i < 4; i++) {
-    if (bits & 1) n += 1;
-    bits >>= 1;
-  }
-  if (n === 1) return;
-  let a = rotateDac0(world, slot);
-  const carry = (a & 128) !== 0;
-  a = (a << 1 | a >> 7) & 255;
-  if (carry) return;
-  a = (a << 1 | a >> 7) & 255;
-  const s = (a & 1) + 1;
-  e.speedX = s;
-  e.speedY = (s ^ 3) & 3 || 1;
-}
-function think(e, blob, world, slot) {
-  e.aiCount -= 1;
-  if (e.aiCount !== 0) return false;
-  e.aiCount = e.aiPeriod === 100 ? e.aiPeriod : e.aiPeriod;
-  if (e.aiPeriod === 100) {
-    e.aiCount = (world.dac.dac0 >> 8 & 3) + 1;
-    e.aiCount <<= 1;
-  }
-  switch (e.ai) {
-    case 0:
-      if ((e.dir & 11) === 0) e.dir |= 2;
-      if ((e.dir & 12) === 0) e.dir |= 8;
-      break;
-    case 1:
-      e.speedX = NASTY_SPEED;
-      e.speedY = NASTY_SPEED;
-      e.dir = DIR_TABLE[(rotateDac0(world, slot) & 3) << 1];
-      break;
-    case 2:
-      e.speedX = NASTY_SPEED;
-      e.speedY = NASTY_SPEED;
-      e.dir = pickDir(world, slot, 7);
-      break;
-    case 3:
-      thinkAi3(e, world, slot);
-      break;
-    case 4:
-      e.dir = chaseDir(e, blob);
-      break;
-    case 5: {
-      e.dir = 0;
-      let a = rotateDac0(world, slot);
-      const carry = (a & 1) !== 0;
-      a = (a >> 1 | (carry ? 128 : 0)) & 255;
-      if (carry) break;
-      if (a < AI5_CHASE_MAX) e.dir = chaseDir(e, blob);
-      else thinkAi3(e, world, slot);
-      break;
-    }
-    case 6:
-      e.dir &= 3;
-      if (e.dir === 0) e.dir = FIXED_NASTY_DIR;
-      return true;
-    default:
-      break;
-  }
-  return false;
-}
-function appearOrDie(e, blob, world) {
-  if (e.state === 2) {
-    e.ptr = DEAD_GRAPHIC;
-    e.set = "stars";
-    e.stateTimer = e.stateTimer + 1 & 255;
-    if (e.stateTimer === DIE_FRAMES) {
-      e.y = 0;
-      e.x = 0;
-      return true;
-    }
-    return false;
-  }
-  if (e.state !== 0) return false;
-  const was = e.stateTimer;
-  e.stateTimer += 1;
-  if (was === 0) {
-    e.x = e.homeX;
-    e.y = e.homeY;
-    e.ptr = APPEAR_GRAPHIC;
-    e.set = "corepieces1";
-    if (world) requestA41C(world, (world.dac.dac0 & 3) + 1);
-  }
-  if (was === APPEAR_FRAMES) {
-    if (e.basePtr >> 8 < KILL_GRAPHIC_HI && blob && !farFromBlob(e.x, e.y, blob)) {
-      nudgeAwayFromBlob(e, blob);
-    }
-    e.state = 1;
-    e.stateTimer = 0;
-    e.ptr = e.basePtr;
-    e.set = setForPtr(e.basePtr);
-  }
-  return false;
-}
-function stepMove(e, world) {
-  bounceH(e, world);
-  if (skip64(e, world)) return;
-  if (e.dir & 1) e.x = e.x + e.speedX & 255;
-  if (e.dir & 2) e.x = e.x - e.speedX & 255;
-  bounceV(e, world);
-  if (e.dir & 4) e.y = e.y - e.speedY & 255;
-  if (e.dir & 8) e.y = e.y + e.speedY & 255;
-}
-function stepOne(e, prep2, blob, world, slot, inner) {
-  if (e.y === 0) return null;
-  hitByBullet(e, world);
-  const death = applyContact(e, blob, world, inner === 0);
-  if (death !== null) return { kind: "death", a: death };
-  e.timer = e.timer - 1 & 255;
-  if (e.timer !== 0) return null;
-  e.timer = e.period;
-  if (appearOrDie(e, blob, world) && e.y === 0) return null;
-  const abort = think(e, blob, world, slot);
-  stepMove(e, world);
-  if (abort) return { kind: "abort" };
-  return null;
-}
-function grafixAnimFrame(ticks) {
-  return Math.floor(ticks / GRAFIX_ANIM_PERIOD) % GRAFIX_FRAMES;
-}
-function syncGrafixFrames(world) {
-  const frame = grafixAnimFrame(world.frames);
-  const n = Math.min(world.nastyCount, world.entities.length);
-  for (let i = 0; i < n; i++) {
-    const e = world.entities[i];
-    if (!e || !entityVisible(e)) continue;
-    e.frame = frame;
-  }
-  if (world.pad && entityVisible(world.pad)) world.pad.frame = frame;
-}
-function tickNasties(prep2, blob, world) {
-  if (world.spawnGuard) world.spawnGuard -= 1;
-  dacStep(world.dac);
-  syncGrafixFrames(world);
-  const n = Math.min(world.nastyCount, world.entities.length);
-  for (let slot = n; slot >= 1; slot--) {
-    const e = world.entities[slot - 1];
-    if (!e) continue;
-    for (let i = 0; i < NASTY_INNER_STEPS; i++) {
-      const r = stepOne(e, prep2, blob, world, slot, i);
-      if (r?.kind === "death") return r.a;
-      if (r?.kind === "abort") return null;
-    }
-  }
-  return null;
-}
-function tickEnergyDrain(world) {
-  if (world.cheatGod) return;
-  world.energyDrain = world.energyDrain + 1 & 255;
-  if (world.energyDrain < ENERGY_DRAIN_WRAP) return;
-  world.energyDrain = 0;
-  world.energy = Math.max(0, world.energy - ENERGY_DRAIN_STEP);
-}
-
-// src/items.ts
-function rebuildItemIndex(prep2) {
-  prep2.itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
-  for (const it of prep2.itemTable ?? []) {
-    if (it.sprite === 255) continue;
-    if (!it.placed) continue;
-    if ((it.row & 127) < PLAY_ORIGIN) continue;
-    if (it.room === ROOM_SKIP) continue;
-    if (it.room >= 0 && it.room < ROOM_COUNT) prep2.itemsByRoom[it.room].push(it);
-  }
-}
-function rrca3(a) {
-  let v = a & 255;
-  for (let i = 0; i < 3; i++) v = (v >> 1 | (v & 1) << 7) & 255;
-  return v;
-}
-function dacReduce(a, n) {
-  let v = a & 255;
-  const e = n & 255;
-  if (e === 0) return 0;
-  do
-    v = v - e & 255;
-  while (v >= e);
-  return v;
-}
-function rollCoreSprites(world) {
-  const slots = Array.from({ length: 9 }, () => 0);
-  for (let n = 5; n > 0; n--) {
-    let sprite = 0;
-    for (; ; ) {
-      dacStep(world.dac);
-      let a = world.dac.dac0 & 255;
-      while (a >= 15) a -= 15;
-      a = a + 137 & 255;
-      if (a >= 143) a = a + 11 & 255;
-      if (slots.includes(a)) continue;
-      sprite = a;
-      break;
-    }
-    let slot = 0;
-    for (; ; ) {
-      dacStep(world.dac);
-      let e = world.dac.dac0 & 255;
-      while (e >= 9) e -= 9;
-      e = e + 9 & 255;
-      while (e >= 9) e -= 9;
-      slot = e;
-      if (slots[slot] === 0) break;
-    }
-    slots[slot] = sprite;
-  }
-  for (let b = 9; b > 0; b--) {
-    if (slots[9 - b] === 0) slots[9 - b] = 137 - b & 255;
-  }
-  world.d2de = slots;
-  world.d2deNeed = slots.slice();
-}
-function writeShuffled(prep2, index, room2, sprite) {
-  const src = prep2.itemTemplate?.[index] ?? prep2.itemTable?.[index];
-  const it = prep2.itemTable?.[index];
-  if (!it) return;
-  it.room = room2 & 511;
-  it.sprite = sprite & 255;
-  it.placed = false;
-  it.attr_bits = (src?.attr_bits ?? 0) & 7;
-  it.col = it.attr_bits << 5 & 224;
-  it.row = room2 >> 8 & 1 ? 128 : 0;
-}
-function shuffleCollectibles(prep2, world) {
-  if (!prep2.itemTable || prep2.itemTable.length < ITEM_SHUFFLE) return;
-  if (prep2.itemTemplate) {
-    prep2.itemTable = prep2.itemTemplate.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
-  }
-  dacStep(world.dac);
-  writeShuffled(prep2, 0, ITEM_KEY_ROOMS[world.dac.dac0 & 3], 15);
-  dacStep(world.dac);
-  writeShuffled(prep2, 1, ITEM_TOOL_ROOMS[world.dac.dac0 & 3], 16);
-  rollCoreSprites(world);
-  let c = 0;
-  for (let pass = 0; pass < 2; pass++) {
-    dacStep(world.dac);
-    c = world.dac.dac0 & 7;
-    for (let j = 0; j < 9; j++) {
-      c = (c + 1) % 9;
-      let sprite = (world.d2de[c] ?? 0) & 127;
-      if (pass === 1 && (world.dac.dac0 >> 8 & 255) >= 150) sprite = (sprite & 7) + 26;
-      sprite &= 127;
-      dacStep(world.dac);
-      const pair = ITEM_PAIR_ROOMS[pass * 9 + j];
-      const room2 = (world.dac.dac0 & 255) < 127 ? pair[0] : pair[1];
-      writeShuffled(prep2, 2 + pass * 9 + j, room2, sprite);
-    }
-  }
-  rebuildItemIndex(prep2);
-}
-function placeCollectiblesInRoom(prep2, world, room2) {
-  if (room2 === ROOM_SKIP) return;
-  const marks = prep2.extraMarksByRoom?.[room2] ?? [];
-  if (!marks.length || !prep2.itemTable) return;
-  world.dac = seedDac(room2);
-  const slot = dacReduce((world.dac.dac0 >> 8 ^ world.d2c6 >> 8) & 127, marks.length);
-  const mark = marks[slot];
-  for (const it of prep2.itemTable) {
-    if (it.index >= ITEM_SHUFFLE) continue;
-    if ((it.row & 127) !== 0) continue;
-    if (it.room !== room2) continue;
-    let mix = (world.dac.dac2 & 255 ^ world.d2c6 & 255) & 63;
-    mix = dacReduce(mix, 6);
-    mix = mix + 2 & 255;
-    const attr = rrca3(mix) & 224;
-    it.col = mark.col & 31 | attr;
-    it.row = it.row & 128 | mark.row & 127;
-    it.placed = (it.row & 127) >= PLAY_ORIGIN;
-    it.attr_bits = attr >> 5;
-    rebuildItemIndex(prep2);
-    break;
-  }
-}
-function itemGamePos(item) {
-  const col = item.col & 31;
-  const row = item.row & 127;
-  return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
-}
-function nearItem(ax, ay, bx, by) {
-  return Math.abs(ax - bx) < ITEM_NEAR && Math.abs(ay - by) < ITEM_NEAR;
-}
-function a350Allows(a350, room2) {
-  const high = room2 >> 8 & 1;
-  const low = room2 & 255;
-  const offset = (high >> 3 | (low & 248) >> 3) & 255;
-  let value = a350[offset] ?? 0;
-  for (let i = 0; i < (low & 7) + 1; i++) value = (value << 1 | value >> 7) & 255;
-  return (value & 1) !== 0;
-}
-function clearA350Bit(a350, room2) {
-  const high = room2 >> 8 & 1;
-  const low = room2 & 255;
-  const offset = (high >> 3 | (low & 248) >> 3) & 255;
-  const rot = (low & 7) + 1;
-  let value = a350[offset] ?? 0;
-  for (let i = 0; i < rot; i++) value = (value << 1 | value >> 7) & 255;
-  value = value & 254 & 255;
-  for (let i = 0; i < rot; i++) value = (value >> 1 | (value & 1) << 7) & 255;
-  a350[offset] = value;
-}
-function capEnergyPlatformsFire(world) {
-  if (world.energy > STAT_CAP) world.energy = STAT_CAP;
-  if (world.platforms > STAT_CAP) world.platforms = STAT_CAP;
-  if (world.firepower > STAT_CAP) world.firepower = STAT_CAP;
-}
-function ccccSprite(world) {
-  if ((world.lives & 255) === 0) return EXTRA_LIFE_PLUS;
-  let a = 255;
-  let e = 0;
-  const stats = [world.energy & 255, world.platforms & 255, world.firepower & 255];
-  for (let b = 3; b !== 0; b--) {
-    const hl = stats[3 - b];
-    if (a < hl) continue;
-    e = 3 - b << 1 & 255;
-    a = hl;
-  }
-  return e + 18 & 255;
-}
-function applyExtra(world, sprite) {
-  if (sprite === EXTRA_CHEOPS) {
-    return;
-  }
-  let a = sprite & 255;
-  if (a === EXTRA_LIVES_SPRITE) a = ccccSprite(world);
-  const row = EXTRA_EFFECTS[a - EXTRA_SPRITE_BASE];
-  if (!row) return;
-  const [off, add] = row;
-  if (off === 0) world.lives = world.lives + add & 255;
-  else if (off === 1) world.energy = world.energy + add & 255;
-  else if (off === 2) world.platforms = world.platforms + add & 255;
-  else if (off === 3) world.firepower = world.firepower + add & 255;
-  capEnergyPlatformsFire(world);
-  requestSfx(world, off);
-}
-function extraPos(col, row) {
-  return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
-}
-function itemOccupiesMark(prep2, room2, col, row, world) {
-  for (const it of prep2.itemsByRoom[room2] ?? []) {
-    if (world.collected[it.index]) continue;
-    if ((it.col & 31) === (col & 31) && (it.row & 127) === (row & 127)) return true;
-  }
-  return false;
-}
-function spawnExtra(prep2, world, room2) {
-  world.extra = null;
-  if (room2 === ROOM_SKIP) return;
-  if (!a350Allows(world.a350, room2)) return;
-  const marks = prep2.extraMarksByRoom?.[room2] ?? [];
-  if (marks.length < 2) return;
-  const free = marks.filter((m) => !itemOccupiesMark(prep2, room2, m.col, m.row, world));
-  const pool = free.length > 0 ? free : marks;
-  world.dac = seedDac(room2);
-  for (let i = 0; i < EXTRA_DAC_ROLLS; i++) dacStep(world.dac);
-  if ((world.dac.dac0 & 255) < EXTRA_MIN_DAC) return;
-  dacStep(world.dac);
-  let slot = (world.dac.dac0 & 127) % pool.length;
-  const mark = pool[slot];
-  dacStep(world.dac);
-  let kind = world.dac.dac0 & 255;
-  while (kind >= 9) kind -= 9;
-  if (kind === 8) {
-    dacStep(world.dac);
-    if ((world.dac.dac2 & 255) >= 127) kind = 0;
-  }
-  const sprite = kind + EXTRA_SPRITE_BASE;
-  dacStep(world.dac);
-  let ink = world.dac.dac2 & 63;
-  while (ink >= 6) ink -= 6;
-  ink = ink + 2 & 7;
-  const pos = extraPos(mark.col, mark.row);
-  world.extra = {
-    sprite,
-    ink,
-    col: mark.col,
-    row: mark.row,
-    x: pos.x,
-    y: pos.y
-  };
-}
-function padInventory(inventory) {
-  const slots = inventory.slice(0, 4).map((it) => ({ sprite: it.sprite & 255, attr: it.attr & 255 }));
-  while (slots.length < 4) slots.push({ sprite: 0, attr: 0 });
-  return slots;
-}
-function pickCheopsSlot(inventory) {
-  const slots = padInventory(inventory);
-  for (let i = 0; i < 4; i++) {
-    const a = slots[i].sprite & 255;
-    if (a === 0) continue;
-    if (a < CHEOPS_SKIP_MIN || a >= CHEOPS_SKIP_MAX) return i;
-  }
-  for (let i = 3; i >= 0; i--) {
-    if ((slots[i].sprite & 255) !== 0) return i;
-  }
-  return 0;
-}
-function z80SubAdd2(a, sub, add) {
-  let v = a & 255;
-  while (v >= sub) v -= sub;
-  return v + add - sub & 255;
-}
-function rollCheopsSprite(world) {
-  for (let n = 0; n < 4096; n++) {
-    dacStep(world.dac);
-    const idx = z80SubAdd2(world.dac.dac0 & 255, CHEOPS_D2DE_MOD, CHEOPS_D2DE_ADD);
-    const val = world.d2de[idx - 1] ?? 0;
-    if (val < CHEOPS_D2DE_MIN) continue;
-    return val & CHEOPS_SPRITE_MASK;
-  }
-  return 0;
-}
-function rollCheopsOffers(world, given) {
-  const offers = [0, 0, 0, 0, given & 255];
-  for (let i = CHEOPS_OFFERS - 2; i >= 0; i--) offers[i] = rollCheopsSprite(world);
-  return offers;
-}
-function playAttr(prep2, world, room2, col, playRow) {
-  if (col < 0 || playRow < 0 || col >= COLS || playRow >= ROWS) return CLEAR_ATTR;
-  const fromWorld = world.terrain.attr[playRow * COLS + col];
-  if (fromWorld !== void 0) return fromWorld;
-  return prep2.rooms[room2]?.attributes[playRow]?.[col] ?? CLEAR_ATTR;
-}
-function dropCellClear(prep2, world, room2, col, screenRow) {
-  const playRow = screenRow - PLAY_ORIGIN;
-  for (const dc of [0, 1]) {
-    for (const dr of [0, 1]) {
-      const attr = playAttr(prep2, world, room2, col + dc, playRow + dr);
-      if ((attr & 64) === 0) return false;
-      if (attr === LIFT_ATTR) return false;
-    }
-  }
-  return true;
-}
-function overflowDropCell(prep2, blob, world) {
-  const gameY = GAME_Y_ORIGIN - blob.y;
-  let col = blob.x >> 3 & 31;
-  const row = ITEM_DROP_Y_BASE - gameY >> 3 & 31;
-  if (col >= 1 && dropCellClear(prep2, world, blob.room, col - 1, row)) {
-    return { col: col - 1, row };
-  }
-  if (col < ITEM_DROP_RIGHT_MIN && dropCellClear(prep2, world, blob.room, col + 2, row)) {
-    return { col: col + 2, row };
-  }
-  return { col, row };
-}
-function findItem(prep2, index) {
-  for (const list of prep2.itemsByRoom) {
-    const hit = list.find((it) => it.index === index);
-    if (hit) return hit;
-  }
-  return void 0;
-}
-function dropOverflowItem(prep2, blob, world, dropped) {
-  if (dropped.index === void 0) return;
-  const item = findItem(prep2, dropped.index);
-  if (!item) return;
-  const dest = overflowDropCell(prep2, blob, world);
-  const fromRoom = item.room;
-  if (fromRoom !== blob.room) {
-    const old = prep2.itemsByRoom[fromRoom];
-    if (old) {
-      const i = old.indexOf(item);
-      if (i >= 0) old.splice(i, 1);
-    }
-    if (blob.room >= 0 && blob.room < ROOM_COUNT) {
-      (prep2.itemsByRoom[blob.room] ??= []).push(item);
-    }
-  }
-  item.room = blob.room;
-  item.col = dest.col & 31;
-  item.row = dest.row & 127;
-  item.sprite = dropped.sprite & 255;
-  item.placed = true;
-  world.collected[dropped.index] = 0;
-}
-function collectTableItem(prep2, blob, world) {
-  const list = prep2.itemsByRoom[blob.room] ?? [];
-  const bx = blob.x;
-  const by = GAME_Y_ORIGIN - blob.y;
-  for (const it of list) {
-    if (it.sprite === 255) continue;
-    if (!it.placed) continue;
-    if (world.collected[it.index]) continue;
-    const pos = itemGamePos(it);
-    if (!nearItem(bx, by, pos.x, pos.y)) continue;
-    world.collected[it.index] = 1;
-    world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits, index: it.index });
-    if (world.inventory.length > INVENTORY_SLOTS) {
-      dropOverflowItem(prep2, blob, world, world.inventory.pop());
-    }
-    requestSfx(world, 12);
-    return;
-  }
-}
-function tickPickup(prep2, blob, input, world) {
-  const bx = blob.x;
-  const by = GAME_Y_ORIGIN - blob.y;
-  if (world.extra && nearItem(bx, by, world.extra.x, world.extra.y)) {
-    if (world.extra.sprite === EXTRA_CHEOPS) {
-      if (input.up) return "cheops";
-    } else {
-      applyExtra(world, world.extra.sprite);
-      clearA350Bit(world.a350, blob.room);
-      world.extra = null;
-    }
-  }
-  const upOnly = Boolean(input.up) && !input.left && !input.right && !input.down && !input.fire;
-  if (!upOnly) {
-    world.pickupLatch = false;
-    return;
-  }
-  if (world.pickupLatch) return;
-  world.pickupLatch = true;
-  collectTableItem(prep2, blob, world);
-}
-
-// src/core.ts
-function initSocketFlags() {
-  return CORE_SOCKET_TABLE.map(([, flags]) => flags & 255);
-}
-function initCoreState() {
-  const d2de = CORE_D2DE_INIT.map((v) => v & 255);
-  return {
-    d2de,
-    d2deNeed: d2de.slice(),
-    coresLeft: CORE_LEFT_INIT,
-    corePairs: CORE_PAIRS_INIT
-  };
-}
-function matchCoreDeliveries(world) {
-  let delivered = 0;
-  for (let pass = 0; pass < 2; pass++) {
-    for (let inv = 0; inv < world.inventory.length; ) {
-      const sprite = world.inventory[inv].sprite & 255;
-      let matched = -1;
-      for (let i = 0; i < CORE_SLOTS; i++) {
-        const need = world.d2de[i] ?? 0;
-        if (!(need & 128)) continue;
-        if ((need & 127) === sprite) {
-          matched = i;
-          break;
-        }
-      }
-      if (matched < 0) {
-        inv += 1;
-        continue;
-      }
-      world.d2de[matched] = matched & 255;
-      world.inventory.splice(inv, 1);
-      addScore(world, SCORE_CORE_DELIVER);
-      world.coresLeft = world.coresLeft - 1 & 255;
-      if ((world.coresLeft & 1) === 0) {
-        world.corePairs = world.corePairs + 1 & 255;
-      }
-      delivered += 1;
-      requestSfx(world, 3);
-    }
-  }
-  return delivered;
-}
-function beginCoreCeremony(world) {
-  world.blobHidden = true;
-  world.pad = null;
-  world.dd22 = 0;
-  spawnCoreGuardians(world);
-  world.corePhase = "ceremony";
-  world.coreTicks = 0;
-  requestSfx(world, 20 + (world.dac.dac0 & 1));
-}
-function ejectToCoreNeighbor(blob, world, enter) {
-  world.corePhase = null;
-  world.coreTicks = 0;
-  world.blobHidden = false;
-  blob.room = CORE_NEIGHBOR;
-  blob.x = CORE_EJECT_X;
-  blob.y = GAME_Y_ORIGIN - CORE_EJECT_Y;
-  blob.fallIndex = 0;
-  blob.onGround = false;
-  enter(CORE_NEIGHBOR);
-}
-function deliverCoreParts(_prep, blob, world, enter) {
-  if (blob.room !== CORE_ROOM) return "none";
-  if (world.corePhase === "ceremony") return "ceremony";
-  matchCoreDeliveries(world);
-  if (world.corePairs >= CORE_VICTORY_PAIRS) {
-    if (!world.gameOver) requestSfx(world, 17);
-    world.blobHidden = false;
-    world.corePhase = null;
-    composeEndResult(world, true, CORES_COMPLETE_MSG);
-    world.message = CORES_COMPLETE_MSG;
-    return "victory";
-  }
-  beginCoreCeremony(world);
-  return "ceremony";
-}
-function tickCoreCeremony(prep2, blob, world, tickNasties2, enter) {
-  if (world.corePhase !== "ceremony") return;
-  world.frames = world.frames + 1 >>> 0;
-  tickNasties2(prep2, blob, world);
-  world.coreTicks += 1;
-  if (world.coreTicks >= CORE_CEREMONY_FRAMES) {
-    ejectToCoreNeighbor(blob, world, enter);
-  }
-}
-
-// src/render.ts
-function paperInk(attr) {
-  const table = attr & 64 ? BRIGHT : SPECTRUM;
-  return [table[attr >> 3 & 7], table[attr & 7]];
-}
-function roomCol(id) {
-  return id % MAP_COLS;
-}
-function roomRow(id) {
-  return id / MAP_COLS | 0;
-}
-function moveRoom(id, dx, dy) {
-  const c = roomCol(id) + dx;
-  const r = roomRow(id) + dy;
-  if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) return id;
-  return r * MAP_COLS + c;
-}
-function clampRoom(id) {
-  if (id < 0) return 0;
-  if (id >= ROOM_COUNT) return ROOM_COUNT - 1;
-  return id | 0;
-}
-function prepare(data) {
-  const graphics = [];
-  for (const g of data.graphics.graphics) graphics[g.id] = g;
-  const sprites = [];
-  for (const g of data.sprites.graphics) sprites[g.id] = g;
-  const actorsBySet = /* @__PURE__ */ new Map();
-  const actorsByPtr = /* @__PURE__ */ new Map();
-  if (data.actors) {
-    for (const g of data.actors.graphics) {
-      const name = g.set ?? "";
-      const list = actorsBySet.get(name) ?? [];
-      list.push(g);
-      actorsBySet.set(name, list);
-      actorsByPtr.set(g.ptr, g);
-    }
-    for (const list of actorsBySet.values()) {
-      list.sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0));
-    }
-  }
-  const blocks = data.blocks.blocks.map((b) => b.subblocks);
-  const itemTable = data.items.items.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
-  const itemTemplate = itemTable.map((it) => ({ ...it, raw: [...it.raw] }));
-  const itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
-  const rooms = data.rooms.rooms;
-  const {
-    stationsByRoom,
-    teleportsByRoom,
-    killsByRoom,
-    pulsesByRoom,
-    fixedNastiesByRoom,
-    extraMarksByRoom,
-    doorsByRoom,
-    socketsByRoom,
-    passagesByRoom,
-    machinesByRoom
-  } = hotspotsFromData(data, rooms, blocks);
-  const prep2 = {
-    graphics,
-    sprites,
-    actorsBySet,
-    actorsByPtr,
-    blocks,
-    rooms,
-    itemsByRoom,
-    itemTable,
-    itemTemplate,
-    stationsByRoom,
-    teleportsByRoom,
-    killsByRoom,
-    pulsesByRoom,
-    fixedNastiesByRoom,
-    extraMarksByRoom,
-    doorsByRoom,
-    socketsByRoom,
-    passagesByRoom,
-    machinesByRoom
-  };
-  rebuildItemIndex(prep2);
-  return prep2;
-}
-function newBuffers() {
-  return {
-    data: new Uint8Array(COLS * ROWS * CELL),
-    attr: new Uint8Array(COLS * ROWS)
-  };
-}
-function copyBuffers(src, dst) {
-  dst.data.set(src.data);
-  dst.attr.set(src.attr);
-}
-function newRgba() {
-  return new Uint8ClampedArray(WIDTH * HEIGHT * 4);
-}
-function clearBuffers(buf2) {
-  buf2.data.fill(0);
-  buf2.attr.fill(CLEAR_ATTR);
-}
-function blitGraphic(prep2, buf2, ident, x, y) {
-  const graphic = prep2.graphics[ident];
-  if (!graphic?.cells?.length) return;
-  for (const cell of graphic.cells) {
-    const cy = y + cell.row;
-    const cx = x + cell.col;
-    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
-    const dst = (cy * COLS + cx) * CELL;
-    for (let py = 0; py < CELL; py++) buf2.data[dst + py] = cell.data[py];
-  }
-}
-function blitBlock(prep2, buf2, ident, x, y) {
-  const sub = prep2.blocks[ident];
-  if (!sub) return;
-  let rx = x + 4;
-  let ry = y + 3;
-  let k = 0;
-  for (let row = 0; row < 2; row++) {
-    for (let col = 0; col < 2; col++) {
-      blitGraphic(prep2, buf2, sub[k], rx, ry);
-      k += 1;
-      rx -= 4;
-    }
-    rx = x + 4;
-    ry -= 3;
-  }
-}
-function composeTiles(prep2, buf2, roomId) {
-  clearBuffers(buf2);
-  const room2 = prep2.rooms[roomId];
-  let x = 0;
-  let y = 0;
-  let n = 0;
-  for (let i = 0; i < 3; i++) {
-    for (let j = 0; j < 4; j++) {
-      blitBlock(prep2, buf2, room2.blocks[n], x, y);
-      n += 1;
-      x += 8;
-    }
-    x = 0;
-    y += 6;
-  }
-  const attrs = room2.attributes;
-  for (let ry = 0; ry < ROWS; ry++) {
-    const row = attrs[ry];
-    const base = ry * COLS;
-    for (let cx = 0; cx < COLS; cx++) buf2.attr[base + cx] = row[cx];
-  }
-}
-function itemCells(item) {
-  const cells = [];
-  const row0 = (item.row & 127) - PLAY_ORIGIN;
-  const col0 = item.col & 31;
-  for (let r = 0; r < 2; r++) {
-    for (let c = 0; c < 2; c++) {
-      const cy = row0 + r;
-      const cx = col0 + c;
-      if (cx >= 0 && cy >= 0 && cx < COLS && cy < ROWS) cells.push([cx, cy]);
-    }
-  }
-  return cells;
-}
-function blitItems(prep2, buf2, roomId, collected) {
-  const list = prep2.itemsByRoom[roomId];
-  if (!list?.length) return;
-  for (const it of list) {
-    if (collected && collected[it.index]) continue;
-    const sprite = prep2.sprites[it.sprite];
-    if (!sprite) continue;
-    const attr = it.attr_bits & 7 | 64;
-    const row0 = (it.row & 127) - PLAY_ORIGIN;
-    const col0 = it.col & 31;
-    for (const cell of sprite.cells) {
-      const cy = row0 + cell.row;
-      const cx = col0 + cell.col;
-      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
-      const dst = (cy * COLS + cx) * CELL;
-      for (let py = 0; py < CELL; py++) buf2.data[dst + py] ^= cell.data[py];
-      buf2.attr[cy * COLS + cx] = attr;
-    }
-  }
-}
-function blitSprite(prep2, buf2, spriteId, col, row, attr) {
-  const sprite = prep2.sprites[spriteId];
-  if (!sprite) return;
-  for (const cell of sprite.cells) {
-    const cy = row + cell.row;
-    const cx = col + cell.col;
-    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
-    const dst = (cy * COLS + cx) * CELL;
-    for (let py = 0; py < CELL; py++) buf2.data[dst + py] ^= cell.data[py];
-    buf2.attr[cy * COLS + cx] = attr;
-  }
-}
-function blitExtra(prep2, buf2, extra) {
-  if (!extra) return;
-  const playRow = extra.row - PLAY_ORIGIN;
-  blitSprite(prep2, buf2, extra.sprite, extra.col, playRow, extra.ink & 7 | 64);
-}
-function blitCorePanel(prep2, buf2, world, roomId) {
-  if (roomId !== CORE_ROOM) return;
-  const col0 = CORE_PANEL_ATTR_COL;
-  const row0 = CORE_PANEL_ATTR_ROW - PLAY_ORIGIN;
-  const blinkOn = (world.frames & 8) !== 0;
-  for (let i = 0; i < CORE_SLOTS; i++) {
-    const r = i / 3 | 0;
-    const c = i % 3;
-    const live = world.d2de[i] ?? 0;
-    const pending = (live & 128) !== 0;
-    const origin = world.d2deNeed[i] ?? CORE_D2DE_INIT[i] ?? live;
-    const sprite = (pending ? live : origin) & 127;
-    let ink = CORE_PANEL_INK_DONE;
-    if (pending) {
-      ink = blinkOn ? CORE_PANEL_INK_PENDING : (world.frames + i & 3) + 2;
-    }
-    blitSprite(prep2, buf2, sprite, col0 + c * CORE_PANEL_STEP, row0 + r * CORE_PANEL_STEP, ink & 7 | 64);
-  }
-}
-function blitPulses(buf2, pulses, _dac0) {
-  for (const p of pulses) {
-    const ink = p.xorInk;
-    if (!ink) continue;
-    let any = false;
-    for (let i = 0; i < 16; i++) if (ink[i]) {
-      any = true;
-      break;
-    }
-    if (!any) continue;
-    const playRow = p.row - PLAY_ORIGIN;
-    const attr = p.sparkAttr & 255;
-    for (let i = 0; i < 2; i++) {
-      const cx = p.col + i;
-      if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
-      const dst = (playRow * COLS + cx) * CELL;
-      const base = i * 8;
-      for (let py = 0; py < CELL; py++) buf2.data[dst + py] ^= ink[base + py];
-      buf2.attr[playRow * COLS + cx] = attr;
-    }
-  }
-}
-function packGrafix(frame) {
-  const out = new Uint8Array(48);
-  for (const cell of frame.cells) {
-    if (cell.row < 0 || cell.row > 1 || cell.col < 0 || cell.col > 2) continue;
-    for (let py = 0; py < CELL; py++) out[cell.row * 24 + py * 3 + cell.col] = cell.data[py];
-  }
-  return out;
-}
-function unpackGrafix(ptr, packed) {
-  const cells = [];
-  for (let row = 0; row < 2; row++) {
-    for (let col = 0; col < 3; col++) {
-      const data = [];
-      for (let py = 0; py < CELL; py++) data.push(packed[row * 24 + py * 3 + col]);
-      cells.push({ row, col, data, attr: null });
-    }
-  }
-  return { id: -1, ptr, cols: 3, rows: 2, cells };
-}
-var grafixPtrCache = /* @__PURE__ */ new Map();
-function graphicForPtr(prep2, ptr) {
-  const exact = prep2.actorsByPtr?.get(ptr);
-  if (exact) return exact;
-  const pool = prep2.actorsByPtr ? [...prep2.actorsByPtr.values()] : [];
-  if (!pool.length) {
-    for (const list of prep2.actorsBySet.values()) pool.push(...list);
-  }
-  let best;
-  let bestDist = 48;
-  for (const g of pool) {
-    const d = Math.abs(g.ptr - ptr);
-    if (d !== 0 && d < bestDist) {
-      bestDist = d;
-      best = g;
-    }
-  }
-  if (!best) return void 0;
-  const key = `${ptr}:${best.ptr}`;
-  const hit = grafixPtrCache.get(key);
-  if (hit) return hit;
-  const packed = packGrafix(best);
-  const shifted = new Uint8Array(48);
-  const delta = ptr - best.ptr;
-  for (let i = 0; i < 48; i++) {
-    const src = i + delta;
-    shifted[i] = src >= 0 && src < 48 ? packed[src] : 0;
-  }
-  const graphic = unpackGrafix(ptr, shifted);
-  grafixPtrCache.set(key, graphic);
-  return graphic;
-}
-function blitGrafix(buf2, frame, x, y, ink, opts) {
-  const occupied = /* @__PURE__ */ new Set();
-  for (const cell of frame.cells) {
-    for (let py = 0; py < CELL; py++) {
-      const bits = cell.data[py];
-      if (!bits) continue;
-      const pyAbs = y + cell.row * CELL + py;
-      for (let px = 0; px < CELL; px++) {
-        if (!(bits & 128 >> px)) continue;
-        const pxAbs = x + cell.col * CELL + px;
-        if (pxAbs < 0 || pyAbs < 0 || pxAbs >= WIDTH || pyAbs >= HEIGHT) continue;
-        const cx = pxAbs >> 3;
-        const cy = pyAbs >> 3;
-        buf2.data[(cy * COLS + cx) * CELL + (pyAbs & 7)] ^= 128 >> (pxAbs & 7);
-        occupied.add(cy * COLS + cx);
-      }
-    }
-  }
-  if (opts?.mergeInk === false) return;
-  const inkBits = ink & 7;
-  for (const idx of occupied) {
-    const attr = buf2.attr[idx];
-    if (attr & 32) continue;
-    buf2.attr[idx] = attr & 248 | inkBits;
-  }
-}
-function grafixAnimDrawX(x, frame) {
-  return x - (frame & 3) * 2;
-}
-function stampGrafix(rgba2, frame, x, y, ink) {
-  const rgb = SPECTRUM[ink & 7];
-  for (const cell of frame.cells) {
-    for (let py = 0; py < CELL; py++) {
-      const bits = cell.data[py];
-      if (!bits) continue;
-      const pyAbs = y + cell.row * CELL + py;
-      if (pyAbs < 0 || pyAbs >= HEIGHT) continue;
-      for (let px = 0; px < CELL; px++) {
-        if (!(bits & 128 >> px)) continue;
-        const pxAbs = x + cell.col * CELL + px;
-        if (pxAbs < 0 || pxAbs >= WIDTH) continue;
-        const p = (pyAbs * WIDTH + pxAbs) * 4;
-        rgba2[p] = rgb[0];
-        rgba2[p + 1] = rgb[1];
-        rgba2[p + 2] = rgb[2];
-        rgba2[p + 3] = 255;
-      }
-    }
-  }
-}
-function rasterize(buf2, rgba2, overlaySolid, solidGrid) {
-  let p = 0;
-  for (let cy = 0; cy < ROWS; cy++) {
-    for (let py = 0; py < CELL; py++) {
-      for (let cx = 0; cx < COLS; cx++) {
-        const idx = cy * COLS + cx;
-        const [paper, ink] = paperInk(buf2.attr[idx]);
-        const bits = buf2.data[idx * CELL + py];
-        const mark = overlaySolid && solidGrid && solidGrid[cy][cx];
-        for (let px = 0; px < CELL; px++) {
-          const on = bits & 128 >> px;
-          let r = on ? ink[0] : paper[0];
-          let g = on ? ink[1] : paper[1];
-          let b = on ? ink[2] : paper[2];
-          if (mark) {
-            r = r + 255 >> 1;
-            g = g >> 1;
-            b = b + 255 >> 1;
-          }
-          rgba2[p] = r;
-          rgba2[p + 1] = g;
-          rgba2[p + 2] = b;
-          rgba2[p + 3] = 255;
-          p += 4;
-        }
-      }
-    }
-  }
-  return rgba2;
-}
-function renderRoom(prep2, buf2, rgba2, roomId, opts = {}) {
-  composeTiles(prep2, buf2, roomId);
-  if (opts.items !== false) blitItems(prep2, buf2, roomId);
-  if (opts.blob) {
-    const frames = prep2.actorsBySet.get(opts.blob.set);
-    const frame = frames?.[opts.blob.frame];
-    if (frame) blitGrafix(buf2, frame, opts.blob.x, opts.blob.y, 7);
-  }
-  const solid = opts.overlay ? prep2.rooms[roomId].solid : null;
-  return rasterize(buf2, rgba2, !!opts.overlay, solid);
-}
-function renderWorld(prep2, world, buf2, rgba2, roomId, opts = {}) {
-  copyBuffers(world.terrain, buf2);
-  if (opts.items !== false) {
-    blitItems(prep2, buf2, roomId, world.collected);
-    blitExtra(prep2, buf2, world.extra);
-  }
-  blitCorePanel(prep2, buf2, world, roomId);
-  blitPulses(buf2, world.pulses, world.dac.dac0);
-  const solid = opts.overlay ? prep2.rooms[roomId].solid : null;
-  rasterize(buf2, rgba2, !!opts.overlay, solid);
-  if (opts.enemies !== false) {
-    const fi = grafixAnimFrame(world.frames);
-    const n = Math.min(world.nastyCount, world.entities.length);
-    for (let i = 0; i < n; i++) {
-      const e = world.entities[i];
-      if (!entityVisible(e)) continue;
-      const frame = graphicForPtr(prep2, e.ptr + fi * GRAFIX_FRAME) ?? prep2.actorsBySet.get(e.set)?.[fi];
-      if (frame) stampGrafix(rgba2, frame, grafixAnimDrawX(e.x, fi), GAME_Y_ORIGIN - e.y, e.ink);
-    }
-    if (world.pad && entityVisible(world.pad)) {
-      const frame = graphicForPtr(prep2, world.pad.ptr + fi * GRAFIX_FRAME) ?? prep2.actorsBySet.get(world.pad.set)?.[fi];
-      if (frame) stampGrafix(rgba2, frame, grafixAnimDrawX(world.pad.x, fi), GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
-    }
-  }
-  if (opts.enemies !== false && entityVisible(world.bullet)) {
-    const frame = graphicForPtr(prep2, world.bullet.ptr) ?? prep2.actorsBySet.get(world.bullet.set)?.[world.bullet.frame];
-    if (frame) stampGrafix(rgba2, frame, world.bullet.x, GAME_Y_ORIGIN - world.bullet.y, world.bullet.ink);
-  }
-  if (opts.blob) {
-    const frames = prep2.actorsBySet.get(opts.blob.set);
-    const frame = frames?.[opts.blob.frame];
-    if (frame) stampGrafix(rgba2, frame, opts.blob.x, opts.blob.y, opts.blob.ink ?? 7);
-  }
-  return rgba2;
 }
 
 // src/ui/font-data.ts
@@ -3049,6 +1535,1674 @@ var PLAY_Y02 = PLAY_ROW0 * CELL;
 var DISPLAY_W2 = SCREEN_W2 * 2;
 var DISPLAY_H2 = SCREEN_H2 * 2;
 
+// src/ui/end.ts
+function beginEndUi(victory, fields) {
+  return {
+    kind: "end",
+    phase: victory ? "cores" : "stats",
+    scoreDigits: fields.scoreDigits.slice(),
+    adventure: fields.adventure,
+    timeMinutes: fields.timeMinutes,
+    timeSeconds: fields.timeSeconds,
+    coresReplaced: fields.coresReplaced
+  };
+}
+var CORES_COMPLETE = [
+  22,
+  3,
+  7,
+  16,
+  5,
+  ..."THE CORES COMPLETE".split("").map((c) => c.charCodeAt(0)),
+  22,
+  5,
+  6,
+  ..."BUT HOW ARE YOU GONNA".split("").map((c) => c.charCodeAt(0)),
+  22,
+  7,
+  6,
+  ..."GET HOME WHEN ONLY A".split("").map((c) => c.charCodeAt(0)),
+  22,
+  9,
+  3,
+  ..."THTUPID LOONY WOULD WANDER".split("").map((c) => c.charCodeAt(0)),
+  22,
+  11,
+  3,
+  ..."THIS FAR OUT IN THE GALAXY".split("").map((c) => c.charCodeAt(0)),
+  255
+];
+var GAME_OVER_LABELS = [
+  22,
+  3,
+  11,
+  16,
+  7,
+  ..."GAME  OVER".split("").map((c) => c.charCodeAt(0)),
+  22,
+  6,
+  10,
+  16,
+  5,
+  ..."SCORE".split("").map((c) => c.charCodeAt(0)),
+  22,
+  9,
+  7,
+  16,
+  3,
+  ..."ADVENTURE SCORE".split("").map((c) => c.charCodeAt(0)),
+  22,
+  12,
+  8,
+  16,
+  4,
+  ..."TIME TAKEN".split("").map((c) => c.charCodeAt(0)),
+  22,
+  15,
+  5,
+  16,
+  7,
+  ..."CORE ELEMENTS".split("").map((c) => c.charCodeAt(0)),
+  22,
+  17,
+  7,
+  ..."REPLACED".split("").map((c) => c.charCodeAt(0)),
+  255
+];
+
+// src/score.ts
+function freshA390() {
+  return new Uint8Array(A390_BYTES).fill(255);
+}
+function zeroScore() {
+  return Array.from({ length: SCORE_DIGITS }, () => 0);
+}
+function addScore(world, amount) {
+  let n = Math.max(0, amount | 0);
+  for (let i = SCORE_DIGITS - 1; i >= 0; i--) {
+    const sum = (world.scoreDigits[i] ?? 0) + n % 10;
+    world.scoreDigits[i] = sum % 10;
+    n = Math.floor(n / 10) + Math.floor(sum / 10);
+  }
+}
+function killScorePoints(ptr) {
+  const hi = ptr >> 8 & 255;
+  const tens = (hi - SCORE_KILL_HI_BASE) * 2 & 255;
+  return tens * 10;
+}
+function a390Unvisited(a390, room2) {
+  const high = room2 >> 8 & 1;
+  const low = room2 & 255;
+  const offset = (high >> 3 | (low & 248) >> 3) & 255;
+  let value = a390[offset] ?? 0;
+  for (let i = 0; i < (low & 7) + 1; i++) value = (value << 1 | value >> 7) & 255;
+  return (value & 1) !== 0;
+}
+function clearA390Bit(a390, room2) {
+  const high = room2 >> 8 & 1;
+  const low = room2 & 255;
+  const offset = (high >> 3 | (low & 248) >> 3) & 255;
+  const rot = (low & 7) + 1;
+  let value = a390[offset] ?? 0;
+  for (let i = 0; i < rot; i++) value = (value << 1 | value >> 7) & 255;
+  value = value & 254 & 255;
+  for (let i = 0; i < rot; i++) value = (value >> 1 | (value & 1) << 7) & 255;
+  a390[offset] = value;
+}
+function adventureScore(visitedCount) {
+  return visitedCount * 50 >> 8 & 255;
+}
+function framesToTime(frames) {
+  const totalSec = Math.floor(Math.max(0, frames) / FRAME_HZ);
+  return { minutes: Math.floor(totalSec / 60), seconds: totalSec % 60 };
+}
+function dac6(d) {
+  let hl = d.dac0 & 65535;
+  const bc = hl;
+  hl = (hl << 8 | hl >> 8) & 65535;
+  hl = hl + bc + 41 + (d.dac2 & 65535) & 65535;
+  d.dac0 = hl;
+  d.db19 = d.db19 - 1 & 255;
+  if (d.db19 !== 0) return;
+  d.db19 = 5;
+  let dac2 = d.dac2 & 65535;
+  hl = dac2 * 16 + dac2 + 197 + (d.dac4 & 65535) & 65535;
+  d.dac2 = hl;
+  d.db1a = d.db1a - 1 & 255;
+  if (d.db1a !== 0) return;
+  d.db1a = 11;
+  hl = d.dac4 & 65535;
+  hl = (hl + hl + (d.dac0 & 65535) & 65535) + (hl + hl + (d.dac0 & 65535)) + 19387 & 65535;
+  d.dac4 = hl;
+}
+function scrambleEndDigits(world, adventure) {
+  const d0 = world.scoreDigits[0] ?? 0;
+  const d1 = world.scoreDigits[1] ?? 0;
+  const d2 = world.scoreDigits[2] ?? 0;
+  const a = adventure & 255;
+  world.dac.dac0 = (d0 | d1 << 8) & 65535;
+  world.dac.dac2 = (d2 | a << 8) & 65535;
+  world.dac.dac4 = (a | a << 8) & 65535;
+  world.dac.db19 = 3;
+  world.dac.db1a = 3;
+  for (let i = 0; i < 30; i++) dac6(world.dac);
+  for (let i = 3; i <= 4; i++) {
+    dac6(world.dac);
+    let v = world.dac.dac0 & 255;
+    while (v >= 10) v -= 10;
+    world.scoreDigits[i] = v;
+  }
+  world.scoreDigits[5] = world.dac.dac0 >> 8 & 1 ? 5 : 0;
+}
+function composeEndResult(world, victory, banner) {
+  addScore(world, SCORE_END_BONUS);
+  const adventure = adventureScore(world.visitedCount);
+  scrambleEndDigits(world, adventure);
+  const time = framesToTime(world.frames);
+  const result = {
+    scoreDigits: world.scoreDigits.slice(),
+    adventure,
+    timeMinutes: time.minutes,
+    timeSeconds: time.seconds,
+    coresReplaced: CORE_LEFT_INIT - (world.coresLeft & 255),
+    victory,
+    banner
+  };
+  world.endResult = result;
+  world.victory = victory;
+  world.gameOver = true;
+  world.ui = beginEndUi(victory, result);
+  return result;
+}
+function formatScore(digits) {
+  return digits.map((d) => String(d & 15)).join("");
+}
+function formatTime(minutes, seconds) {
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+  return `${mm}.${ss}`;
+}
+
+// src/entities.ts
+function cellAttr(world, col, row) {
+  if (col < 0 || row < 0 || col >= COLS || row >= ROWS) return 71;
+  return world.terrain.attr[row * COLS + col];
+}
+function cellSolid2(world, col, row) {
+  return (cellAttr(world, col, row) & 64) === 0;
+}
+function cloneEntity(e) {
+  return { ...e };
+}
+function entityVisible(e) {
+  if (e.y === 0) return false;
+  if (e.ptr === ENTITY_DUMMY_PTR) return false;
+  return (e.x | e.y) >= ENTITY_DRAW_MIN;
+}
+function setForPtr(ptr) {
+  const n = Math.max(0, Math.round((ptr - GRAFIX_BASE) / GRAFIX_STRIDE));
+  return ENEMY_SETS[n] ?? "alien1";
+}
+function dacStep(d) {
+  let hl = d.dac0 & 65535;
+  const bc = hl;
+  hl = (hl << 8 | hl >> 8) & 65535;
+  hl = hl + bc + 41 + (d.dac2 & 65535) & 65535;
+  d.dac0 = hl;
+  d.db19 = d.db19 - 1 & 255;
+  if (d.db19 !== 0) return;
+  d.db19 = 5;
+  let dac2 = d.dac2 & 65535;
+  hl = dac2 * 16 + dac2 + 197 + (d.dac4 & 65535) & 65535;
+  d.dac2 = hl;
+  d.db1a = d.db1a - 1 & 255;
+  if (d.db1a !== 0) return;
+  d.db1a = 11;
+  hl = d.dac4 & 65535;
+  hl = (hl + hl + (d.dac0 & 65535) & 65535) + (hl + hl + (d.dac0 & 65535)) + 19387 & 65535;
+  d.dac4 = hl;
+}
+function seedDac(room2) {
+  const addr = ROOM_DATA_BASE + room2 * ROOM_DATA_STRIDE;
+  return { dac0: addr, dac2: 0, dac4: addr, db19: 3, db1a: 3 };
+}
+function modBias(a, sub, add) {
+  let v = a & 255;
+  while (v >= sub) v -= sub;
+  return v + add & 255;
+}
+function z80SubAdd(a, sub, add) {
+  let v = a & 255;
+  while (v >= sub) v -= sub;
+  return v + add - sub & 255;
+}
+function emptyish(attr) {
+  return (attr & 96) === 64;
+}
+function spawnCellOk(world, x, y) {
+  const col = x >> 3;
+  const row = GAME_Y_ORIGIN - y >> 3;
+  for (const [dc, dr] of [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1]
+  ]) {
+    const c = col + dc;
+    const r = row + dr;
+    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+    if (!emptyish(cellAttr(world, c, r))) return false;
+  }
+  return true;
+}
+function farFromBlob(x, y, blob) {
+  if (!blob) return true;
+  const by = GAME_Y_ORIGIN - blob.y;
+  const dx = x - blob.x;
+  const dy = y - by;
+  return dx * dx + dy * dy >= MIN_LETHAL_SPAWN_DIST * MIN_LETHAL_SPAWN_DIST;
+}
+function nudgeAwayFromBlob(e, blob) {
+  const by = GAME_Y_ORIGIN - blob.y;
+  let dx = e.x - blob.x;
+  let dy = e.y - by;
+  const len = Math.hypot(dx, dy);
+  if (len < 1) {
+    dx = MIN_LETHAL_SPAWN_DIST;
+    dy = 0;
+  } else {
+    const scale = MIN_LETHAL_SPAWN_DIST / len;
+    dx *= scale;
+    dy *= scale;
+  }
+  e.x = Math.max(NASTY_EDGE_L, Math.min(NASTY_EDGE_R - 1, Math.round(blob.x + dx))) & 255;
+  e.y = Math.max(NASTY_EDGE_U, Math.min(NASTY_EDGE_D - 1, Math.round(by + dy))) & 255;
+  e.homeX = e.x;
+  e.homeY = e.y;
+}
+function rotateDac0(world, times) {
+  let a = world.dac.dac0 & 255;
+  for (let i = 0; i < times; i++) a = (a << 1 | a >> 7) & 255;
+  return a;
+}
+function pickDir(world, slot, mask) {
+  const v = rotateDac0(world, slot) & mask;
+  return DIR_TABLE[v & 7];
+}
+function makeEntity(ptr) {
+  return {
+    x: 0,
+    y: ENTITY_PARK_Y,
+    ink: 4,
+    set: "corepieces1",
+    frame: 0,
+    ptr: ENTITY_DUMMY_PTR,
+    basePtr: ptr,
+    dir: 85,
+    speedX: NASTY_SPEED,
+    speedY: NASTY_SPEED,
+    period: 4,
+    timer: 8,
+    state: 0,
+    stateTimer: 0,
+    ai: 0,
+    aiPeriod: 8,
+    aiCount: 8,
+    homeX: 0,
+    homeY: 15,
+    clipTerrain: false
+  };
+}
+function spawnOne(prep2, room2, world, slot, blob) {
+  dacStep(world.dac);
+  const kind = z80SubAdd(world.dac.dac0 >> 8 & 255, 15, 17);
+  const ptr = GRAFIX_BASE + kind * GRAFIX_STRIDE;
+  const lethal = ptr >> 8 < KILL_GRAPHIC_HI;
+  const e = makeEntity(ptr);
+  e.ink = world.dac.dac0 >> 5 & 7;
+  if (e.ink === 0) e.ink = z80SubAdd(world.dac.dac0 & 255, 5, 7) & 7 || 2;
+  e.period = z80SubAdd(world.dac.dac2 >> 4 & 255, 5, 9) || 4;
+  e.timer = world.dac.dac2 & 255;
+  e.aiPeriod = modBias(world.dac.dac4 & 15, 5, 5) || 8;
+  if (e.aiPeriod === 0) e.aiPeriod = 100;
+  e.aiCount = 8;
+  e.ai = z80SubAdd(world.dac.dac4 >> 8 & 15, 5, 5);
+  if (kind === KIND_BADALIEN2) e.ai = AI_FORCED_KIND2;
+  e.dir = 85;
+  e.set = "corepieces1";
+  for (let attempt = 0; attempt < 100; attempt++) {
+    dacStep(world.dac);
+    let a = world.dac.dac0 & 255;
+    const odd = (a & 1) !== 0;
+    a = (a >> 1 | (odd ? 128 : 0)) & 255;
+    const dac1 = world.dac.dac0 >> 8 & 255;
+    let x;
+    let y;
+    if (odd) {
+      y = (z80SubAdd(a, 9, 15) << 3) - 1 & 255;
+      x = dac1 & 128 ? 2 : 238;
+    } else {
+      x = z80SubAdd(a, 23, 27) << 3 & 255;
+      y = dac1 & 1 ? 17 : 141;
+    }
+    if (!spawnCellOk(world, x, y)) continue;
+    if (lethal && !farFromBlob(x, y, blob)) continue;
+    e.homeX = x;
+    e.homeY = y;
+    return e;
+  }
+  e.y = 0;
+  e.homeY = 0;
+  return e;
+}
+function applyFixedNasties(prep2, room2, world) {
+  const list = prep2.fixedNastiesByRoom?.[room2] ?? [];
+  for (let i = 0; i < list.length; i++) {
+    const slotNum = list.length - i;
+    const e = world.entities[slotNum - 1];
+    const spot = list[i];
+    if (!e || !spot) continue;
+    e.x = spot.x;
+    e.y = spot.y;
+    e.ptr = FIXED_NASTY_PTR;
+    e.set = setForPtr(FIXED_NASTY_PTR);
+    e.dir = FIXED_NASTY_DIR;
+    e.period = (e.period | 8) & 255;
+    e.timer = 1;
+    e.state = 1;
+    e.stateTimer = 0;
+    e.ai = FIXED_NASTY_AI;
+    e.clipTerrain = false;
+  }
+}
+function spawnNasties(prep2, room2, world, blob) {
+  world.dac = seedDac(room2);
+  dacStep(world.dac);
+  world.entities = [];
+  for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(spawnOne(prep2, room2, world, i + 1, blob));
+  world.nastyCount = NASTY_SLOTS;
+  world.spawnGuard = SPAWN_GUARD;
+  applyFixedNasties(prep2, room2, world);
+}
+function parkCoreSlot() {
+  return {
+    x: 0,
+    y: 0,
+    ink: 7,
+    set: "corepieces2",
+    frame: 0,
+    ptr: ENTITY_DUMMY_PTR,
+    basePtr: CORE_GUARD_PTR,
+    dir: CORE_GUARD_DIR,
+    speedX: NASTY_SPEED,
+    speedY: NASTY_SPEED,
+    period: CORE_GUARD_PERIOD,
+    timer: CORE_GUARD_PERIOD,
+    state: 0,
+    stateTimer: 0,
+    ai: 0,
+    aiPeriod: CORE_GUARD_AI_PERIOD,
+    aiCount: CORE_GUARD_AI_PERIOD,
+    homeX: 0,
+    homeY: 0,
+    clipTerrain: false
+  };
+}
+function spawnCoreGuardians(world) {
+  const n = Math.min(world.corePairs & 255, CORE_GUARD_XY.length);
+  world.entities = [];
+  for (let i = 0; i < NASTY_SLOTS; i++) world.entities.push(parkCoreSlot());
+  for (let i = 0; i < n; i++) {
+    const [x, y] = CORE_GUARD_XY[i];
+    const e = world.entities[i];
+    e.x = x;
+    e.y = y;
+    e.homeX = x;
+    e.homeY = y;
+    e.ptr = CORE_GUARD_PTR;
+    e.basePtr = CORE_GUARD_PTR;
+    e.set = setForPtr(CORE_GUARD_PTR);
+    e.ink = CORE_GUARD_INK;
+    e.state = 1;
+    e.stateTimer = 0;
+    e.period = CORE_GUARD_PERIOD;
+    e.timer = CORE_GUARD_PERIOD;
+    e.dir = CORE_GUARD_DIR;
+    e.speedX = NASTY_SPEED;
+    e.speedY = NASTY_SPEED;
+    e.ai = 0;
+    e.aiPeriod = CORE_GUARD_AI_PERIOD;
+    e.aiCount = CORE_GUARD_AI_PERIOD;
+    e.clipTerrain = false;
+  }
+  world.nastyCount = NASTY_SLOTS;
+  world.spawnGuard = 0;
+  world.cacheRoom = CORE_ROOM;
+}
+function enterNasties(prep2, world, room2, blob) {
+  if (room2 === CORE_ROOM) {
+    spawnCoreGuardians(world);
+    return;
+  }
+  if (room2 === CORE_NEIGHBOR) {
+    world.entityCache = null;
+    world.entities = [];
+    world.nastyCount = 0;
+    world.spawnGuard = 0;
+    world.cacheRoom = room2;
+    return;
+  }
+  const outgoing = { room: world.cacheRoom, entities: world.entities.map(cloneEntity) };
+  const incoming = world.entityCache;
+  world.entityCache = outgoing;
+  if (incoming && incoming.room === room2 && world.spawnGuard !== 0) {
+    world.entities = incoming.entities.map(cloneEntity);
+    world.nastyCount = NASTY_SLOTS;
+  } else {
+    spawnNasties(prep2, room2, world, blob);
+  }
+  world.cacheRoom = room2;
+}
+function isLethal(e) {
+  return e.ptr >> 8 < KILL_GRAPHIC_HI;
+}
+function hitBlob(e, blob) {
+  if (e.y === 0 || e.state !== 1) return false;
+  const dx = Math.abs(e.x - blob.x);
+  const dy = Math.abs(e.y - (GAME_Y_ORIGIN - blob.y));
+  return dx < HIT_DX && dy < HIT_DY;
+}
+function applyContact(e, blob, world, allowAnnoy) {
+  if (!hitBlob(e, blob)) return null;
+  if (isLethal(e)) {
+    return (e.ptr & 255) === GRAPHIC_LO_C8 ? DEATH_A_LETHAL_C8 : DEATH_A_LETHAL;
+  }
+  if (allowAnnoy) world.energyDrain = world.energyDrain + ANNOY_DRAIN_BUMP & 255;
+  return null;
+}
+function makePad(x, blobGameY) {
+  const py = blobGameY - HOVERPAD_Y_BIAS & 255;
+  return {
+    x: x & 255,
+    y: py,
+    ink: HOVERPAD_INK,
+    set: "hoverpad",
+    frame: 0,
+    ptr: HOVERPAD_PTR,
+    basePtr: HOVERPAD_PTR,
+    dir: 0,
+    speedX: 0,
+    speedY: 0,
+    period: 1,
+    timer: 1,
+    state: 0,
+    stateTimer: 0,
+    ai: 0,
+    aiPeriod: 0,
+    aiCount: 0,
+    homeX: x & 255,
+    homeY: py,
+    clipTerrain: true
+  };
+}
+function copyPadFromBlob(world, blob) {
+  world.pad = makePad(blob.x, GAME_Y_ORIGIN - blob.y);
+  world.nastyCount = NASTY_COUNT_WITH_PAD;
+}
+function syncHoverpad(prep2, world, room2, blob) {
+  world.station = lastStation(prep2, room2);
+  if (world.station.x !== 0 || world.station.y !== 0) {
+    world.pad = makePad(world.station.x, world.station.y);
+    world.nastyCount = NASTY_COUNT_WITH_PAD;
+  } else if (world.dd22 !== 2) {
+    world.pad = null;
+  }
+  if (world.dd22 === 2 && blob) copyPadFromBlob(world, blob);
+}
+function hitByBullet(e, world) {
+  if (!shotFlying(world)) return;
+  if (e.state === 2) return;
+  if (e.state === 0 && e.stateTimer === 0) return;
+  const dx = Math.abs(e.x - world.bullet.x);
+  const dy = Math.abs(e.y - world.bullet.y);
+  if (dx >= BULLET_HIT || dy >= BULLET_HIT) return;
+  addScore(world, killScorePoints(e.basePtr || e.ptr));
+  requestSfx(world, 18);
+  requestA41C(world, CHAN_KILL);
+  e.ptr = DEAD_GRAPHIC;
+  e.set = "stars";
+  e.ink = 7;
+  e.state = 2;
+  e.stateTimer = 0;
+  parkBullet(world);
+}
+function spriteAir(e, world) {
+  const playY = GAME_Y_ORIGIN - e.y;
+  const col0 = e.x >> 3;
+  const row0 = playY >> 3;
+  const ncols = (e.x & 7) === 0 ? 3 : 4;
+  const nrows = (e.y + 1 & 7) === 0 ? 2 : 3;
+  for (let r = 0; r < nrows; r++) {
+    for (let c = 0; c < ncols; c++) {
+      if (cellSolid2(world, col0 + c, row0 + r)) return false;
+    }
+  }
+  return true;
+}
+function bounceH(e, world) {
+  if (e.x < NASTY_EDGE_L) {
+    e.dir = e.dir & 252 | 1;
+    return;
+  }
+  if (e.x >= NASTY_EDGE_R) {
+    e.dir = e.dir & 252 | 2;
+    return;
+  }
+  if (!e.clipTerrain) return;
+  const playY = GAME_Y_ORIGIN - e.y;
+  if ((e.x & 7) !== 0) return;
+  const col = e.x >> 3;
+  const top = playY >> 3;
+  const rows = (e.y + 1 & 7) === 0 ? 2 : 3;
+  let left = false;
+  let right = false;
+  for (let r = 0; r < rows; r++) {
+    if (cellSolid2(world, col - 1, top + r)) left = true;
+    if (cellSolid2(world, col + 2, top + r)) right = true;
+  }
+  const bits = (right ? 1 : 0) | (left ? 2 : 0);
+  if (!bits) return;
+  e.dir = e.dir & 252 | bits ^ 3;
+}
+function bounceV(e, world) {
+  if (e.ai === 6) return;
+  if (e.y < NASTY_EDGE_D) {
+    e.dir = e.dir & 243 | 8;
+    return;
+  }
+  if (e.y >= NASTY_EDGE_U) {
+    e.dir = e.dir & 243 | 4;
+    return;
+  }
+  if (!e.clipTerrain) return;
+  const playY = GAME_Y_ORIGIN - e.y;
+  if ((e.y + 1 & 7) !== 0) return;
+  const cols = (e.x & 7) === 0 ? [e.x >> 3, (e.x >> 3) + 1] : [e.x >> 3, (e.x >> 3) + 1, (e.x >> 3) + 2];
+  const floor = playY + 16 >> 3;
+  const ceil = (playY >> 3) - 1;
+  let down = false;
+  let up = false;
+  for (const c of cols) {
+    if (cellSolid2(world, c, floor)) down = true;
+    if (cellSolid2(world, c, ceil)) up = true;
+  }
+  const bits = (down ? 4 : 0) | (up ? 8 : 0);
+  if (!bits) return;
+  e.dir = e.dir & 243 | bits ^ 12;
+}
+function skip64(e, world) {
+  if ((e.x & 7) !== 0 || (e.y + 1 & 7) !== 0) return false;
+  const col = e.x >> 3;
+  const row = GAME_Y_ORIGIN - e.y >> 3;
+  for (const [dc, dr] of [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1]
+  ]) {
+    if ((cellAttr(world, col + dc, row + dr) & 127) === 100) return true;
+  }
+  return false;
+}
+function chaseDir(e, blob) {
+  const bx = blob.x;
+  const by = GAME_Y_ORIGIN - blob.y;
+  return (e.x < bx ? 1 : 2) | (e.y < by ? 8 : 4);
+}
+function thinkAi3(e, world, slot) {
+  e.speedX = NASTY_SPEED;
+  e.speedY = NASTY_SPEED;
+  e.dir = pickDir(world, slot, 7);
+  let n = 0;
+  let bits = e.dir;
+  for (let i = 0; i < 4; i++) {
+    if (bits & 1) n += 1;
+    bits >>= 1;
+  }
+  if (n === 1) return;
+  let a = rotateDac0(world, slot);
+  const carry = (a & 128) !== 0;
+  a = (a << 1 | a >> 7) & 255;
+  if (carry) return;
+  a = (a << 1 | a >> 7) & 255;
+  const s = (a & 1) + 1;
+  e.speedX = s;
+  e.speedY = (s ^ 3) & 3 || 1;
+}
+function think(e, blob, world, slot) {
+  e.aiCount -= 1;
+  if (e.aiCount !== 0) return false;
+  e.aiCount = e.aiPeriod === 100 ? e.aiPeriod : e.aiPeriod;
+  if (e.aiPeriod === 100) {
+    e.aiCount = (world.dac.dac0 >> 8 & 3) + 1;
+    e.aiCount <<= 1;
+  }
+  switch (e.ai) {
+    case 0:
+      if ((e.dir & 11) === 0) e.dir |= 2;
+      if ((e.dir & 12) === 0) e.dir |= 8;
+      break;
+    case 1:
+      e.speedX = NASTY_SPEED;
+      e.speedY = NASTY_SPEED;
+      e.dir = DIR_TABLE[(rotateDac0(world, slot) & 3) << 1];
+      break;
+    case 2:
+      e.speedX = NASTY_SPEED;
+      e.speedY = NASTY_SPEED;
+      e.dir = pickDir(world, slot, 7);
+      break;
+    case 3:
+      thinkAi3(e, world, slot);
+      break;
+    case 4:
+      e.dir = chaseDir(e, blob);
+      break;
+    case 5: {
+      e.dir = 0;
+      let a = rotateDac0(world, slot);
+      const carry = (a & 1) !== 0;
+      a = (a >> 1 | (carry ? 128 : 0)) & 255;
+      if (carry) break;
+      if (a < AI5_CHASE_MAX) e.dir = chaseDir(e, blob);
+      else thinkAi3(e, world, slot);
+      break;
+    }
+    case 6:
+      e.dir &= 3;
+      if (e.dir === 0) e.dir = FIXED_NASTY_DIR;
+      return true;
+    default:
+      break;
+  }
+  return false;
+}
+function appearOrDie(e, blob, world) {
+  if (e.state === 2) {
+    e.ptr = DEAD_GRAPHIC;
+    e.set = "stars";
+    e.stateTimer = e.stateTimer + 1 & 255;
+    if (e.stateTimer === DIE_FRAMES) {
+      e.y = 0;
+      e.x = 0;
+      return true;
+    }
+    return false;
+  }
+  if (e.state !== 0) return false;
+  const was = e.stateTimer;
+  e.stateTimer += 1;
+  if (was === 0) {
+    e.x = e.homeX;
+    e.y = e.homeY;
+    e.clipTerrain = false;
+    e.ptr = APPEAR_GRAPHIC;
+    e.set = "corepieces1";
+    if (world) requestA41C(world, (world.dac.dac0 & 3) + 1);
+  }
+  if (was === APPEAR_FRAMES) {
+    if (e.basePtr >> 8 < KILL_GRAPHIC_HI && blob && !farFromBlob(e.x, e.y, blob)) {
+      nudgeAwayFromBlob(e, blob);
+    }
+    e.state = 1;
+    e.stateTimer = 0;
+    e.ptr = e.basePtr;
+    e.set = setForPtr(e.basePtr);
+  }
+  return false;
+}
+function stepMove(e, world) {
+  if (!e.clipTerrain && spriteAir(e, world)) e.clipTerrain = true;
+  bounceH(e, world);
+  if (skip64(e, world)) return;
+  if (e.dir & 1) e.x = e.x + e.speedX & 255;
+  if (e.dir & 2) e.x = e.x - e.speedX & 255;
+  bounceV(e, world);
+  if (e.dir & 4) e.y = e.y - e.speedY & 255;
+  if (e.dir & 8) e.y = e.y + e.speedY & 255;
+}
+function stepOne(e, prep2, blob, world, slot, inner) {
+  if (e.y === 0) return null;
+  hitByBullet(e, world);
+  const death = applyContact(e, blob, world, inner === 0);
+  if (death !== null) return { kind: "death", a: death };
+  e.timer = e.timer - 1 & 255;
+  if (e.timer !== 0) return null;
+  e.timer = e.period;
+  if (appearOrDie(e, blob, world) && e.y === 0) return null;
+  const abort = think(e, blob, world, slot);
+  stepMove(e, world);
+  if (abort) return { kind: "abort" };
+  return null;
+}
+function grafixAnimFrame(ticks) {
+  return Math.floor(ticks / GRAFIX_ANIM_PERIOD) % GRAFIX_FRAMES;
+}
+function syncGrafixFrames(world) {
+  const frame = grafixAnimFrame(world.frames);
+  const n = Math.min(world.nastyCount, world.entities.length);
+  for (let i = 0; i < n; i++) {
+    const e = world.entities[i];
+    if (!e || !entityVisible(e)) continue;
+    e.frame = frame;
+  }
+  if (world.pad && entityVisible(world.pad)) world.pad.frame = frame;
+}
+function tickNasties(prep2, blob, world) {
+  if (world.spawnGuard) world.spawnGuard -= 1;
+  dacStep(world.dac);
+  syncGrafixFrames(world);
+  const n = Math.min(world.nastyCount, world.entities.length);
+  for (let slot = n; slot >= 1; slot--) {
+    const e = world.entities[slot - 1];
+    if (!e) continue;
+    for (let i = 0; i < NASTY_INNER_STEPS; i++) {
+      const r = stepOne(e, prep2, blob, world, slot, i);
+      if (r?.kind === "death") return r.a;
+      if (r?.kind === "abort") return null;
+    }
+  }
+  return null;
+}
+function tickEnergyDrain(world) {
+  if (world.cheatGod) return;
+  world.energyDrain = world.energyDrain + 1 & 255;
+  if (world.energyDrain < ENERGY_DRAIN_WRAP) return;
+  world.energyDrain = 0;
+  world.energy = Math.max(0, world.energy - ENERGY_DRAIN_STEP);
+}
+
+// src/items.ts
+function rebuildItemIndex(prep2) {
+  prep2.itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
+  for (const it of prep2.itemTable ?? []) {
+    if (it.sprite === 255) continue;
+    if (!it.placed) continue;
+    if ((it.row & 127) < PLAY_ORIGIN) continue;
+    if (it.room === ROOM_SKIP) continue;
+    if (it.room >= 0 && it.room < ROOM_COUNT) prep2.itemsByRoom[it.room].push(it);
+  }
+}
+function rrca3(a) {
+  let v = a & 255;
+  for (let i = 0; i < 3; i++) v = (v >> 1 | (v & 1) << 7) & 255;
+  return v;
+}
+function dacReduce(a, n) {
+  let v = a & 255;
+  const e = n & 255;
+  if (e === 0) return 0;
+  do
+    v = v - e & 255;
+  while (v >= e);
+  return v;
+}
+function rollCoreSprites(world) {
+  const slots = Array.from({ length: 9 }, () => 0);
+  for (let n = 5; n > 0; n--) {
+    let sprite = 0;
+    for (; ; ) {
+      dacStep(world.dac);
+      let a = world.dac.dac0 & 255;
+      while (a >= 15) a -= 15;
+      a = a + 137 & 255;
+      if (a >= 143) a = a + 11 & 255;
+      if (slots.includes(a)) continue;
+      sprite = a;
+      break;
+    }
+    let slot = 0;
+    for (; ; ) {
+      dacStep(world.dac);
+      let e = world.dac.dac0 & 255;
+      while (e >= 9) e -= 9;
+      e = e + 9 & 255;
+      while (e >= 9) e -= 9;
+      slot = e;
+      if (slots[slot] === 0) break;
+    }
+    slots[slot] = sprite;
+  }
+  for (let b = 9; b > 0; b--) {
+    if (slots[9 - b] === 0) slots[9 - b] = 137 - b & 255;
+  }
+  world.d2de = slots;
+  world.d2deNeed = slots.slice();
+}
+function writeShuffled(prep2, index, room2, sprite) {
+  const src = prep2.itemTemplate?.[index] ?? prep2.itemTable?.[index];
+  const it = prep2.itemTable?.[index];
+  if (!it) return;
+  it.room = room2 & 511;
+  it.sprite = sprite & 255;
+  it.placed = false;
+  it.attr_bits = (src?.attr_bits ?? 0) & 7;
+  it.col = it.attr_bits << 5 & 224;
+  it.row = room2 >> 8 & 1 ? 128 : 0;
+}
+function shuffleCollectibles(prep2, world) {
+  if (!prep2.itemTable || prep2.itemTable.length < ITEM_SHUFFLE) return;
+  if (prep2.itemTemplate) {
+    prep2.itemTable = prep2.itemTemplate.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
+  }
+  dacStep(world.dac);
+  writeShuffled(prep2, 0, ITEM_KEY_ROOMS[world.dac.dac0 & 3], 15);
+  dacStep(world.dac);
+  writeShuffled(prep2, 1, ITEM_TOOL_ROOMS[world.dac.dac0 & 3], 16);
+  rollCoreSprites(world);
+  let c = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    dacStep(world.dac);
+    c = world.dac.dac0 & 7;
+    for (let j = 0; j < 9; j++) {
+      c = (c + 1) % 9;
+      let sprite = (world.d2de[c] ?? 0) & 127;
+      if (pass === 1 && (world.dac.dac0 >> 8 & 255) >= 150) sprite = (sprite & 7) + 26;
+      sprite &= 127;
+      dacStep(world.dac);
+      const pair = ITEM_PAIR_ROOMS[pass * 9 + j];
+      const room2 = (world.dac.dac0 & 255) < 127 ? pair[0] : pair[1];
+      writeShuffled(prep2, 2 + pass * 9 + j, room2, sprite);
+    }
+  }
+  rebuildItemIndex(prep2);
+}
+function placeCollectiblesInRoom(prep2, world, room2) {
+  if (room2 === ROOM_SKIP) return;
+  const marks = prep2.extraMarksByRoom?.[room2] ?? [];
+  if (!marks.length || !prep2.itemTable) return;
+  world.dac = seedDac(room2);
+  const slot = dacReduce((world.dac.dac0 >> 8 ^ world.d2c6 >> 8) & 127, marks.length);
+  const mark = marks[slot];
+  for (const it of prep2.itemTable) {
+    if (it.index >= ITEM_SHUFFLE) continue;
+    if ((it.row & 127) !== 0) continue;
+    if (it.room !== room2) continue;
+    let mix = (world.dac.dac2 & 255 ^ world.d2c6 & 255) & 63;
+    mix = dacReduce(mix, 6);
+    mix = mix + 2 & 255;
+    const attr = rrca3(mix) & 224;
+    it.col = mark.col & 31 | attr;
+    it.row = it.row & 128 | mark.row & 127;
+    it.placed = (it.row & 127) >= PLAY_ORIGIN;
+    it.attr_bits = attr >> 5;
+    rebuildItemIndex(prep2);
+    break;
+  }
+}
+function itemGamePos(item) {
+  const col = item.col & 31;
+  const row = item.row & 127;
+  return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
+}
+function nearItem(ax, ay, bx, by) {
+  return Math.abs(ax - bx) < ITEM_NEAR && Math.abs(ay - by) < ITEM_NEAR;
+}
+function a350Allows(a350, room2) {
+  const high = room2 >> 8 & 1;
+  const low = room2 & 255;
+  const offset = (high >> 3 | (low & 248) >> 3) & 255;
+  let value = a350[offset] ?? 0;
+  for (let i = 0; i < (low & 7) + 1; i++) value = (value << 1 | value >> 7) & 255;
+  return (value & 1) !== 0;
+}
+function clearA350Bit(a350, room2) {
+  const high = room2 >> 8 & 1;
+  const low = room2 & 255;
+  const offset = (high >> 3 | (low & 248) >> 3) & 255;
+  const rot = (low & 7) + 1;
+  let value = a350[offset] ?? 0;
+  for (let i = 0; i < rot; i++) value = (value << 1 | value >> 7) & 255;
+  value = value & 254 & 255;
+  for (let i = 0; i < rot; i++) value = (value >> 1 | (value & 1) << 7) & 255;
+  a350[offset] = value;
+}
+function capEnergyPlatformsFire(world) {
+  if (world.energy > STAT_CAP) world.energy = STAT_CAP;
+  if (world.platforms > STAT_CAP) world.platforms = STAT_CAP;
+  if (world.firepower > STAT_CAP) world.firepower = STAT_CAP;
+}
+function ccccSprite(world) {
+  if ((world.lives & 255) === 0) return EXTRA_LIFE_PLUS;
+  let a = 255;
+  let e = 0;
+  const stats = [world.energy & 255, world.platforms & 255, world.firepower & 255];
+  for (let b = 3; b !== 0; b--) {
+    const hl = stats[3 - b];
+    if (a < hl) continue;
+    e = 3 - b << 1 & 255;
+    a = hl;
+  }
+  return e + 18 & 255;
+}
+function applyExtra(world, sprite) {
+  if (sprite === EXTRA_CHEOPS) {
+    return;
+  }
+  let a = sprite & 255;
+  if (a === EXTRA_LIVES_SPRITE) a = ccccSprite(world);
+  const row = EXTRA_EFFECTS[a - EXTRA_SPRITE_BASE];
+  if (!row) return;
+  const [off, add] = row;
+  if (off === 0) world.lives = world.lives + add & 255;
+  else if (off === 1) world.energy = world.energy + add & 255;
+  else if (off === 2) world.platforms = world.platforms + add & 255;
+  else if (off === 3) world.firepower = world.firepower + add & 255;
+  capEnergyPlatformsFire(world);
+  requestSfx(world, off);
+}
+function extraPos(col, row) {
+  return { x: col << 3 & 255, y: (ITEM_ORIGIN_ROWS - row << 3) - 1 & 255 };
+}
+function itemOccupiesMark(prep2, room2, col, row, world) {
+  for (const it of prep2.itemsByRoom[room2] ?? []) {
+    if (world.collected[it.index]) continue;
+    if ((it.col & 31) === (col & 31) && (it.row & 127) === (row & 127)) return true;
+  }
+  return false;
+}
+function spawnExtra(prep2, world, room2) {
+  world.extra = null;
+  if (room2 === ROOM_SKIP) return;
+  if (!a350Allows(world.a350, room2)) return;
+  const marks = prep2.extraMarksByRoom?.[room2] ?? [];
+  if (marks.length < 2) return;
+  const free = marks.filter((m) => !itemOccupiesMark(prep2, room2, m.col, m.row, world));
+  const pool = free.length > 0 ? free : marks;
+  world.dac = seedDac(room2);
+  for (let i = 0; i < EXTRA_DAC_ROLLS; i++) dacStep(world.dac);
+  if ((world.dac.dac0 & 255) < EXTRA_MIN_DAC) return;
+  dacStep(world.dac);
+  let slot = (world.dac.dac0 & 127) % pool.length;
+  const mark = pool[slot];
+  dacStep(world.dac);
+  let kind = world.dac.dac0 & 255;
+  while (kind >= 9) kind -= 9;
+  if (kind === 8) {
+    dacStep(world.dac);
+    if ((world.dac.dac2 & 255) >= 127) kind = 0;
+  }
+  const sprite = kind + EXTRA_SPRITE_BASE;
+  dacStep(world.dac);
+  let ink = world.dac.dac2 & 63;
+  while (ink >= 6) ink -= 6;
+  ink = ink + 2 & 7;
+  const pos = extraPos(mark.col, mark.row);
+  world.extra = {
+    sprite,
+    ink,
+    col: mark.col,
+    row: mark.row,
+    x: pos.x,
+    y: pos.y
+  };
+}
+function padInventory(inventory) {
+  const slots = inventory.slice(0, 4).map((it) => ({ sprite: it.sprite & 255, attr: it.attr & 255 }));
+  while (slots.length < 4) slots.push({ sprite: 0, attr: 0 });
+  return slots;
+}
+function pickCheopsSlot(inventory) {
+  const slots = padInventory(inventory);
+  for (let i = 0; i < 4; i++) {
+    const a = slots[i].sprite & 255;
+    if (a === 0) continue;
+    if (a < CHEOPS_SKIP_MIN || a >= CHEOPS_SKIP_MAX) return i;
+  }
+  for (let i = 3; i >= 0; i--) {
+    if ((slots[i].sprite & 255) !== 0) return i;
+  }
+  return 0;
+}
+function z80SubAdd2(a, sub, add) {
+  let v = a & 255;
+  while (v >= sub) v -= sub;
+  return v + add - sub & 255;
+}
+function rollCheopsSprite(world) {
+  for (let n = 0; n < 4096; n++) {
+    dacStep(world.dac);
+    const idx = z80SubAdd2(world.dac.dac0 & 255, CHEOPS_D2DE_MOD, CHEOPS_D2DE_ADD);
+    const val = world.d2de[idx - 1] ?? 0;
+    if (val < CHEOPS_D2DE_MIN) continue;
+    return val & CHEOPS_SPRITE_MASK;
+  }
+  return 0;
+}
+function rollCheopsOffers(world, given) {
+  const offers = [0, 0, 0, 0, given & 255];
+  for (let i = CHEOPS_OFFERS - 2; i >= 0; i--) offers[i] = rollCheopsSprite(world);
+  return offers;
+}
+function playAttr(prep2, world, room2, col, playRow) {
+  if (col < 0 || playRow < 0 || col >= COLS || playRow >= ROWS) return CLEAR_ATTR;
+  const fromWorld = world.terrain.attr[playRow * COLS + col];
+  if (fromWorld !== void 0) return fromWorld;
+  return prep2.rooms[room2]?.attributes[playRow]?.[col] ?? CLEAR_ATTR;
+}
+function dropCellClear(prep2, world, room2, col, screenRow) {
+  const playRow = screenRow - PLAY_ORIGIN;
+  for (const dc of [0, 1]) {
+    for (const dr of [0, 1]) {
+      const attr = playAttr(prep2, world, room2, col + dc, playRow + dr);
+      if ((attr & 64) === 0) return false;
+      if (attr === LIFT_ATTR) return false;
+    }
+  }
+  return true;
+}
+function overflowDropCell(prep2, blob, world) {
+  const gameY = GAME_Y_ORIGIN - blob.y;
+  let col = blob.x >> 3 & 31;
+  const row = ITEM_DROP_Y_BASE - gameY >> 3 & 31;
+  if (col >= 1 && dropCellClear(prep2, world, blob.room, col - 1, row)) {
+    return { col: col - 1, row };
+  }
+  if (col < ITEM_DROP_RIGHT_MIN && dropCellClear(prep2, world, blob.room, col + 2, row)) {
+    return { col: col + 2, row };
+  }
+  return { col, row };
+}
+function findItem(prep2, index) {
+  for (const list of prep2.itemsByRoom) {
+    const hit = list.find((it) => it.index === index);
+    if (hit) return hit;
+  }
+  return void 0;
+}
+function dropOverflowItem(prep2, blob, world, dropped) {
+  if (dropped.index === void 0) return;
+  const item = findItem(prep2, dropped.index);
+  if (!item) return;
+  const dest = overflowDropCell(prep2, blob, world);
+  const fromRoom = item.room;
+  if (fromRoom !== blob.room) {
+    const old = prep2.itemsByRoom[fromRoom];
+    if (old) {
+      const i = old.indexOf(item);
+      if (i >= 0) old.splice(i, 1);
+    }
+    if (blob.room >= 0 && blob.room < ROOM_COUNT) {
+      (prep2.itemsByRoom[blob.room] ??= []).push(item);
+    }
+  }
+  item.room = blob.room;
+  item.col = dest.col & 31;
+  item.row = dest.row & 127;
+  item.sprite = dropped.sprite & 255;
+  item.placed = true;
+  world.collected[dropped.index] = 0;
+}
+function rotateInventoryEmpty(prep2, blob, world) {
+  world.inventory.unshift({ sprite: 0, attr: 0 });
+  if (world.inventory.length > INVENTORY_SLOTS) {
+    dropOverflowItem(prep2, blob, world, world.inventory.pop());
+  }
+  requestSfx(world, 12);
+}
+function collectTableItem(prep2, blob, world) {
+  const list = prep2.itemsByRoom[blob.room] ?? [];
+  const bx = blob.x;
+  const by = GAME_Y_ORIGIN - blob.y;
+  for (const it of list) {
+    if (it.sprite === 255) continue;
+    if (!it.placed) continue;
+    if (world.collected[it.index]) continue;
+    const pos = itemGamePos(it);
+    if (!nearItem(bx, by, pos.x, pos.y)) continue;
+    world.collected[it.index] = 1;
+    world.inventory.unshift({ sprite: it.sprite, attr: it.attr_bits, index: it.index });
+    if (world.inventory.length > INVENTORY_SLOTS) {
+      dropOverflowItem(prep2, blob, world, world.inventory.pop());
+    }
+    requestSfx(world, 12);
+    return true;
+  }
+  return false;
+}
+function tickPickup(prep2, blob, input, world) {
+  const bx = blob.x;
+  const by = GAME_Y_ORIGIN - blob.y;
+  if (world.extra && nearItem(bx, by, world.extra.x, world.extra.y)) {
+    if (world.extra.sprite === EXTRA_CHEOPS) {
+      if (input.up) return "cheops";
+    } else {
+      applyExtra(world, world.extra.sprite);
+      clearA350Bit(world.a350, blob.room);
+      world.extra = null;
+    }
+  }
+  const upOnly = Boolean(input.up) && !input.left && !input.right && !input.down && !input.fire;
+  if (!upOnly) {
+    world.pickupLatch = false;
+    return;
+  }
+  if (world.pickupLatch) return;
+  world.pickupLatch = true;
+  if (!collectTableItem(prep2, blob, world)) rotateInventoryEmpty(prep2, blob, world);
+}
+
+// src/core.ts
+function initSocketFlags() {
+  return CORE_SOCKET_TABLE.map(([, flags]) => flags & 255);
+}
+function initCoreState() {
+  const d2de = CORE_D2DE_INIT.map((v) => v & 255);
+  return {
+    d2de,
+    d2deNeed: d2de.slice(),
+    coresLeft: CORE_LEFT_INIT,
+    corePairs: CORE_PAIRS_INIT
+  };
+}
+function matchCoreDeliveries(world) {
+  let delivered = 0;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let inv = 0; inv < world.inventory.length; ) {
+      const slot = world.inventory[inv];
+      if ((slot.sprite & 255) === 0 && (slot.attr & 255) === 0) {
+        inv += 1;
+        continue;
+      }
+      const sprite = slot.sprite & 255;
+      let matched = -1;
+      for (let i = 0; i < CORE_SLOTS; i++) {
+        const need = world.d2de[i] ?? 0;
+        if (!(need & 128)) continue;
+        if ((need & 127) === sprite) {
+          matched = i;
+          break;
+        }
+      }
+      if (matched < 0) {
+        inv += 1;
+        continue;
+      }
+      world.d2de[matched] = matched & 255;
+      world.inventory.splice(inv, 1);
+      addScore(world, SCORE_CORE_DELIVER);
+      world.coresLeft = world.coresLeft - 1 & 255;
+      if ((world.coresLeft & 1) === 0) {
+        world.corePairs = world.corePairs + 1 & 255;
+      }
+      delivered += 1;
+      requestSfx(world, 3);
+    }
+  }
+  return delivered;
+}
+function beginCoreCeremony(world) {
+  world.blobHidden = true;
+  world.pad = null;
+  world.dd22 = 0;
+  spawnCoreGuardians(world);
+  world.corePhase = "ceremony";
+  world.coreTicks = 0;
+  requestSfx(world, 20 + (world.dac.dac0 & 1));
+}
+function ejectToCoreNeighbor(blob, world, enter) {
+  world.corePhase = null;
+  world.coreTicks = 0;
+  world.blobHidden = false;
+  blob.room = CORE_NEIGHBOR;
+  blob.x = CORE_EJECT_X;
+  blob.y = GAME_Y_ORIGIN - CORE_EJECT_Y;
+  blob.fallIndex = 0;
+  blob.onGround = false;
+  enter(CORE_NEIGHBOR);
+}
+function deliverCoreParts(_prep, blob, world, enter) {
+  if (blob.room !== CORE_ROOM) return "none";
+  if (world.corePhase === "ceremony") return "ceremony";
+  matchCoreDeliveries(world);
+  if (world.corePairs >= CORE_VICTORY_PAIRS) {
+    if (!world.gameOver) requestSfx(world, 17);
+    world.blobHidden = false;
+    world.corePhase = null;
+    composeEndResult(world, true, CORES_COMPLETE_MSG);
+    world.message = CORES_COMPLETE_MSG;
+    return "victory";
+  }
+  beginCoreCeremony(world);
+  return "ceremony";
+}
+function tickCoreCeremony(prep2, blob, world, tickNasties2, enter) {
+  if (world.corePhase !== "ceremony") return;
+  world.frames = world.frames + 1 >>> 0;
+  tickNasties2(prep2, blob, world);
+  world.coreTicks += 1;
+  if (world.coreTicks >= CORE_CEREMONY_FRAMES) {
+    ejectToCoreNeighbor(blob, world, enter);
+  }
+}
+
+// src/render.ts
+function paperInk(attr) {
+  const table = attr & 64 ? BRIGHT : SPECTRUM;
+  return [table[attr >> 3 & 7], table[attr & 7]];
+}
+function roomCol(id) {
+  return id % MAP_COLS;
+}
+function roomRow(id) {
+  return id / MAP_COLS | 0;
+}
+function moveRoom(id, dx, dy) {
+  const c = roomCol(id) + dx;
+  const r = roomRow(id) + dy;
+  if (c < 0 || c >= MAP_COLS || r < 0 || r >= MAP_ROWS) return id;
+  return r * MAP_COLS + c;
+}
+function clampRoom(id) {
+  if (id < 0) return 0;
+  if (id >= ROOM_COUNT) return ROOM_COUNT - 1;
+  return id | 0;
+}
+function prepare(data) {
+  const graphics = [];
+  for (const g of data.graphics.graphics) graphics[g.id] = g;
+  const sprites = [];
+  for (const g of data.sprites.graphics) sprites[g.id] = g;
+  const actorsBySet = /* @__PURE__ */ new Map();
+  const actorsByPtr = /* @__PURE__ */ new Map();
+  if (data.actors) {
+    for (const g of data.actors.graphics) {
+      const name = g.set ?? "";
+      const list = actorsBySet.get(name) ?? [];
+      list.push(g);
+      actorsBySet.set(name, list);
+      actorsByPtr.set(g.ptr, g);
+    }
+    for (const list of actorsBySet.values()) {
+      list.sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0));
+    }
+  }
+  const blocks = data.blocks.blocks.map((b) => b.subblocks);
+  const itemTable = data.items.items.map((it) => ({ ...it, raw: [...it.raw ?? []] }));
+  const itemTemplate = itemTable.map((it) => ({ ...it, raw: [...it.raw] }));
+  const itemsByRoom = Array.from({ length: ROOM_COUNT }, () => []);
+  const rooms = data.rooms.rooms;
+  const {
+    stationsByRoom,
+    teleportsByRoom,
+    killsByRoom,
+    pulsesByRoom,
+    fixedNastiesByRoom,
+    extraMarksByRoom,
+    doorsByRoom,
+    socketsByRoom,
+    passagesByRoom,
+    machinesByRoom
+  } = hotspotsFromData(data, rooms, blocks);
+  const prep2 = {
+    graphics,
+    sprites,
+    actorsBySet,
+    actorsByPtr,
+    blocks,
+    rooms,
+    itemsByRoom,
+    itemTable,
+    itemTemplate,
+    stationsByRoom,
+    teleportsByRoom,
+    killsByRoom,
+    pulsesByRoom,
+    fixedNastiesByRoom,
+    extraMarksByRoom,
+    doorsByRoom,
+    socketsByRoom,
+    passagesByRoom,
+    machinesByRoom
+  };
+  rebuildItemIndex(prep2);
+  return prep2;
+}
+function newBuffers() {
+  return {
+    data: new Uint8Array(COLS * ROWS * CELL),
+    attr: new Uint8Array(COLS * ROWS)
+  };
+}
+function copyBuffers(src, dst) {
+  dst.data.set(src.data);
+  dst.attr.set(src.attr);
+}
+function newRgba() {
+  return new Uint8ClampedArray(WIDTH * HEIGHT * 4);
+}
+function clearBuffers(buf2) {
+  buf2.data.fill(0);
+  buf2.attr.fill(CLEAR_ATTR);
+}
+function blitGraphic(prep2, buf2, ident, x, y) {
+  const graphic = prep2.graphics[ident];
+  if (!graphic?.cells?.length) return;
+  for (const cell of graphic.cells) {
+    const cy = y + cell.row;
+    const cx = x + cell.col;
+    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+    const dst = (cy * COLS + cx) * CELL;
+    for (let py = 0; py < CELL; py++) buf2.data[dst + py] = cell.data[py];
+  }
+}
+function blitBlock(prep2, buf2, ident, x, y) {
+  const sub = prep2.blocks[ident];
+  if (!sub) return;
+  let rx = x + 4;
+  let ry = y + 3;
+  let k = 0;
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 2; col++) {
+      blitGraphic(prep2, buf2, sub[k], rx, ry);
+      k += 1;
+      rx -= 4;
+    }
+    rx = x + 4;
+    ry -= 3;
+  }
+}
+function composeTiles(prep2, buf2, roomId) {
+  clearBuffers(buf2);
+  const room2 = prep2.rooms[roomId];
+  let x = 0;
+  let y = 0;
+  let n = 0;
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 4; j++) {
+      blitBlock(prep2, buf2, room2.blocks[n], x, y);
+      n += 1;
+      x += 8;
+    }
+    x = 0;
+    y += 6;
+  }
+  const attrs = room2.attributes;
+  for (let ry = 0; ry < ROWS; ry++) {
+    const row = attrs[ry];
+    const base = ry * COLS;
+    for (let cx = 0; cx < COLS; cx++) buf2.attr[base + cx] = row[cx];
+  }
+}
+function itemCells(item) {
+  const cells = [];
+  const row0 = (item.row & 127) - PLAY_ORIGIN;
+  const col0 = item.col & 31;
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 2; c++) {
+      const cy = row0 + r;
+      const cx = col0 + c;
+      if (cx >= 0 && cy >= 0 && cx < COLS && cy < ROWS) cells.push([cx, cy]);
+    }
+  }
+  return cells;
+}
+function blitItems(prep2, buf2, roomId, collected) {
+  const list = prep2.itemsByRoom[roomId];
+  if (!list?.length) return;
+  for (const it of list) {
+    if (collected && collected[it.index]) continue;
+    const sprite = prep2.sprites[it.sprite];
+    if (!sprite) continue;
+    const attr = it.attr_bits & 7 | 64;
+    const row0 = (it.row & 127) - PLAY_ORIGIN;
+    const col0 = it.col & 31;
+    for (const cell of sprite.cells) {
+      const cy = row0 + cell.row;
+      const cx = col0 + cell.col;
+      if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+      const dst = (cy * COLS + cx) * CELL;
+      for (let py = 0; py < CELL; py++) buf2.data[dst + py] ^= cell.data[py];
+      buf2.attr[cy * COLS + cx] = attr;
+    }
+  }
+}
+function blitSprite(prep2, buf2, spriteId, col, row, attr) {
+  const sprite = prep2.sprites[spriteId];
+  if (!sprite) return;
+  for (const cell of sprite.cells) {
+    const cy = row + cell.row;
+    const cx = col + cell.col;
+    if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+    const dst = (cy * COLS + cx) * CELL;
+    for (let py = 0; py < CELL; py++) buf2.data[dst + py] ^= cell.data[py];
+    buf2.attr[cy * COLS + cx] = attr;
+  }
+}
+function blitExtra(prep2, buf2, extra) {
+  if (!extra) return;
+  const playRow = extra.row - PLAY_ORIGIN;
+  blitSprite(prep2, buf2, extra.sprite, extra.col, playRow, extra.ink & 7 | 64);
+}
+function blitCorePanel(prep2, buf2, world, roomId) {
+  if (roomId !== CORE_ROOM) return;
+  const col0 = CORE_PANEL_ATTR_COL;
+  const row0 = CORE_PANEL_ATTR_ROW - PLAY_ORIGIN;
+  const blinkOn = (world.frames & 8) !== 0;
+  for (let i = 0; i < CORE_SLOTS; i++) {
+    const r = i / 3 | 0;
+    const c = i % 3;
+    const live = world.d2de[i] ?? 0;
+    const pending = (live & 128) !== 0;
+    const origin = world.d2deNeed[i] ?? CORE_D2DE_INIT[i] ?? live;
+    const sprite = (pending ? live : origin) & 127;
+    let ink = CORE_PANEL_INK_DONE;
+    if (pending) {
+      ink = blinkOn ? CORE_PANEL_INK_PENDING : (world.frames + i & 3) + 2;
+    }
+    blitSprite(prep2, buf2, sprite, col0 + c * CORE_PANEL_STEP, row0 + r * CORE_PANEL_STEP, ink & 7 | 64);
+  }
+}
+function blitPulses(buf2, pulses, _dac0) {
+  for (const p of pulses) {
+    const ink = p.xorInk;
+    if (!ink) continue;
+    let any = false;
+    for (let i = 0; i < 16; i++) if (ink[i]) {
+      any = true;
+      break;
+    }
+    if (!any) continue;
+    const playRow = p.row - PLAY_ORIGIN;
+    const attr = p.sparkAttr & 255;
+    for (let i = 0; i < 2; i++) {
+      const cx = p.col + i;
+      if (cx < 0 || playRow < 0 || cx >= COLS || playRow >= ROWS) continue;
+      const dst = (playRow * COLS + cx) * CELL;
+      const base = i * 8;
+      for (let py = 0; py < CELL; py++) buf2.data[dst + py] ^= ink[base + py];
+      buf2.attr[playRow * COLS + cx] = attr;
+    }
+  }
+}
+function packGrafix(frame) {
+  const out = new Uint8Array(48);
+  for (const cell of frame.cells) {
+    if (cell.row < 0 || cell.row > 1 || cell.col < 0 || cell.col > 2) continue;
+    for (let py = 0; py < CELL; py++) out[cell.row * 24 + py * 3 + cell.col] = cell.data[py];
+  }
+  return out;
+}
+function unpackGrafix(ptr, packed) {
+  const cells = [];
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < 3; col++) {
+      const data = [];
+      for (let py = 0; py < CELL; py++) data.push(packed[row * 24 + py * 3 + col]);
+      cells.push({ row, col, data, attr: null });
+    }
+  }
+  return { id: -1, ptr, cols: 3, rows: 2, cells };
+}
+var grafixPtrCache = /* @__PURE__ */ new Map();
+function graphicForPtr(prep2, ptr) {
+  const exact = prep2.actorsByPtr?.get(ptr);
+  if (exact) return exact;
+  const pool = prep2.actorsByPtr ? [...prep2.actorsByPtr.values()] : [];
+  if (!pool.length) {
+    for (const list of prep2.actorsBySet.values()) pool.push(...list);
+  }
+  let best;
+  let bestDist = 48;
+  for (const g of pool) {
+    const d = Math.abs(g.ptr - ptr);
+    if (d !== 0 && d < bestDist) {
+      bestDist = d;
+      best = g;
+    }
+  }
+  if (!best) return void 0;
+  const key = `${ptr}:${best.ptr}`;
+  const hit = grafixPtrCache.get(key);
+  if (hit) return hit;
+  const packed = packGrafix(best);
+  const shifted = new Uint8Array(48);
+  const delta = ptr - best.ptr;
+  for (let i = 0; i < 48; i++) {
+    const src = i + delta;
+    shifted[i] = src >= 0 && src < 48 ? packed[src] : 0;
+  }
+  const graphic = unpackGrafix(ptr, shifted);
+  grafixPtrCache.set(key, graphic);
+  return graphic;
+}
+function blitGrafix(buf2, frame, x, y, ink, opts) {
+  const occupied = /* @__PURE__ */ new Set();
+  for (const cell of frame.cells) {
+    for (let py = 0; py < CELL; py++) {
+      const bits = cell.data[py];
+      if (!bits) continue;
+      const pyAbs = y + cell.row * CELL + py;
+      for (let px = 0; px < CELL; px++) {
+        if (!(bits & 128 >> px)) continue;
+        const pxAbs = x + cell.col * CELL + px;
+        if (pxAbs < 0 || pyAbs < 0 || pxAbs >= WIDTH || pyAbs >= HEIGHT) continue;
+        const cx = pxAbs >> 3;
+        const cy = pyAbs >> 3;
+        buf2.data[(cy * COLS + cx) * CELL + (pyAbs & 7)] ^= 128 >> (pxAbs & 7);
+        occupied.add(cy * COLS + cx);
+      }
+    }
+  }
+  if (opts?.mergeInk === false) return;
+  const inkBits = ink & 7;
+  for (const idx of occupied) {
+    const attr = buf2.attr[idx];
+    if (attr & 32) continue;
+    buf2.attr[idx] = attr & 248 | inkBits;
+  }
+}
+function grafixAnimDrawX(x, frame) {
+  return x - (frame & 3) * 2;
+}
+function stampGrafix(rgba2, frame, x, y, ink) {
+  const rgb = SPECTRUM[ink & 7];
+  for (const cell of frame.cells) {
+    for (let py = 0; py < CELL; py++) {
+      const bits = cell.data[py];
+      if (!bits) continue;
+      const pyAbs = y + cell.row * CELL + py;
+      if (pyAbs < 0 || pyAbs >= HEIGHT) continue;
+      for (let px = 0; px < CELL; px++) {
+        if (!(bits & 128 >> px)) continue;
+        const pxAbs = x + cell.col * CELL + px;
+        if (pxAbs < 0 || pxAbs >= WIDTH) continue;
+        const p = (pyAbs * WIDTH + pxAbs) * 4;
+        rgba2[p] = rgb[0];
+        rgba2[p + 1] = rgb[1];
+        rgba2[p + 2] = rgb[2];
+        rgba2[p + 3] = 255;
+      }
+    }
+  }
+}
+function rasterize(buf2, rgba2, overlaySolid, solidGrid) {
+  let p = 0;
+  for (let cy = 0; cy < ROWS; cy++) {
+    for (let py = 0; py < CELL; py++) {
+      for (let cx = 0; cx < COLS; cx++) {
+        const idx = cy * COLS + cx;
+        const [paper, ink] = paperInk(buf2.attr[idx]);
+        const bits = buf2.data[idx * CELL + py];
+        const mark = overlaySolid && solidGrid && solidGrid[cy][cx];
+        for (let px = 0; px < CELL; px++) {
+          const on = bits & 128 >> px;
+          let r = on ? ink[0] : paper[0];
+          let g = on ? ink[1] : paper[1];
+          let b = on ? ink[2] : paper[2];
+          if (mark) {
+            r = r + 255 >> 1;
+            g = g >> 1;
+            b = b + 255 >> 1;
+          }
+          rgba2[p] = r;
+          rgba2[p + 1] = g;
+          rgba2[p + 2] = b;
+          rgba2[p + 3] = 255;
+          p += 4;
+        }
+      }
+    }
+  }
+  return rgba2;
+}
+function renderRoom(prep2, buf2, rgba2, roomId, opts = {}) {
+  composeTiles(prep2, buf2, roomId);
+  if (opts.items !== false) blitItems(prep2, buf2, roomId);
+  if (opts.blob) {
+    const frames = prep2.actorsBySet.get(opts.blob.set);
+    const frame = frames?.[opts.blob.frame];
+    if (frame) blitGrafix(buf2, frame, opts.blob.x, opts.blob.y, 7);
+  }
+  const solid = opts.overlay ? prep2.rooms[roomId].solid : null;
+  return rasterize(buf2, rgba2, !!opts.overlay, solid);
+}
+function renderWorld(prep2, world, buf2, rgba2, roomId, opts = {}) {
+  copyBuffers(world.terrain, buf2);
+  if (opts.items !== false) {
+    blitItems(prep2, buf2, roomId, world.collected);
+    blitExtra(prep2, buf2, world.extra);
+  }
+  blitCorePanel(prep2, buf2, world, roomId);
+  blitPulses(buf2, world.pulses, world.dac.dac0);
+  const solid = opts.overlay ? prep2.rooms[roomId].solid : null;
+  rasterize(buf2, rgba2, !!opts.overlay, solid);
+  if (opts.enemies !== false) {
+    const fi = grafixAnimFrame(world.frames);
+    const n = Math.min(world.nastyCount, world.entities.length);
+    for (let i = 0; i < n; i++) {
+      const e = world.entities[i];
+      if (!entityVisible(e)) continue;
+      const frame = graphicForPtr(prep2, e.ptr + fi * GRAFIX_FRAME) ?? prep2.actorsBySet.get(e.set)?.[fi];
+      if (frame) stampGrafix(rgba2, frame, grafixAnimDrawX(e.x, fi), GAME_Y_ORIGIN - e.y, e.ink);
+    }
+    if (world.pad && entityVisible(world.pad)) {
+      const frame = graphicForPtr(prep2, world.pad.ptr + fi * GRAFIX_FRAME) ?? prep2.actorsBySet.get(world.pad.set)?.[fi];
+      if (frame) stampGrafix(rgba2, frame, grafixAnimDrawX(world.pad.x, fi), GAME_Y_ORIGIN - world.pad.y, world.pad.ink);
+    }
+  }
+  if (opts.enemies !== false && entityVisible(world.bullet)) {
+    const frame = graphicForPtr(prep2, world.bullet.ptr) ?? prep2.actorsBySet.get(world.bullet.set)?.[world.bullet.frame];
+    if (frame) stampGrafix(rgba2, frame, world.bullet.x, GAME_Y_ORIGIN - world.bullet.y, world.bullet.ink);
+  }
+  if (opts.blob) {
+    const frames = prep2.actorsBySet.get(opts.blob.set);
+    const frame = frames?.[opts.blob.frame];
+    if (frame) stampGrafix(rgba2, frame, opts.blob.x, opts.blob.y, opts.blob.ink ?? 7);
+  }
+  return rgba2;
+}
+
 // src/ui/overlay.ts
 function idleUi() {
   return { kind: "none" };
@@ -3294,6 +3448,8 @@ function syncWorldMessage(world, ui) {
     }
   } else if (ui.kind === "menu") {
     world.message = ui.phase === "options" ? "STARQUAKE" : ui.phase === "intro" ? INTRO_TITLE : ui.phase === "quit" ? MENU_QUIT_MSG : MENU_GOODBYE;
+  } else if (ui.kind === "end") {
+    world.message = ui.phase === "cores" ? "THE CORES COMPLETE" : "GAME OVER";
   }
 }
 function isUiBlocking(ui) {
@@ -3475,7 +3631,8 @@ function spawnDeathStars(blob, world) {
     aiPeriod: 8,
     aiCount: 8,
     homeX: x,
-    homeY: y
+    homeY: y,
+    clipTerrain: false
   }));
 }
 function finishDeath(prep2, blob, world) {
@@ -4264,6 +4421,7 @@ function parkedEntity(over) {
     aiCount: 100,
     homeX: 80,
     homeY: 80,
+    clipTerrain: true,
     ...over
   };
 }
@@ -4402,7 +4560,8 @@ if (has("--hit-test")) {
       aiPeriod: 100,
       aiCount: 100,
       homeX: 80,
-      homeY: 80
+      homeY: 80,
+      clipTerrain: true
     }
   ];
   world.nastyCount = 1;

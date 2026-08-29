@@ -230,7 +230,7 @@ Extra 2×2 (`$AAB6`): bit `$A350`, 20× `$DAC6`, `$DAC0≥$55`, ne když `$96CA=
 | `$0F` | `$DD23 ∧ $03 ≠ 0`, jinak `$D1A6` | místnost ±1 (`A=$05` RET) | implementováno |
 | `$02`–`$05`, `$0A`, `$10`–`$13` | `CP $14` C | no-op `$D1A6` | no-op |
 | `$14`+ | `$DD31==$01`, jinak `$D1A6` | inventář `$D1CA`, byte1=`$01`; overflow `$D1F8` drop | implementováno |
-| 1. tick Up bez `$14+` | `$D1B3` | vsune prázdný slot `00 00` | mimo rozsah |
+| 1. tick Up bez `$14+` | `$D1B3` | vsune prázdný slot `00 00` (posun doprava); 5. slot `$D1F8` | implementováno |
 
 ### Extra `$11`–`$19` (`$CC9A` / `$CCBC` od `$D2CC`)
 
@@ -325,9 +325,9 @@ Intro `$666D` (`FLIGHT COMPUTER REPORT` … ROM překlepy TOUCTHDOWN / COMTHUTER
 | kill | `(hi−$AE)×2` tens | `$A2E7` / `$D422` |
 | first-visit | +250; bit `$A390` | `$A47E` |
 | doručení jádra | +10000 | `$A6EA` |
-| konec (výhra i lives=0) | +1000 (scramble low digits **přeskočen**) | `$64A0` |
+| konec (výhra i lives=0) | +1000 a scramble `$D416`..`$D418` (ones 0\|5) | `$64A0` |
 
-`EndResult`: SCORE (`$D413`), ADVENTURE `(visited×50)≫8`, TIME frames/50 → MM.SS, CORES `9−$D2E7`, `victory`. UI = HTML overlay, ne Spectrum bitmap. Hi-score `$64FA` se **nezapisuje**. Rozbor: [`notes/endgame-score.md`](notes/endgame-score.md).
+`EndResult`: SCORE (`$D413` po `$64A0` scramble), ADVENTURE `(visited×50)≫8`, TIME frames/50 → MM.SS, CORES `9−$D2E7`, `victory`. UI = Spectrum bitmap `$6615` + `$6730` (výhra nejdřív `$693F`, klávesa → stats). Hi-score `$64FA` se **nezapisuje**. Rozbor: [`notes/endgame-score.md`](notes/endgame-score.md).
 
 ## Pořadí ticku (engine)
 
@@ -358,18 +358,19 @@ Platný teleport / `$0F` v kroku 6 hned volá `$A426` a zbytek ticku se přesko�
 2. **Překryv `solid` vs chůze.** Overlay = `$D280` (bit 6). Blob = `$D2F0` (`attr < $40`). Plošinka po `RES 6` je pro chůzi pevná a v overlay ne. `$64` je v overlay i chůzi nepevná.
 3. **Přesný posun `$DF70` při `X∧7 ≠ 0`.** XOR po pixelech v `blitGrafix` posun emuluje; atributový merge `$D8B1` bere obsazené buňky po XOR.
 4. **Přesný `$DAC6` po `$A80A`.** Live spawn v enginu seeduje `$7530+id×12`, bez celého řetězce `$DAC6` při kreslení bloků. Krok za krokem proti emulátoru proto bere výchozí sloty z `$9C47` (test `test_enemies.py`).
+4b. **Ghost spawn.** ROM bounce `$A0FD`/`$A16F` hned. Engine: `clipTerrain=false` po `$9C47` / `$9F05` / `$9F78` / appear z parku; 24×16 box (3–4 sloupce, 2–3 řady) `attr ≥ $40` → latch. Pak `$D2F0`. Hrany místnosti vždy. Odchylka kvůli 2×2 home vs 24×16 kresba.
 5. **Zvuk.** `$D7C0` + `$A57B` v `game/src/audio/`. Digit-roll `$D679`/`$D70E` je v overlay. `$6600` skip; MP3 intro vs smyčka.
 6. **Animace 4 GRAFIX snímků** u vetřelce i padu — live ptr frame 0; kresba `ptr+(frames/2)%4×$30` na `X − 2×frame` (snímky 1–3 jsou předshift `+2/+4/+6` pro `X∧7`, ne posun entity).
 7. **Extra spawn `$AAB6` po `$A80A`.** Markery jsou raw nibble `$90` (`$96CB`), ne nakreslený attr. Engine seed `$7530+id×12` + 20× `$DAC6`, ne celý řetězec při kreslení bloků. Typ/účinek z `$CCBC` platí; souřadnice se s live hrou můžou rozcházet.
 8. **Přeplněný inventář `$D1CA`.** Pátý předmět: LDDR, `$D2DA` ven, `$D1E1` Y=5→`$32`, `$D236` zpět do aktuální místnosti (`$D267` 2×2 bit6≠`$64`: col−1, jinak col+2 když col`< $1D`, jinak orig). Cheops `$CCF1` je v enginu. Extra `$17`/`$18` taky (`$CCCC` / přetečení `$CCBC`).
-9. **1. tick Up bez `$14+`.** ROM vsune prázdný slot `00 00`; engine ne. Mimo rozsah.
+9. **1. tick Up bez `$14+`.** `$D1B3`/`$D1CA` vsune `00 00` dopředu (HUD doprava). Na padu/zdviži `$CB36`/`$C761` RES 3. Plný inventář dropne pravý `$D1F8`. Skip `$D2BE≥4`+$D2DB≠0 engine ne.
 10. **Póza Arrow `$BF88` ve zdviži** — není v extractu; engine nechá poslední walk frame.
 11. **Objekt `$0E`** — implementováno (`$D09F` / `$D0B3`). Není zelené pole `$64`. `$D3C1` AT+mezery při spuštění engine netiskne.
 12. **`$A426` vs `$C8DD`.** ROM po teleportu střelu neparkuje; engine parkuje v `enterRoom`.
 13. **Engine `skip64` vs `$A132`** (řada Y+1, skip jen Y, exact `$64`) — ponecháno.
 14. **Opakovaný overlay** při drženém Left/Right po příletu na pad / dveře. Viewer má latch do uvolnění.
 15. **`$E4` (flash + `$64`).** `$C71C` bere jen přesné `$64`; v exportu 0 výskytů.
-16. **`$64A0` scramble spodních tří cifer.** Engine dělá jen +1000; scramble přeskočen (viz endgame-score.md).
+16. **`$64A0` scramble** — v enginu (`scrambleEndDigits`). Hi-score `$64FA` pořád bez zápisu.
 17. **Digit `$0E` wildcard** — engine podporuje 1×; Spectrum minihra UI (XOR anim) ne.
 18. **Účel osmi `$B0` socketů** mimo clear flagu — NEVÍM (neovlivní výhru).
 19. **Perioda `$70` vs live `$DAC0` při `$A80A`.** Engine bere `dac0` po spawn vetřelců, ne řetězec `$DAC6` při kreslení bloků.

@@ -423,7 +423,20 @@ function dropOverflowItem(prep: Prepared, blob: BlobState, world: World, dropped
   world.collected[dropped.index] = 0;
 }
 
-function collectTableItem(prep: Prepared, blob: BlobState, world: World): void {
+export function isEmptyInventorySlot(it: InventoryItem): boolean {
+  return (it.sprite & 0xff) === 0 && (it.attr & 0xff) === 0;
+}
+
+/** `$D1B3` / `$D1CA`: first-tick Up with no `$14+` unshifts `00 00`. */
+function rotateInventoryEmpty(prep: Prepared, blob: BlobState, world: World): void {
+  world.inventory.unshift({ sprite: 0, attr: 0 });
+  if (world.inventory.length > INVENTORY_SLOTS) {
+    dropOverflowItem(prep, blob, world, world.inventory.pop()!);
+  }
+  requestSfx(world, 0x0c);
+}
+
+function collectTableItem(prep: Prepared, blob: BlobState, world: World): boolean {
   const list = prep.itemsByRoom[blob.room] ?? [];
   const bx = blob.x;
   const by = GAME_Y_ORIGIN - blob.y;
@@ -439,8 +452,9 @@ function collectTableItem(prep: Prepared, blob: BlobState, world: World): void {
       dropOverflowItem(prep, blob, world, world.inventory.pop()!);
     }
     requestSfx(world, 0x0c);
-    return;
+    return true;
   }
+  return false;
 }
 
 /**
@@ -465,5 +479,5 @@ export function tickPickup(prep: Prepared, blob: BlobState, input: { left: boole
   }
   if (world.pickupLatch) return;
   world.pickupLatch = true;
-  collectTableItem(prep, blob, world);
+  if (!collectTableItem(prep, blob, world)) rotateInventoryEmpty(prep, blob, world);
 }

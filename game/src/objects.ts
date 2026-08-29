@@ -368,7 +368,9 @@ export function parseDoorCodeInput(text: string): number[] | null {
 }
 
 export function inventoryHasSprite(world: World, sprite: number): boolean {
-  return world.inventory.some((it) => (it.sprite & 0xff) === (sprite & 0xff));
+  return world.inventory.some(
+    (it) => (it.sprite & 0xff) === (sprite & 0xff) && ((it.sprite & 0xff) !== 0 || (it.attr & 0xff) !== 0),
+  );
 }
 
 /**

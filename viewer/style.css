@@ -272,55 +272,6 @@ code {
   font-size: 0.8rem;
 }
 
-.end-overlay {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.72);
-  z-index: 20;
-}
-
-.end-card {
-  background: var(--panel);
-  border: 1px solid var(--accent);
-  padding: 1.25rem 1.5rem;
-  min-width: 280px;
-  box-shadow: 0 0 0 1px #2a261f;
-}
-
-.end-card h2 {
-  margin: 0 0 1rem;
-  color: var(--accent);
-  letter-spacing: 0.08em;
-  font-size: 1.1rem;
-  text-align: center;
-}
-
-.end-card dl {
-  margin: 0;
-  display: grid;
-  gap: 0.55rem;
-}
-
-.end-card dl div {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 0.35rem;
-}
-
-.end-card dt {
-  color: var(--muted);
-}
-
-.end-card dd {
-  margin: 0;
-  font-family: var(--mono);
-}
-
 @media (max-width: 800px) {
   .layout {
     grid-template-columns: 1fr;

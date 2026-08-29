@@ -178,6 +178,11 @@ export interface Entity {
   aiCount: number;
   homeX: number;
   homeY: number;
+  /**
+   * False after spawn: `$D2F0` bounce is skipped so the 24×16 GRAFIX may sit in
+   * `attr < $40`. Latches true once every occupied cell is air; then walls bounce.
+   */
+  clipTerrain: boolean;
 }
 
 export interface EntityCache {

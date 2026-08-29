@@ -2,7 +2,7 @@
 
 Rozbor `$D413` / `$D422`→`$D521`, vítězství (9 jader → `$D2E8==5`), `$5E29`→`$64A0` a společné výsledkové pole `$6730`/`$67C7` (stejné po výhře i po životě 0). Smyčka 50 Hz; čas z FRAMES `$5C78`.
 
-**Není to** refill/`$D4E9` ani HUD stropy `$D425` (jen jejich vedlejší `CALL $D521`). **Není to** persistace hi-score — tabulka `$64FA` / zápis `$67C7`…`$654B` jen dokumentovat. Zvuk `$D7C0` / melodie `$6600` jen jako větve ke skipu.
+**Není to** refill/`$D4E9` ani HUD stropy `$D425` (jen jejich vedlejší `CALL $D521`). **Není to** persistace hi-score — tabulka `$64FA` / zápis `$67C7`…`$654B` se nezapisuje. Zvuk `$D7C0` / melodie `$6600` skip. End UI je Spectrum bitmap `$6730` / `$693F`, ne HTML.
 
 Hlavní tvrzení (skool + `tmp_score_probe.py`): výhra i life-out končí na **stejném** `$6730` výsledku. `$64A0` nejdřív přičte +1000 a přepíše spodní tři cifry skóre PRNG; teprve potom (výhra přes `$693F`, smrt/abort přes `RET` na `$6730`) se skládají SCORE / ADVENTURE / TIME / CORES.
 
@@ -221,5 +221,5 @@ Nesbíhat `$D425` (HUD+cap) se zápisem bodů — body jdou přes work cifry + `
 - **Konec hry:** `$5E29`→`$64A0` (+1000, scramble low digits, `$679C`) společné pro výhru (`$A7CF`), lives=0 (`$C3E7`+`$C461`→`$6730`) a abort A–G (`$C5CE`).
 - **Výhra:** 9× core (`$D2E7` 9→0); `$D2E8` ++ při sudém zbytku; `$D2E8==5` → `$5E29` pak `$693F`→`$6730`.
 - **Skóre:** kill `$A2E7`/`$D422` 80…320; first-visit +250 (`$A390`); core +10000; end +1000. Work `$D419`, score `$D413`.
-- **EndResult:** SCORE (`$D413` po `$64A0`), ADVENTURE `(visited×50)≫8`, TIME FRAMES→MM.SS, CORES `9−$D2E7`. Hi-score `$64FA` nezapisovat.
+- **EndResult:** SCORE (`$D413` po `$64A0` vč. scramble), ADVENTURE `(visited×50)≫8`, TIME FRAMES→MM.SS, CORES `9−$D2E7`. Hi-score `$64FA` nezapisovat. UI `$6730`.
 - Nahraď bullet „18. Plný `$64A0`…“ odkazem na [`notes/endgame-score.md`](endgame-score.md).

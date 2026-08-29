@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: `8cf42be`. `tmp_*` a `music/` necommituj.
+Poslední commit: pending (tento commit). `tmp_*` a `music/` necommituj.
 
 ## Tvrdé meze
 
@@ -11,7 +11,7 @@ Poslední commit: `8cf42be`. `tmp_*` a `music/` necommituj.
 - Nesnižuj match thresholdy (emu vs export = 0 pixelů).
 - Collision/static tile export (`rooms.json` `solid` / `$D280` overlay) neměň.
 - Overlay dál ukazuje export `solid`; chůze, pad, zdviž a vetřelci berou `$D2F0` (`attr < $40`).
-- Zatím **neimplementovat:** Arrow `$BF88` do extractu, hi-score zápis `$64FA`, Spectrum end-screen bitmap / `$64A0` scramble low digits, digit `$0E` wildcard u dveří (1× v enginu), 1. tick Up bez `$14+` vsune `00 00`. `$6600` skip. Hop `TEMP_JUMP_*`. `$D3C1` mezery u stroje `$0E` ne.
+- Zatím **neimplementovat:** Arrow `$BF88` do extractu, hi-score zápis `$64FA`, digit `$0E` wildcard u dveří (1× v enginu). `$6600` skip. Hop `TEMP_JUMP_*`. `$D3C1` mezery u stroje `$0E` ne.
 - Konstanty s ROM adresami do `spec/MOVEMENT.md` a comments v `constants.ts`.
 - `docs/` je commitnutý výstup GitHub Pages (viewer + `out/*.json`); ROM poznámky jsou v `spec/`. Workflow ho přestaví a commitne.
 - Untracked sondy **necommituj:** `tmp_aa30_probe.py`, `tmp_hover_probe.py`, `tmp_teleport_probe.py`, `tmp_attr64_probe.py`, `tmp_death_probe.py`, `tmp_killai_probe.py`, `tmp_killtile_probe.py`, `tmp_room52_probe.py`, `tmp_itemfx_probe.py`, `tmp_security_probe.py`, `tmp_core_probe.py`, `tmp_score_probe.py`, `tmp_ui_layout_probe.py`, `tmp_ui_verify_probe.py`, `tmp_ui_engine_hud.ts`, `tmp_sfx_probe.py`, `tmp_melody_probe.py` (+ další `tmp_ui_*` / `tmp_sfx_*`).
@@ -80,11 +80,11 @@ Rozbory: `spec/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - Zdviž `$64` / `$DD22=1`. `$D2F0` 2 řady když `(Y+1)∧7=0`, jinak 3 — otvor `$44` v `#249` neposkakuje.
 - Energie `$CB58` −1 při wrap `$78` (ROM `C=$04`; HUD 1 px = 4 energie). `$DD30` start 0, energie `$7F`. Obtěžující `$DD30 += $0A` **1×/tick** (ROM až 4×). Smrt `applyDeath` `$C350`: flash 45 / `$BEC8`×4 let 80 / HALT 50, pak A=2 nula, A=1/`$11` vetřelec, A=`$10` rostlina `$06`, A=0 puls `$70`. Životy 4, DEC, energy `$7F`, plat `∨$08`. lives=0 → animace a `GAME OVER`. Puls `$70`: AABB + kresba `$DB88` (L=5/6/7) když flag≠0.
 - `$9F05` nibble `$80` → živý `$B2C8` AI 6. Perioda spawnu 4…8. AI 5 dir=0 / RRCA, AI 3 zapisuje 8-směr. `$A2B9` = `$08,$09,$01,$05,$04,$06,$02,$0A`.
-- Security doors typ `$00` (raw `$01`–`$0F`), klíč `$0F` / inventář; jádro `$C7` doručení `$A6C1` (9×`$D2DE`), výhra `$D2E8==5`; skóre + společný `EndResult` (HTML overlay).
+- Security doors typ `$00` (raw `$01`–`$0F`), klíč `$0F` / inventář; jádro `$C7` doručení `$A6C1` (9×`$D2DE`), výhra `$D2E8==5`; skóre + `$6730` bitmap `EndResult` (scramble `$64A0`; `$64FA` ne).
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP/Cheops overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; menu `intro.mp3`, hra `bgm.mp3` smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
 
-Ověřeno: `npm test` 212 pass. HEAD `8cf42be` (Pages workflow na working tree).
+Ověřeno: `npm test` 221 pass. HEAD `8cf42be` (Pages workflow na working tree).
 
 ## Otevřené
 
@@ -95,18 +95,34 @@ Ověřeno: `npm test` 212 pass. HEAD `8cf42be` (Pages workflow na working tree).
 5. Podlaha dál `$D2F4` foot-column, ne inkoust nohou.
 6. Live `$DAC6` po `$A80A` — engine seed `$7530+id×12`. Extra spawn, pad bounce i perioda `$70` z `dac0` po spawn vetřelců.
 7. Vetřelci i pad: 4 GRAFIX fáze z `world.frames / 2`; live ptr / `$AFC8` beze změny (kresba `+$30`).
-8. Extra `$17`/`$18` v enginu. 1. tick Up bez `$14+` vsune `00 00` — mimo rozsah.
+8. Extra `$17`/`$18` v enginu. 1. tick Up bez `$14+` vsune `00 00` — **hotovo**.
 9. Inventář overflow `$D1CA` — **hotovo** (drop `$D236`, ne `pop()`). Cheops `$CCF1` **hotovo**.
 10. Arrow `$BF88` ve zdviži — není v extractu.
 11. `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
 12. Objekt `$0E` — **hotovo** (max pád `$DD29==$10` + exact Y; dvě plošinky life `$02`).
-13. Spectrum end bitmap, hi-score `$64FA`, `$64A0` scramble. Melodie `$6600` skip. `$A41B`/`$A57B` je v `audio/channel.ts`.
+13. Spectrum end `$6730`/`$693F` + scramble `$64A0` — **hotovo**. Hi-score `$64FA` zápis ne. `$6600` skip.
 14. Puls `$70` / `$DB88` — **opraveno persist XOR.** Engine dřív každý snímek *přepisoval* aktuální L6/L7 (vypadalo to jako všechny fáze najednou). ROM `$DB88`/`$DB50` vrstvy XORuje do display file: toggle L5 A=`$47`, při flag≠0 `$A6BD[timer∧3]`. `xorInk` = delta, blit `^=` na terrain. `#13` jeden, `#198` dva.
 15. Door/TP overlay: ikony `$25`/`$26`/`$24` + `$D5FD` digit-roll `$D78B` / SFX `$D679`/`$D70E`. XOR animace `$D78B` na živém display (engine kreslí znovu z clear) a `$D58A` INK flash textu jsou zjednodušené.
 17. BGM: `viewer/intro.mp3` na `$5E81`/`$666D`, `viewer/bgm.mp3` ve hře (stejný soubor jako `music/game-loop.mp3`). `music/` necommituj.
 16. Inventář ve statusu: XOR blit vs přesné `$DB24` timing; HUD redraw každý frame (ROM chrome jen `$A426`).
 
 ## Sezení
+
+### 2026-08-29 — Spectrum end `$6730`
+
+HTML overlay pryč. `ui.kind=end`: výhra `$693F` (THTUPID) pak klávesa → GAME OVER labely AT z `$6738`. `$64A0` +1000 a scramble `$D416`..`$D418` (ones 0/5). `$64FA` nezapisovat. `game/src/ui/end.ts`. Dump `--end-test` pořád `endResult`.
+
+### 2026-08-29 — ghost spawn vetřelců
+
+`Entity.clipTerrain` start `false` (`$9C47` / `$9F05` / `$9F78` / appear z parku). `$D2F0` bounce terénu až po latch: 24×16 box (3/4 sloupce, 2/3 řady) `attr ≥ $40`. Pak bounce jako ROM. Hrany místnosti vždy. Spawn 2×2 `emptyish` beze změny. Pad `clipTerrain=true`. Test: `entities.test.ts` ghost→latch→bounce. `npm test` 217; `pytest tests/test_enemies.py tests/test_fire.py` 6.
+
+### 2026-08-28 — `$D1B3` inventář doprava
+
+1. tick Up samo (`$DD23==$08`, ne pad/zdviž) po vyčerpání `$96FC` volá `$D1CA`: LDDR vsune `00 00`. HUD sloty o 1 doprava. Čtyři předměty → pátý `$D1F8` drop. SFX `$0C`. Držené Up latch `$DD31`.
+
+### 2026-08-28 — teleport booth `$24` ATTR `$00`
+
+Overlay `$EA65` zapisoval surový ATTR z `graphics.json`. Střecha/pravý sloup `$24` je speciál 0 (`$EAD3` → `$EA62`). Bez toho černá na černém — „chybí prostřední pruh“. Teď `resolveEad3Attr`; `$EA62` z `$DAC0∧7` nebo `(row∧7)∨2`.
 
 ### 2026-08-28 — GitHub Pages `docs/`
 

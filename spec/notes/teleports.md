@@ -59,7 +59,7 @@ Dva bloky obsahují podblok `$24`:
 | `$2B` (43) | `$24,$14,$07,$14` | 13 místností, index 5 nebo 6 v 4×3 mřížce |
 | `$FA` (250) | `$50,$50,$24,$29` | AMIGA `$01F3`, AMAHA `$01FA`, spodní řada bloků |
 
-V overlay UI se totéž `L=$24` kreslí znovu jako ikona (`$CF09 LD BC,$0917`).
+V overlay UI se totéž `L=$24` kreslí znovu jako ikona (`$CF09 LD BC,$0917`). Střecha a pravý sloup mají ATTR `$00` (speciál `$EAD3`) — ink z `$EA62`. Řádky 1–2 sloupec 1 jsou v `row_flags` prázdné (dveřní otvor `0xB0`). Overlay musí `$EA62` aplikovat, jinak je střecha černá na černém.
 
 ### Objekt `$96FC`
 

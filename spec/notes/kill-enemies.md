@@ -295,7 +295,7 @@ Ano na kontakt, ne na slot 4.
 | AI číslo | kind 2 → 5, `$9F05` → 6; lethální je ptr | `$9E66` / `$A327` |
 | úbytek energie | to je `$DD30` / `$CB58` | `$A345` |
 | i-frames | žádné | `$A091` každý podkrok |
-| průlet zdí | ne, `$D2F0`/`$D2F4` | `$A0FD` |
+| průlet zdí | ROM ne (`$D2F0`/`$D2F4`); engine ghost do prvního volného 24×16 (`clipTerrain`) | `$A0FD` |
 | slot 4 na padu | mimo `$A01B` | `$9F72` |
 | `$C35E` animace | jiný agent | `$C350 JR $C35E` |
 

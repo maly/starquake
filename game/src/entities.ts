@@ -209,6 +209,7 @@ function makeEntity(ptr: number): Entity {
     aiCount: 8,
     homeX: 0,
     homeY: 0x0f,
+    clipTerrain: false,
   };
 }
 
@@ -281,6 +282,7 @@ function applyFixedNasties(prep: Prepared, room: number, world: World): void {
     e.state = 1;
     e.stateTimer = 0;
     e.ai = FIXED_NASTY_AI;
+    e.clipTerrain = false;
   }
 }
 
@@ -319,6 +321,7 @@ function parkCoreSlot(): Entity {
     aiCount: CORE_GUARD_AI_PERIOD,
     homeX: 0,
     homeY: 0,
+    clipTerrain: false,
   };
 }
 
@@ -348,6 +351,7 @@ export function spawnCoreGuardians(world: World): void {
     e.ai = 0;
     e.aiPeriod = CORE_GUARD_AI_PERIOD;
     e.aiCount = CORE_GUARD_AI_PERIOD;
+    e.clipTerrain = false;
   }
   world.nastyCount = NASTY_SLOTS;
   world.spawnGuard = 0;
@@ -427,6 +431,7 @@ export function makePad(x: number, blobGameY: number): Entity {
     aiCount: 0,
     homeX: x & 0xff,
     homeY: py,
+    clipTerrain: true,
   };
 }
 
@@ -467,6 +472,20 @@ function hitByBullet(e: Entity, world: World): void {
   parkBullet(world);
 }
 
+function spriteAir(e: Entity, world: World): boolean {
+  const playY = GAME_Y_ORIGIN - e.y;
+  const col0 = e.x >> 3;
+  const row0 = playY >> 3;
+  const ncols = (e.x & 7) === 0 ? 3 : 4;
+  const nrows = ((e.y + 1) & 7) === 0 ? 2 : 3;
+  for (let r = 0; r < nrows; r++) {
+    for (let c = 0; c < ncols; c++) {
+      if (cellSolid(world, col0 + c, row0 + r)) return false;
+    }
+  }
+  return true;
+}
+
 function bounceH(e: Entity, world: World): void {
   if (e.x < NASTY_EDGE_L) {
     e.dir = (e.dir & 0xfc) | 1;
@@ -476,6 +495,7 @@ function bounceH(e: Entity, world: World): void {
     e.dir = (e.dir & 0xfc) | 2;
     return;
   }
+  if (!e.clipTerrain) return;
   const playY = GAME_Y_ORIGIN - e.y;
   if ((e.x & 7) !== 0) return;
   const col = e.x >> 3;
@@ -502,6 +522,7 @@ function bounceV(e: Entity, world: World): void {
     e.dir = (e.dir & 0xf3) | 4;
     return;
   }
+  if (!e.clipTerrain) return;
   const playY = GAME_Y_ORIGIN - e.y;
   if (((e.y + 1) & 7) !== 0) return;
   const cols = (e.x & 7) === 0 ? [e.x >> 3, (e.x >> 3) + 1] : [e.x >> 3, (e.x >> 3) + 1, (e.x >> 3) + 2];
@@ -629,6 +650,7 @@ function appearOrDie(e: Entity, blob?: BlobState, world?: World): boolean {
   if (was === 0) {
     e.x = e.homeX;
     e.y = e.homeY;
+    e.clipTerrain = false;
     e.ptr = APPEAR_GRAPHIC;
     e.set = "corepieces1";
     if (world) requestA41C(world, (world.dac.dac0 & 3) + 1);
@@ -646,6 +668,7 @@ function appearOrDie(e: Entity, blob?: BlobState, world?: World): boolean {
 }
 
 function stepMove(e: Entity, world: World): void {
+  if (!e.clipTerrain && spriteAir(e, world)) e.clipTerrain = true;
   bounceH(e, world);
   if (skip64(e, world)) return;
   if (e.dir & 1) e.x = (e.x + e.speedX) & 0xff;

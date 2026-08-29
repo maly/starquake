@@ -19,11 +19,13 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 - [ ] Overlay `solid` (`$D280`) vs chůze `$D2F0` — na obrazovce obráceně, podle ROM správně. Neměnit export.
 - [x] Kanál `$A41B`/`$A41C` → `$A57B` — palba `$05`, pád `$06`, dopad `$07`, plošinka `$08`, oblaka `$09`, spawn 1…4, kill `$0B`, ambient `$0C`…`$0F`.
 - [ ] Melodie `$6600` — skip (title/end); pozadí = MP3.
-- [ ] Spectrum end-screen, hi-score `$64FA`, scramble `$64A0` — HTML overlay +1000.
+- [x] Spectrum end-screen `$6730` / `$693F` + scramble `$64A0`. Hi-score `$64FA` zápis ne.
 - [ ] Arrow `$BF88` ve zdviži — není v extractu.
 - [ ] Digit `$0E` wildcard u dveří — 1× v enginu; Spectrum minihra ne.
 
 ## Věrnost (hra se dohraje)
+
+- [x] Vetřelec po spawn proletí `attr < $40`; po volném 24×16 `clipTerrain` a bounce `$D2F0`.
 
 - [x] Animace 4 GRAFIX snímků vetřelce + pad — `world.frames / 2`, live ptr beze změny.
 - [ ] `$DD26` lean-to-stop `$E674` — engine drží poslední walk pose.
@@ -33,12 +35,12 @@ Zbývající práce na enginu. Hrací smyčka (chůze, sběr, palba, pad, zdviž
 - [ ] Inventář ve statusu: XOR blit vs přesné `$DB24` timing.
 - [ ] `skip64` vs `$A132` (řada Y+1, skip jen Y, exact `$64`).
 - [ ] Místnost 362 — jeden door hotspot (broken pair?).
-- [ ] 1. tick Up bez `$14+` — ROM vsune prázdný slot `00 00`; engine ne.
+- [x] 1. tick Up bez `$14+` — `$D1B3` vsune `00 00` (posun doprava); 4 plné → drop `$D1F8`. Pad/zdviž ne.
 - [ ] Podlaha dál `$D2F4` foot-column, ne inkoust nohou.
 
 ## Hygiena
 
-- [x] WORKLOG: poslední commit je `8cf42be`.
+- [x] WORKLOG: HEAD po tomto commitu.
 - [x] WORKLOG bod 17: `viewer/bgm.mp3` už je v gitu (stejný soubor jako `music/game-loop.mp3`).
 - [x] `spec/notes/item-effects.md` — `$0F` v enginu; Cheops výměna taky.
 - [ ] Git remote `origin` — push teď nejde.

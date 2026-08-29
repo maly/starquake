@@ -122,6 +122,71 @@ describe("collect $D09F / $D16B", () => {
     expectStats(world, 0, START_ENERGY, START_PLATFORMS, START_FIREPOWER);
   });
 
+  it("$D1B3 empty Up unshifts 00 00 so items move one HUD slot right", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    world.inventory = [
+      { sprite: 0x0c, attr: 3, index: 1 },
+      { sprite: 0x0d, attr: 3, index: 2 },
+      { sprite: 0x0e, attr: 3, index: 3 },
+    ];
+    tick(prep, blob, { ...idle(), up: true }, world);
+    assert.deepEqual(
+      world.inventory.map((it) => [it.sprite, it.attr, it.index]),
+      [
+        [0, 0, undefined],
+        [0x0c, 3, 1],
+        [0x0d, 3, 2],
+        [0x0e, 3, 3],
+      ],
+    );
+    assert.ok(world.sfx.includes(0x0c));
+    const len = world.inventory.length;
+    tick(prep, blob, { ...idle(), up: true }, world);
+    assert.equal(world.inventory.length, len);
+  });
+
+  it("$D1B3 with 4 items drops the rightmost via $D1F8", () => {
+    const a = placed({ index: 1, room: 1, sprite: 0x0c, attr_bits: 3, col: 4, row: 10 });
+    const b = placed({ index: 2, room: 1, sprite: 0x0d, attr_bits: 3, col: 6, row: 10 });
+    const c = placed({ index: 3, room: 1, sprite: 0x0e, attr_bits: 3, col: 8, row: 10 });
+    const d = placed({ index: 4, room: 1, sprite: 0x0f, attr_bits: 3, col: 10, row: 10 });
+    const prep = grid([a, b, c, d]);
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    blob.x = 80;
+    blob.y = 40;
+    world.collected[1] = world.collected[2] = world.collected[3] = world.collected[4] = 1;
+    world.inventory = [
+      { sprite: 0x0c, attr: 3, index: 1 },
+      { sprite: 0x0d, attr: 3, index: 2 },
+      { sprite: 0x0e, attr: 3, index: 3 },
+      { sprite: 0x0f, attr: 3, index: 4 },
+    ];
+    tick(prep, blob, { ...idle(), up: true }, world);
+    assert.deepEqual(
+      world.inventory.map((it) => it.sprite),
+      [0, 0x0c, 0x0d, 0x0e],
+    );
+    assert.equal(world.collected[4], 0);
+    assert.equal(d.placed, true);
+    assert.equal(d.room, 1);
+  });
+
+  it("$D1B3 does not rotate on pad or when Left/Right is held", () => {
+    const prep = grid();
+    const world = createWorld(prep, 1);
+    const blob = spawnBlob(prep, 1, world);
+    world.inventory = [{ sprite: 0x0c, attr: 3, index: 1 }];
+    tick(prep, blob, { ...idle(), up: true, left: true }, world);
+    assert.equal(world.inventory[0]?.sprite, 0x0c);
+    world.pickupLatch = false;
+    world.dd22 = DD22_PAD;
+    tick(prep, blob, { ...idle(), up: true }, world);
+    assert.equal(world.inventory[0]?.sprite, 0x0c);
+  });
+
   it("does not pick up without Up", () => {
     const item = placed({ index: 16, room: 1 });
     const prep = grid([item]);

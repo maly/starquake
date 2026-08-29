@@ -128,9 +128,14 @@ function drawQuit(buf: ScreenBuffers): void {
   printAt(buf, 9, 12, MENU_QUIT_YN, 6);
 }
 
+/** `$6615` edge bars + corners. A is the `$EA63` mask; graphics come from `prep`. */
+export function drawBannerFrame(buf: ScreenBuffers, prep?: Prepared): void {
+  drawBanners(buf, prep);
+}
+
 export function drawMenuOverlay(buf: ScreenBuffers, ui: MenuUi, prep?: Prepared): void {
   clearScreen(buf, 0x07);
-  drawBanners(buf, prep);
+  drawBannerFrame(buf, prep);
   if (ui.phase === "options") {
     blitGraphic(buf, prep, MENU_FOOT_L, MENU_FOOT_ROW, MENU_FOOT_COL_L);
     blitGraphic(buf, prep, MENU_FOOT_R, MENU_FOOT_ROW, MENU_FOOT_COL_R);

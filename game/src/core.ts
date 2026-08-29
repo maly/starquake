@@ -40,7 +40,12 @@ export function matchCoreDeliveries(world: World): number {
   let delivered = 0;
   for (let pass = 0; pass < 2; pass++) {
     for (let inv = 0; inv < world.inventory.length; ) {
-      const sprite = world.inventory[inv]!.sprite & 0xff;
+      const slot = world.inventory[inv]!;
+      if ((slot.sprite & 0xff) === 0 && (slot.attr & 0xff) === 0) {
+        inv += 1;
+        continue;
+      }
+      const sprite = slot.sprite & 0xff;
       let matched = -1;
       for (let i = 0; i < CORE_SLOTS; i++) {
         const need = world.d2de[i] ?? 0;

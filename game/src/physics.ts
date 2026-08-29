@@ -423,6 +423,7 @@ function spawnDeathStars(blob: BlobState, world: World): Entity[] {
     aiCount: 8,
     homeX: x,
     homeY: y,
+    clipTerrain: false,
   }));
 }
 

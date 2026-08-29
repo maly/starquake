@@ -542,6 +542,10 @@ export const DOOR_UDG_COL_R = 0x10;
 export const TELEPORT_UDG = 0x24;
 export const TELEPORT_UDG_ROW = 0x09;
 export const TELEPORT_UDG_COL = 0x17;
+/** `$EAD3`: ATTR `& $3F == 0` → `(ATTR ∧ $F8) ∨ $EA62`. `$EA65` sets `$EA62` from `$DAC0∧7` or `(B∧7)∨$02`. */
+export const ATTR_INK_SPECIAL = 0x00;
+export const ATTR_PAPER_SPECIAL = 0x36;
+export const EA62_MIN = 0x02;
 /**
  * `$D5FD` inventory minigame (doors A=3 BC=`$110B`, Cheops A=2 BC=`$0F0D`).
  * One 50 Hz tick per HALT / inner `$D64C` / `$D6E8` iteration.

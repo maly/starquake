@@ -48,7 +48,7 @@ Index `$17` (L=0 hang) **nikdy** nehrát. A=`$05`/`$06`/`$16` bez CALL — nehr�
 - menu select `$605A` `$0C` je v `feedMenuKey`; define keys `$6295` / hi-score `$68F8` skip
 - házení cifer `$D679` / shoda `$D70E` — overlay dveří/Cheops: 1 SFX / tick roll (`$0C`…`$0F`) a match (`$03`)
 - stroj `$0E` (`$D0E0`), místnost ±1 `$0F` (`$D133`)
-- `$D1CA` při prázdném Up bez sběru — engine latchuje Up, ale zvuk jen když se inventář skutečně změní (sběr). Prázdný Up bez itemu nehrát; full inventář v ROM taky `$D7C0` nemá.
+- `$D1CA` prázdný Up (`$D1B3`) hraje `$0C` stejně jako sběr. Skip `$D2BE≥4`+$D2DB≠0 engine ne.
 
 ## Web Audio + MP3
 

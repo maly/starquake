@@ -2,7 +2,7 @@
 
 Živý stav enginu pro další sezení. Doplňuj na konec po každém úkolu; nahoře drž aktuální meze a ověření.
 
-Poslední commit: pending (tento commit). `tmp_*` a `music/` necommituj.
+Poslední commit: `303cce3`. `tmp_*` a `music/` necommituj.
 
 ## Tvrdé meze
 
@@ -84,7 +84,7 @@ Rozbory: `spec/notes/hoverpad.md`, `teleports.md`, `attr64.md`, `energy-death.md
 - UI: 32×24 screen, HUD 0–5 (`$D3DF`/`$D425`/`$D463`), font `$ADD4`, print `$D3C1`, door/TP/Cheops overlay v rastru; `?dev=0`.
 - Zvuk: `$D7C0` syntéza z tabulky `$D839` (24×5 B) → `world.sfx` → Web Audio; menu `intro.mp3`, hra `bgm.mp3` smyčka, mute/gain persist. `$6600` skip. `$A41B`/`$A57B` v `audio/channel.ts`.
 
-Ověřeno: `npm test` 221 pass. HEAD `8cf42be` (Pages workflow na working tree).
+Ověřeno: `npm test` 221 pass. HEAD `303cce3`.
 
 ## Otevřené
 

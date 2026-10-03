@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    paths-ignore:
+      - "docs/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+      - run: npm --prefix game ci
+      - run: npm --prefix game test
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+      - run: pip install -e '.[dev]'
+      - run: python -m starquake_extract extract --out out
+      # tests/test_viewer.py a tests/test_death.py volají `node viewer/dump.js`
+      - run: npm --prefix game ci
+      - run: npm --prefix game run build
+      - run: python -m pytest

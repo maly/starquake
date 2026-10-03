@@ -18,7 +18,6 @@ START_LIVES = 4
 RESPAWN_ENERGY = 0x7F
 PLAT_OR_ON_DEATH = 0x08
 ANNOY_DRAIN_BUMP = 0x0A
-NASTY_INNER_STEPS = 4
 ALIGN_START_X = 0x89
 ALIGN_START_Y = 0x40
 ALIGN_AFTER_X = 0x88
@@ -120,10 +119,12 @@ def test_annoy_bumps_drain_not_energy(rooms_ready: None) -> None:
     assert after["gameOver"] is False
     assert after["lives"] == START_LIVES
     assert after["energy"] == START_ENERGY
-    expected_drain = (before["energyDrain"] + 1 + ANNOY_DRAIN_BUMP * NASTY_INNER_STEPS) & 0xFF
+    # $A305 bumps $DD30 once per 50 Hz tick (only on the first inner step, see
+    # applyContact(..., inner === 0) in game/src/entities.ts), plus the regular +1 tick.
+    expected_drain = (before["energyDrain"] + 1 + ANNOY_DRAIN_BUMP) & 0xFF
     assert after["energyDrain"] == expected_drain, (
         f"drain before={before['energyDrain']:#x} after={after['energyDrain']:#x} "
-        f"expected {expected_drain:#x} (+1 tick + $0A×{NASTY_INNER_STEPS})"
+        f"expected {expected_drain:#x} (+1 tick + $0A once per tick)"
     )
 
 

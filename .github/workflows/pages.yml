@@ -22,7 +22,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e .
+      - run: pip install -e '.[dev]'
       - run: python -m starquake_extract extract --out out
       - uses: actions/setup-node@v4
         with:
@@ -30,7 +30,9 @@ jobs:
           cache: npm
           cache-dependency-path: game/package-lock.json
       - run: npm --prefix game ci
+      - run: npm --prefix game test
       - run: npm --prefix game run build
+      - run: python -m pytest
       - run: npm --prefix game run pages
       - name: Commit docs/ site
         run: |

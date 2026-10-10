@@ -24,7 +24,7 @@ import {
 import { applyTeleport, attrAt, blocksBlob, createWorld, playYToGame, spawnBlob, tick } from "./physics";
 import { prepare } from "./render";
 import { REPO_ROOT } from "./server";
-import type { GameData, Prepared } from "./types";
+import type { GameData, Hotspot, Prepared } from "./types";
 
 /** Dest hotspot XY from teleports.md / $AA02, not the name table. */
 const TELEPORT_SPAWNS: ReadonlyArray<readonly [string, number, number, number]> = [
@@ -146,7 +146,7 @@ describe("teleport dest hotspots $A4F6", () => {
     const prep = loadPrep();
     if (!prep) return;
     for (const [name, dest] of TELEPORT_TABLE) {
-      const list = prep.teleportsByRoom?.[dest] ?? [];
+      const list: readonly Hotspot[] = prep.teleportsByRoom?.[dest] ?? [];
       assert.ok(list.length >= 1, `${name} room ${dest} missing $0D`);
     }
   });

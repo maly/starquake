@@ -4,11 +4,26 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+      default-days: 7
   - package-ecosystem: npm
     directory: /game
     schedule:
       interval: weekly
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+      default-days: 7
   - package-ecosystem: pip
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      semver-major-days: 14
+      semver-minor-days: 7
+      semver-patch-days: 3
+      default-days: 7

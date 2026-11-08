@@ -28,8 +28,17 @@ function under(root: string, file: string): boolean {
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
+function decodePath(p: string): string | null {
+  try {
+    return decodeURIComponent(p);
+  } catch {
+    return null;
+  }
+}
+
 function resolvePublic(urlPath: string, root: string): string | null {
-  let raw = decodeURIComponent(urlPath.split("?")[0] ?? "/");
+  let raw = decodePath(urlPath.split("?")[0] ?? "/");
+  if (raw === null) return null;
   if (raw === "/") return path.join(root, "viewer", "index.html");
   if (raw === "/viewer") raw = "/viewer/";
   if (raw.startsWith("/viewer/")) {

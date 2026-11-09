@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
-import { REPO_ROOT, serve } from "./server";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { REPO_ROOT, handle, serve } from "./server";
 
 describe("static server", () => {
   it("serves the viewer and export JSON", async () => {
@@ -48,6 +49,23 @@ describe("static server", () => {
       assert.equal(missing.status, 404);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+    }
+  });
+
+  it("answers malformed percent-encoding with 404 instead of throwing", () => {
+    for (const url of ["/%E0%", "/%zz", "/viewer/%E0%A4%A"]) {
+      let status = 0;
+      const res = {
+        writeHead(code: number) {
+          status = code;
+          return res;
+        },
+        end() {
+          return res;
+        },
+      } as unknown as ServerResponse;
+      assert.doesNotThrow(() => handle(REPO_ROOT, { method: "GET", url } as IncomingMessage, res));
+      assert.equal(status, 404, url);
     }
   });
 });
